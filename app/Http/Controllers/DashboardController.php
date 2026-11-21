@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Enums\MembershipStatus;
+use App\Models\CampusEvent;
+use App\Models\CampusEventNotification;
 use App\Models\CampusMembership;
 use App\Models\OfficerGcChannel;
 use App\Models\PasskeyIssuance;
@@ -30,6 +32,7 @@ class DashboardController extends Controller
         // Attendance QR is unlocked once the member creates their personal password.
         $qrUnlocked = $user->must_change_password === false;
         $qrSvg = null;
+        $qrPayload = null;
         $memberIdCode = null;
 
         if ($qrUnlocked) {
@@ -127,15 +130,70 @@ class DashboardController extends Controller
                 ->first()
             : null;
 
+        $campusEvents = collect();
+        if ($campusId !== null) {
+            $canProposeEvents = $user->canProposeEvents();
+            $campusEvents = CampusEvent::query()
+                ->where('campus_id', $campusId)
+                ->when(! $canProposeEvents, fn ($query) => $query->whereIn('status', ['approved', 'cancelled']))
+                ->orderBy('event_date')
+                ->orderBy('start_time')
+                ->get()
+                ->map(function (CampusEvent $ev): array {
+                    $ev->syncLifecycleTimestamps();
+
+                    return [
+                        'id' => $ev->id,
+                        'title' => $ev->title,
+                        'description' => $ev->description,
+                        'location' => $ev->location,
+                        'event_date' => $ev->event_date->format('Y-m-d'),
+                        'event_date_label' => $ev->event_date->format('M d, Y (D)'),
+                        'start_time' => $ev->start_time,
+                        'end_time' => $ev->end_time,
+                        'status' => $ev->status,
+                        'effective_status' => $ev->effectiveStatus(),
+                        'cancellation_reason' => $ev->cancellation_reason,
+                    ];
+                })
+                ->values();
+        }
+
+        $eventNotifications = CampusEventNotification::query()
+            ->where('user_id', $user->id)
+            ->orderByDesc('created_at')
+            ->orderByDesc('id')
+            ->limit(10)
+            ->get()
+            ->map(fn (CampusEventNotification $n): array => [
+                'id' => $n->id,
+                'campus_event_id' => $n->campus_event_id,
+                'type' => $n->type,
+                'title' => $n->title,
+                'message' => $n->message,
+                'is_unread' => $n->read_at === null,
+                'created_at' => $n->created_at?->diffForHumans(),
+            ])
+            ->values();
+
+        $unreadEventNotificationsCount = CampusEventNotification::query()
+            ->where('user_id', $user->id)
+            ->whereNull('read_at')
+            ->count();
+
         return Inertia::render('Dashboard', [
             'qrUnlocked' => $qrUnlocked,
             'memberIdCode' => $memberIdCode,
             'qrSvg' => $qrSvg,
+            'qrPayload' => $qrPayload,
             'dailyQuote' => $dailyQuote,
             'canConfirmDues' => $canConfirmDues,
             'canAuditFinances' => $canAuditFinances,
             'isOfficerOrAdviser' => $isOfficerOrAdviser,
             'duesRoster' => $duesRoster,
+            'campusEvents' => $campusEvents,
+            'eventNotifications' => $eventNotifications,
+            'unreadEventNotificationsCount' => $unreadEventNotificationsCount,
             'officerGcChannel' => $officerGcChannel ? [
                 'id' => $officerGcChannel->id,
                 'academic_year' => $officerGcChannel->academic_year,

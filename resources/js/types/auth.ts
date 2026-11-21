@@ -79,6 +79,7 @@ export type AuthPermissions = {
     confirmMessengerGc: boolean;
     validatePayments?: boolean;
     auditFinances?: boolean;
+    proposeEvents?: boolean;
     isOfficerOrAdviser?: boolean;
     isClubAdviser: boolean;
 };

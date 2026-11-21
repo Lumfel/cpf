@@ -52,6 +52,7 @@ class PasskeyCodeLoginController extends Controller
         }
 
         $issuance->forceFill([
+            'status' => 'claimed',
             'claimed_at' => now(),
         ])->save();
 

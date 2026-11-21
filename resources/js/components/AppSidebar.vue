@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link, usePage } from '@inertiajs/vue3';
-import { Archive, Award, Building2, LayoutGrid, MessageCircle, ScrollText, ShieldCheck, Users } from '@lucide/vue';
+import { Archive, Award, Building2, CalendarDays, LayoutGrid, MessageCircle, ScrollText, ShieldCheck, Users } from '@lucide/vue';
 import { computed } from 'vue';
 import AppLogo from '@/components/AppLogo.vue';
 import NavFooter from '@/components/NavFooter.vue';
@@ -29,6 +29,11 @@ const mainNavItems = computed<NavItem[]>(() => [
         title: 'Dashboard',
         href: dashboard(),
         icon: LayoutGrid,
+    },
+    {
+        title: 'Events & Activities',
+        href: '/events-activities',
+        icon: CalendarDays,
     },
     ...(isOfficerOrAdviser.value
         ? [

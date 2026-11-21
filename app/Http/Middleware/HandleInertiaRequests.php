@@ -56,6 +56,7 @@ class HandleInertiaRequests extends Middleware
                     'confirmMessengerGc' => $user ? $user->canConfirmMessengerGc() : false,
                     'validatePayments' => $user ? $user->canValidatePayments() : false,
                     'auditFinances' => $user ? $user->canAuditFinances() : false,
+                    'proposeEvents' => $user ? $user->canProposeEvents() : false,
                     'isOfficerOrAdviser' => $user ? ($user->verifiedRole()?->isOfficerOrAdviser() ?? false) : false,
                     'isClubAdviser' => $user ? $user->isClubAdviser() : false,
                 ],

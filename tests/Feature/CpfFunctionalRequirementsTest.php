@@ -659,13 +659,30 @@ class CpfFunctionalRequirementsTest extends TestCase
             ])
             ->assertSessionHasErrors('passkey_code');
 
-        // Active locked code logs member in
+        // Active locked code logs member in and marks issuance claimed (one-time use)
         $this->post('/login/passkey-code', [
             'email' => $member->email,
             'passkey_code' => str_replace('-', '', $newCode),
         ])->assertRedirect('/dashboard');
 
         $this->assertAuthenticatedAs($member);
+
+        $claimedIssuance = \App\Models\PasskeyIssuance::findOrFail($regenerated->json('issuance_id'));
+        $this->assertSame('claimed', $claimedIssuance->status);
+        $this->assertNotNull($claimedIssuance->claimed_at);
+
+        // Reusing the already-claimed code after logout is rejected
+        auth()->logout();
+        $this->from('/login')
+            ->post('/login/passkey-code', [
+                'email' => $member->email,
+                'passkey_code' => str_replace('-', '', $newCode),
+            ])
+            ->assertSessionHasErrors('passkey_code');
+        $this->assertGuest();
+
+        // Re-authenticate member to test self-regeneration
+        $this->actingAs($member);
 
         // Logged-in member can regenerate their own locked passkey in real time
         $selfRegen = $this->actingAs($member)
@@ -1206,8 +1223,13 @@ class CpfFunctionalRequirementsTest extends TestCase
             ->assertOk();
         $this->assertSame('accepted', $candB->fresh()->nomination_status);
 
-        // Any verified member can close nominations once >= 2 accepted candidates exist
+        // Only the campus Club Adviser can close nominations (regular members receive 403)
         $this->actingAs($memberC)
+            ->postJson("/elections/{$election->id}/close-nominations")
+            ->assertForbidden()
+            ->assertJsonPath('message', 'Only the campus Club Adviser can close nominations.');
+
+        $this->actingAs($adviser)
             ->postJson("/elections/{$election->id}/close-nominations")
             ->assertOk();
 

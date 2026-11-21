@@ -139,4 +139,9 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     {
         return $this->verifiedRole()?->isTopAuthority() ?? false;
     }
+
+    public function canProposeEvents(): bool
+    {
+        return $this->verifiedRole()?->canProposeEvents() ?? false;
+    }
 }

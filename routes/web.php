@@ -8,6 +8,7 @@ use App\Http\Controllers\CpfFeatureController;
 use App\Http\Controllers\CpfV4Controller;
 use App\Http\Controllers\Credentials\BlockchainCredentialController;
 use App\Http\Controllers\DashboardController;
+use App\Http\Controllers\EventActivityController;
 use App\Http\Controllers\Membership\CampusMembershipController;
 use App\Http\Controllers\OfficersChatController;
 use App\Http\Middleware\EnsureTemporaryPasswordChanged;
@@ -42,13 +43,7 @@ Route::get('my-credentials', [BlockchainCredentialController::class, 'index'])
 Route::get('credentials/verify/{codeOrHash}', [BlockchainCredentialController::class, 'verify'])
     ->name('credentials.verify');
 
-Route::get('membership', [CampusMembershipController::class, 'index'])->name('membership.index');
 Route::post('membership/apply', [CampusMembershipController::class, 'storeApplication'])->name('membership.apply');
-Route::post('membership/officer-add', [CampusMembershipController::class, 'storeOfficerMember'])->name('membership.officer-add');
-Route::patch('membership/{membership}/approve', [CampusMembershipController::class, 'approve'])->name('membership.approve');
-Route::patch('membership/{membership}/toggle-gc', [CampusMembershipController::class, 'toggleGc'])->name('membership.toggle-gc');
-Route::patch('membership/{membership}/toggle-dues', [CampusMembershipController::class, 'toggleDues'])->name('membership.toggle-dues');
-Route::patch('membership/{membership}/role', [CampusMembershipController::class, 'updateRole'])->name('membership.update-role');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('membership/change-requests', [CampusMembershipController::class, 'storeChangeRequest'])
@@ -58,7 +53,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
 });
 
 Route::post('login/passkey-code', [PasskeyCodeLoginController::class, 'store'])
-    ->middleware('guest')
+    ->middleware(['guest', 'throttle:5,1'])
     ->name('login.passkey-code');
 
 Route::middleware(['auth', 'verified'])->group(function () {
@@ -69,6 +64,21 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::middleware(EnsureTemporaryPasswordChanged::class)->group(function () {
         Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
+        Route::get('events-activities', [EventActivityController::class, 'index'])->name('events.index');
+        Route::post('events-activities', [EventActivityController::class, 'store'])->name('events.store');
+        Route::patch('events-activities/{event}/approve', [EventActivityController::class, 'approve'])->name('events.approve');
+        Route::patch('events-activities/{event}/schedule', [EventActivityController::class, 'updateSchedule'])->name('events.schedule');
+        Route::patch('events-activities/{event}/cancel', [EventActivityController::class, 'cancel'])->name('events.cancel');
+        Route::post('events-activities/{event}/scan', [EventActivityController::class, 'scanQr'])->name('events.scan');
+        Route::post('events-activities/{event}/reflection', [EventActivityController::class, 'storeReflection'])->name('events.reflection');
+        Route::patch('events-activities/notifications/{notification}/read', [EventActivityController::class, 'markNotificationRead'])->name('events.notifications.read');
+        Route::post('events-activities/notifications/read-all', [EventActivityController::class, 'markAllNotificationsRead'])->name('events.notifications.read-all');
+        Route::get('membership', [CampusMembershipController::class, 'index'])->name('membership.index');
+        Route::post('membership/officer-add', [CampusMembershipController::class, 'storeOfficerMember'])->name('membership.officer-add');
+        Route::patch('membership/{membership}/approve', [CampusMembershipController::class, 'approve'])->name('membership.approve');
+        Route::patch('membership/{membership}/toggle-gc', [CampusMembershipController::class, 'toggleGc'])->name('membership.toggle-gc');
+        Route::patch('membership/{membership}/toggle-dues', [CampusMembershipController::class, 'toggleDues'])->name('membership.toggle-dues');
+        Route::patch('membership/{membership}/role', [CampusMembershipController::class, 'updateRole'])->name('membership.update-role');
         Route::get('officers-chat', [OfficersChatController::class, 'index'])->name('officers-chat.index');
         Route::get('campus-hub', [CampusOperationsController::class, 'index'])->name('campus.operations');
         Route::get('community-hub', [CommunityHubController::class, 'index'])->name('community.index');

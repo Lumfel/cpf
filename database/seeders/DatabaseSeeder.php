@@ -705,5 +705,86 @@ class DatabaseSeeder extends Seeder
         }
 
         $this->call(BlockchainCredentialsSeeder::class);
+
+        // 11. Sample CHMSU Alijis Campus Events (Past Completed, Active Today, Future Pending Approval)
+        $completedEvent = \App\Models\CampusEvent::updateOrCreate(
+            [
+                'campus_id' => $alijis->id,
+                'title' => 'CPF Peer Listening & Psychological First Aid Workshop',
+            ],
+            [
+                'description' => 'Foundational peer listening workshop for CHMSU Alijis facilitators. Members can write post-event reflections straight into their encrypted Time Capsule.',
+                'location' => 'CHMSU Alijis Guidance Audio-Visual Room',
+                'event_date' => now()->subDays(2)->format('Y-m-d'),
+                'start_time' => '09:00',
+                'end_time' => '11:30',
+                'status' => 'approved',
+                'created_by_user_id' => $president->id,
+                'approved_by_user_id' => $adviser->id,
+                'approved_at' => now()->subDays(5),
+                'activated_at' => now()->subDays(2)->setTime(9, 0),
+                'completed_at' => now()->subDays(2)->setTime(11, 30),
+            ],
+        );
+
+        $activeEvent = \App\Models\CampusEvent::updateOrCreate(
+            [
+                'campus_id' => $alijis->id,
+                'title' => 'CHMSU Alijis Peer Wellness Drop-In & General Assembly',
+            ],
+            [
+                'description' => 'Live campus activity open all day today for testing Officer QR Scanner Log-In, Log-Out, and the live Member Checklist.',
+                'location' => 'CHMSU Alijis Student Activity Center',
+                'event_date' => now()->format('Y-m-d'),
+                'start_time' => '00:00',
+                'end_time' => '23:59',
+                'status' => 'approved',
+                'created_by_user_id' => $adviser->id,
+                'approved_by_user_id' => $adviser->id,
+                'approved_at' => now()->subDays(2),
+                'activated_at' => now()->startOfDay(),
+                'completed_at' => null,
+            ],
+        );
+
+        \App\Models\CampusEvent::updateOrCreate(
+            [
+                'campus_id' => $alijis->id,
+                'title' => 'Mental Health Awareness Week Kickoff & Booth Planning',
+            ],
+            [
+                'description' => 'Upcoming chapter event proposed by the President. Ready for Club Adviser approval, drag-and-drop rescheduling, or cancellation.',
+                'location' => 'CHMSU Alijis Covered Court',
+                'event_date' => now()->addDays(3)->format('Y-m-d'),
+                'start_time' => '13:00',
+                'end_time' => '16:00',
+                'status' => 'pending_approval',
+                'created_by_user_id' => $president->id,
+                'approved_by_user_id' => null,
+                'approved_at' => null,
+                'activated_at' => null,
+                'completed_at' => null,
+            ],
+        );
+
+        $alijisMemberIds = CampusMembership::query()
+            ->where('campus_id', $alijis->id)
+            ->where('status', MembershipStatus::Approved->value)
+            ->pluck('user_id');
+
+        foreach ($alijisMemberIds as $recipientId) {
+            \App\Models\CampusEventNotification::firstOrCreate(
+                [
+                    'campus_event_id' => $activeEvent->id,
+                    'user_id' => $recipientId,
+                    'type' => 'event_activated',
+                ],
+                [
+                    'campus_id' => $alijis->id,
+                    'title' => "Activity Now Active: {$activeEvent->title}",
+                    'message' => "{$activeEvent->title} is active today ({$activeEvent->start_time}–{$activeEvent->end_time}). Officers can scan Attendance QR codes for Log-In & Log-Out.",
+                ],
+            );
+        }
     }
 }

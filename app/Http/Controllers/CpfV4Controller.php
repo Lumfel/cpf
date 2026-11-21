@@ -296,9 +296,9 @@ class CpfV4Controller extends Controller
         $membership = $user?->primaryMembership;
 
         abort_unless(
-            $user?->verifiedRole() !== null && $membership?->campus_id === $election->campus_id,
+            $user?->isClubAdviser() && $membership?->campus_id === $election->campus_id,
             403,
-            'Only verified members of this campus may close nominations.',
+            'Only the campus Club Adviser can close nominations.',
         );
 
         abort_unless(

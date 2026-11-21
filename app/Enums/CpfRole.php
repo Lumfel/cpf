@@ -90,4 +90,12 @@ enum CpfRole: string
     {
         return $this !== self::Member;
     }
+
+    /**
+     * Adviser, President, and Vice President can propose/schedule campus events.
+     */
+    public function canProposeEvents(): bool
+    {
+        return in_array($this, [self::Adviser, self::President, self::VicePresident], true);
+    }
 }

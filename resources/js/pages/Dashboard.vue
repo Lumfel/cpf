@@ -2,6 +2,8 @@
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import {
     Award,
+    Bell,
+    CalendarDays,
     CheckCircle2,
     ClipboardCheck,
     Copy,
@@ -19,6 +21,8 @@ import {
     Wallet,
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
+import EventCalendarGrid from '@/components/events/EventCalendarGrid.vue';
+import type { CampusEventSummary } from '@/components/events/EventCalendarGrid.vue';
 import { apiRequest } from '@/lib/csrfFetch';
 import { dashboard } from '@/routes';
 import { index as membershipIndex } from '@/routes/membership';
@@ -50,35 +54,57 @@ interface OfficerGcMessage {
     } | null;
 }
 
-const props = defineProps<{
-    qrUnlocked: boolean;
-    memberIdCode: string | null;
-    qrSvg: string | null;
-    dailyQuote: {
-        id: number;
-        quote_text: string;
-        author_name: string;
-        mood_tag: string;
-    };
-    canConfirmDues: boolean;
-    canAuditFinances: boolean;
-    isOfficerOrAdviser: boolean;
-    duesRoster: DuesRosterMember[];
-    officerGcChannel: {
-        id: number;
-    } | null;
-    officerGcMessages: OfficerGcMessage[];
-    myDuesStatus: {
-        has_paid_dues: boolean;
-        dues_confirmed_at: string | null;
-        dues_confirmer_name: string | null;
-    } | null;
-    myPasskey: {
-        enrollment_code: string | null;
-        is_locked: boolean;
-        expires_at: string | null;
-    } | null;
-}>();
+interface EventNotificationItem {
+    id: number;
+    campus_event_id: number;
+    type: string;
+    title: string;
+    message: string;
+    is_unread: boolean;
+    created_at: string | null;
+}
+
+const props = withDefaults(
+    defineProps<{
+        qrUnlocked: boolean;
+        memberIdCode: string | null;
+        qrSvg: string | null;
+        qrPayload?: string | null;
+        dailyQuote: {
+            id: number;
+            quote_text: string;
+            author_name: string;
+            mood_tag: string;
+        };
+        canConfirmDues: boolean;
+        canAuditFinances: boolean;
+        isOfficerOrAdviser: boolean;
+        duesRoster: DuesRosterMember[];
+        campusEvents?: CampusEventSummary[];
+        eventNotifications?: EventNotificationItem[];
+        unreadEventNotificationsCount?: number;
+        officerGcChannel: {
+            id: number;
+        } | null;
+        officerGcMessages: OfficerGcMessage[];
+        myDuesStatus: {
+            has_paid_dues: boolean;
+            dues_confirmed_at: string | null;
+            dues_confirmer_name: string | null;
+        } | null;
+        myPasskey: {
+            enrollment_code: string | null;
+            is_locked: boolean;
+            expires_at: string | null;
+        } | null;
+    }>(),
+    {
+        qrPayload: null,
+        campusEvents: () => [],
+        eventNotifications: () => [],
+        unreadEventNotificationsCount: 0,
+    },
+);
 
 defineOptions({
     layout: {
@@ -97,6 +123,33 @@ const flashStatus = computed(() => page.props.flash?.status);
 
 const duesSearch = ref('');
 const duesFilter = ref<'all' | 'unpaid' | 'paid'>('all');
+
+// Attendance QR Copy & Dashboard Event Calendar State
+const qrPayloadCopied = ref(false);
+const selectedDashboardEvent = ref<CampusEventSummary | null>(props.campusEvents[0] ?? null);
+
+async function copySignedQrPayload() {
+    if (!props.qrPayload || typeof navigator === 'undefined' || !navigator.clipboard) return;
+    await navigator.clipboard.writeText(props.qrPayload);
+    qrPayloadCopied.value = true;
+    setTimeout(() => {
+        qrPayloadCopied.value = false;
+    }, 2000);
+}
+
+async function markDashboardNotificationRead(id: number) {
+    const { ok } = await apiRequest(`/events-activities/notifications/${id}/read`, 'PATCH', {});
+    if (ok) {
+        router.reload({ only: ['eventNotifications', 'unreadEventNotificationsCount'] });
+    }
+}
+
+async function markAllDashboardNotificationsRead() {
+    const { ok } = await apiRequest('/events-activities/notifications/read-all', 'POST', {});
+    if (ok) {
+        router.reload({ only: ['eventNotifications', 'unreadEventNotificationsCount'] });
+    }
+}
 
 // Real-time Personal Locked Passkey Code management
 const livePasskey = ref(props.myPasskey);
@@ -203,6 +256,14 @@ function toggleDuesStatus(member: DuesRosterMember) {
 
                 <div class="flex flex-wrap items-center gap-2.5">
                     <Link
+                        href="/events-activities"
+                        class="inline-flex items-center gap-2 rounded-xl border-[1.5px] border-[#1A8F26] bg-white px-4 py-2.5 text-sm font-semibold text-[#1A8F26] transition-colors duration-200 hover:bg-[#1A8F26] hover:text-white"
+                    >
+                        <CalendarDays class="size-4" />
+                        Events &amp; Activities
+                    </Link>
+
+                    <Link
                         href="/my-credentials"
                         class="inline-flex items-center gap-2 rounded-xl border-[1.5px] border-[#0384C5] bg-white px-4 py-2.5 text-sm font-semibold text-[#0384C5] transition-colors duration-200 hover:bg-[#0384C5] hover:text-white"
                     >
@@ -242,11 +303,21 @@ function toggleDuesStatus(member: DuesRosterMember) {
                     </span>
                 </div>
 
-                <div
-                    v-if="qrUnlocked && qrSvg"
-                    class="cpf-qr-surface my-4 rounded-2xl border border-black/10 bg-white p-3 shadow-sm"
-                    v-html="qrSvg"
-                />
+                <div v-if="qrUnlocked && qrSvg" class="my-4 flex flex-col items-center gap-2">
+                    <div
+                        class="cpf-qr-surface rounded-2xl border border-black/10 bg-white p-3 shadow-sm"
+                        v-html="qrSvg"
+                    />
+                    <button
+                        v-if="qrPayload"
+                        type="button"
+                        @click="copySignedQrPayload"
+                        class="inline-flex items-center gap-1.5 rounded-xl border border-[#0384C5]/30 bg-[#0384C5]/10 px-3 py-1 text-[11px] font-semibold text-[#0384C5] hover:bg-[#0384C5] hover:text-white"
+                    >
+                        <Copy class="size-3" />
+                        {{ qrPayloadCopied ? 'Signed QR Copied ✓' : 'Copy Signed QR Payload' }}
+                    </button>
+                </div>
                 <div
                     v-else
                     class="my-4 flex w-full flex-col items-center gap-2 rounded-2xl border border-amber-400/40 bg-amber-50 p-5 text-xs text-amber-900"
@@ -605,6 +676,112 @@ function toggleDuesStatus(member: DuesRosterMember) {
                 >
                     {{ myDuesStatus.has_paid_dues ? 'Confirmed Paid ✓' : 'Pending Treasurer Confirmation' }}
                 </span>
+            </div>
+        </section>
+
+        <!-- Campus Events Calendar & Notifications (Visible Across Members) -->
+        <section class="grid gap-5 lg:grid-cols-[1.35fr_1fr]">
+            <div class="bento p-5">
+                <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                        <div class="flex items-center gap-2 text-base font-bold text-slate-900">
+                            <CalendarDays class="size-5 text-[#0384C5]" />
+                            Campus Events &amp; Activities Calendar
+                        </div>
+                        <p class="mt-0.5 text-xs text-slate-600">
+                            Click any scheduled activity to preview its time &amp; status, or open Events &amp; Activities for full details, QR attendance, and Time Capsule reflections.
+                        </p>
+                    </div>
+                    <Link
+                        href="/events-activities"
+                        class="rounded-xl border border-[#0384C5]/35 bg-[#0384C5]/10 px-3 py-1.5 text-xs font-bold text-[#0384C5] hover:bg-[#0384C5] hover:text-white"
+                    >
+                        Open Events Space &rarr;
+                    </Link>
+                </div>
+
+                <EventCalendarGrid
+                    :events="campusEvents"
+                    :selected-event-id="selectedDashboardEvent?.id ?? null"
+                    :compact="true"
+                    @select-event="selectedDashboardEvent = $event"
+                />
+
+                <div
+                    v-if="selectedDashboardEvent"
+                    class="mt-3 flex flex-wrap items-center justify-between gap-2 rounded-2xl border border-black/10 bg-[#FBF6EE] px-4 py-3 text-xs"
+                >
+                    <div>
+                        <span class="font-bold text-slate-900">{{ selectedDashboardEvent.title }}</span>
+                        <span class="ml-2 text-slate-600">
+                            {{ selectedDashboardEvent.event_date }} • {{ selectedDashboardEvent.start_time }}–{{ selectedDashboardEvent.end_time }}
+                        </span>
+                        <span v-if="selectedDashboardEvent.location" class="ml-2 text-slate-500">
+                            • {{ selectedDashboardEvent.location }}
+                        </span>
+                    </div>
+                    <span class="rounded-full bg-white px-2.5 py-0.5 text-[11px] font-bold uppercase text-[#0384C5]">
+                        {{ selectedDashboardEvent.effective_status.replace('_', ' ') }}
+                    </span>
+                </div>
+            </div>
+
+            <div class="bento flex flex-col justify-between p-5">
+                <div>
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-black/10 pb-3">
+                        <div class="flex items-center gap-2 text-base font-bold text-slate-900">
+                            <Bell class="size-5 text-[#FF8D06]" />
+                            Event Notifications
+                            <span
+                                v-if="unreadEventNotificationsCount > 0"
+                                class="rounded-full bg-[#FF8D06] px-2 py-0.5 text-[11px] font-bold text-white"
+                            >
+                                {{ unreadEventNotificationsCount }} New
+                            </span>
+                        </div>
+                        <button
+                            v-if="unreadEventNotificationsCount > 0"
+                            type="button"
+                            @click="markAllDashboardNotificationsRead"
+                            class="rounded-xl border border-[#0384C5]/30 bg-[#0384C5]/10 px-2.5 py-1 text-[11px] font-semibold text-[#0384C5]"
+                        >
+                            Mark All Read
+                        </button>
+                    </div>
+
+                    <div v-if="eventNotifications.length === 0" class="py-8 text-center text-xs text-slate-500">
+                        No campus event notifications yet.
+                    </div>
+                    <div v-else class="mt-3 flex max-h-80 flex-col gap-2 overflow-y-auto pr-1">
+                        <div
+                            v-for="notif in eventNotifications"
+                            :key="`dash-notif-${notif.id}`"
+                            class="flex items-start justify-between gap-2 rounded-2xl border p-3 text-xs"
+                            :class="notif.is_unread ? 'border-[#FF8D06]/45 bg-[#FFF8EC]' : 'border-black/10 bg-white'"
+                        >
+                            <div>
+                                <div class="font-bold text-slate-900">{{ notif.title }}</div>
+                                <p class="mt-0.5 text-slate-600">{{ notif.message }}</p>
+                                <div class="mt-1 text-[10px] text-slate-400">{{ notif.created_at }}</div>
+                            </div>
+                            <button
+                                v-if="notif.is_unread"
+                                type="button"
+                                @click="markDashboardNotificationRead(notif.id)"
+                                class="shrink-0 rounded-lg border border-black/15 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700"
+                            >
+                                Read
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <Link
+                    href="/events-activities"
+                    class="mt-4 inline-flex w-full items-center justify-center rounded-xl bg-[#0384C5] px-4 py-2 text-xs font-bold text-white hover:bg-[#026da3]"
+                >
+                    View Attendance Checklist &amp; Reflections
+                </Link>
             </div>
         </section>
     </div>
