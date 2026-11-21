@@ -1,0 +1,170 @@
+@import 'tailwindcss';
+
+@import 'tw-animate-css';
+@import './cpf-soft-cream.css';
+
+@source '../../vendor/laravel/framework/src/Illuminate/Pagination/resources/views/*.blade.php';
+@source '../../storage/framework/views/*.php';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+    --font-sans:
+        'Instrument Sans', ui-sans-serif, system-ui, sans-serif,
+        'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol',
+        'Noto Color Emoji';
+
+    --radius-lg: var(--radius);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-sm: calc(var(--radius) - 4px);
+
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+
+    --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
+
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+
+    --color-chart-1: var(--chart-1);
+    --color-chart-2: var(--chart-2);
+    --color-chart-3: var(--chart-3);
+    --color-chart-4: var(--chart-4);
+    --color-chart-5: var(--chart-5);
+
+    --color-sidebar: var(--sidebar);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-ring: var(--sidebar-ring);
+}
+
+:root {
+    --background: #FBF6EE;
+    --foreground: #0F172A;
+    --card: #FFFFFF;
+    --card-foreground: #0F172A;
+    --popover: #FFFFFF;
+    --popover-foreground: #0F172A;
+    --primary: #0384C5;
+    --primary-foreground: #FFFFFF;
+    --secondary: #F3EBDD;
+    --secondary-foreground: #0F172A;
+    --muted: #F3EBDD;
+    --muted-foreground: #475569;
+    --accent: #EAE0CE;
+    --accent-foreground: #0F172A;
+    --destructive: oklch(0.577 0.245 27.325);
+    --destructive-foreground: oklch(0.577 0.245 27.325);
+    --border: rgba(15, 23, 42, 0.12);
+    --input: rgba(15, 23, 42, 0.15);
+    --ring: #0384C5;
+    --chart-1: #0384C5;
+    --chart-2: #1A8F26;
+    --chart-3: #FF8D06;
+    --chart-4: oklch(0.828 0.189 84.429);
+    --chart-5: oklch(0.769 0.188 70.08);
+    --radius: 0.625rem;
+    --sidebar: #F3EBDD;
+    --sidebar-foreground: #0F172A;
+    --sidebar-primary: #0384C5;
+    --sidebar-primary-foreground: #FFFFFF;
+    --sidebar-accent: #EAE0CE;
+    --sidebar-accent-foreground: #0F172A;
+    --sidebar-border: rgba(15, 23, 42, 0.10);
+    --sidebar-ring: #0384C5;
+}
+
+.dark {
+    --background: #0E141A;
+    --foreground: #EFE9DF;
+    --card: #18212A;
+    --card-foreground: #EFE9DF;
+    --popover: #141C24;
+    --popover-foreground: #EFE9DF;
+    --primary: #56B4E3;
+    --primary-foreground: #0E141A;
+    --secondary: #141C24;
+    --secondary-foreground: #EFE9DF;
+    --muted: #141C24;
+    --muted-foreground: #9EABB8;
+    --accent: #202C38;
+    --accent-foreground: #EFE9DF;
+    --destructive: oklch(0.396 0.141 25.723);
+    --destructive-foreground: oklch(0.637 0.237 25.331);
+    --border: #2B3947;
+    --input: #2E3E4E;
+    --ring: #56B4E3;
+    --chart-1: #56B4E3;
+    --chart-2: #4CC37A;
+    --chart-3: #F4A94A;
+    --chart-4: oklch(0.627 0.265 303.9);
+    --chart-5: oklch(0.645 0.246 16.439);
+    --sidebar: #141C24;
+    --sidebar-foreground: #EFE9DF;
+    --sidebar-primary: #56B4E3;
+    --sidebar-primary-foreground: #0E141A;
+    --sidebar-accent: #1E2935;
+    --sidebar-accent-foreground: #EFE9DF;
+    --sidebar-border: #253240;
+    --sidebar-ring: #56B4E3;
+}
+
+@layer base {
+    * {
+        @apply border-border outline-ring/50;
+    }
+
+    html.dark {
+        color-scheme: dark;
+    }
+
+    body {
+        @apply bg-background text-foreground;
+    }
+}
+
+/* Official CPF Bento & Motion Tokens are defined in cpf-soft-cream.css for unified Light & Dark support */
+
+/* Smooth Spring Motion & Reduced-Motion Support for CPF Vue 3 Prototype */
+.cpf-lift {
+    transition: transform 0.36s cubic-bezier(0.22, 1, 0.36, 1), box-shadow 0.36s cubic-bezier(0.22, 1, 0.36, 1);
+    will-change: transform;
+}
+.cpf-lift:hover {
+    transform: translateY(-3.5px);
+    box-shadow: 0 16px 30px -16px rgba(15, 23, 42, 0.14);
+}
+@keyframes cpfFadeSlide {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+.cpf-enter {
+    animation: cpfFadeSlide 0.36s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+@media (prefers-reduced-motion: reduce) {
+    .cpf-lift, .cpf-enter { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+}
