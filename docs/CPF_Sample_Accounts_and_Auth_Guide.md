@@ -15,9 +15,14 @@ Quick reference for testing the **Circle of Peer Facilitators (CPF)** system loc
    > **Note:** Always use `localhost:8000` (not `127.0.0.1:8000`) so browser WebAuthn Passkeys work. If you accidentally open `127.0.0.1:8000`, Laravel automatically redirects you to `localhost:8000`.
 
 ### Resetting Sample Accounts Anytime
-If you want to reset all 11 seeded accounts back to their original roles, statuses, and `password`:
+If you want to reset all 11 seeded accounts back to their original roles, statuses, and `password`, or switch to the blank first-boot Adviser onboarding flow:
 ```powershell
+# Re-seed demo accounts in place
 php artisan db:seed --force
+
+# Or reset cleanly into Blank First-Boot ("Enter as Club Adviser") vs Demo environments
+php artisan cpf:reset-blank
+php artisan cpf:reset-demo
 ```
 
 ---
@@ -31,9 +36,9 @@ php artisan db:seed --force
 
 | # | Role (CPF Constitution) | Name | Email | Course / Year / Section | Governance Access & Key Responsibilities |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1 | **Club Adviser** (Guidance Counselor) | Montemayor, Elena V. | `adviser@cpf.chmsu.edu.ph` | Guidance Services / Adviser | Top authority (zero Admin role; account deletion disabled): approve/add members, assign all officer roles, confirm GC & Dues, issue Passkey Codes, triage encrypted referrals, manage elections & ZIP archives, **Officers Private GC** |
-| 2 | **President** | Mercado, Sofia R. | `president@cpf.chmsu.edu.ph` | BS Psychology • Yr 4 • Sec A | Approve/add members, co-sign **Dues Checklist**, confirm Messenger GC, issue Passkey Codes, review Testing Room requests, **Officers Private GC** |
-| 3 | **Vice President** | Bautista, Miguel A. | `vice_president@cpf.chmsu.edu.ph` | BSIT • Yr 4 • Sec B | Assumes President duties in absence; approve/add members, co-sign **Dues Checklist**, confirm Messenger GC, issue Passkey Codes, **Officers Private GC** |
+| 1 | **Club Adviser** (Guidance Counselor) | Montemayor, Elena V. | `adviser@cpf.chmsu.edu.ph` | Guidance Services / Adviser | Top authority (zero Admin role; account deletion disabled): approve/add members, assign student officer roles (Counselor-only handover via **Adviser Handover**), confirm GC & Dues, issue Passkey Codes, triage encrypted referrals, manage events & ZIP archives, preside & break ties in elections, **Officers Private GC** |
+| 2 | **President** | Mercado, Sofia R. | `president@cpf.chmsu.edu.ph` | BS Psychology • Yr 4 • Sec A | Approve/add members, co-sign **Dues Checklist**, propose events, confirm Messenger GC, issue Passkey Codes, review Testing Room requests, **Officers Private GC** |
+| 3 | **Vice President** | Bautista, Miguel A. | `vice_president@cpf.chmsu.edu.ph` | BSIT • Yr 4 • Sec B | Assumes President duties in absence; approve/add members, co-sign **Dues Checklist**, propose events, confirm Messenger GC, issue Passkey Codes, **Officers Private GC** |
 | 4 | **Secretary** | Alvarez, Hannah G. | `secretary@cpf.chmsu.edu.ph` | BSIS • Yr 3 • Sec A | Maintain records/minutes; view pending queue, confirm Messenger GC, issue Passkey Codes, **Officers Private GC** |
 | 5 | **Treasurer** | Delgado, Liam C. | `treasurer@cpf.chmsu.edu.ph` | BSIT • Yr 3 • Sec B | Custody of funds & liquidation; confirm A–Z **Membership Dues Checklist** on `/dashboard` & `/membership`, **Officers Private GC** |
 | 6 | **Auditor** | Castillo, Marco D. | `auditor@cpf.chmsu.edu.ph` | BSA • Yr 4 • Sec A | Audit incoming/outgoing funds and Treasurer reports; **read-only Audit View** of Campus Dues Checklist on `/dashboard`, **Officers Private GC** |
@@ -43,7 +48,7 @@ php artisan db:seed --force
 | 10 | **Verified Member** | Reyes, Katrina M. | `katrina@cpf.chmsu.edu.ph` | BSIT • Yr 4 • Sec A | Approved peer facilitator (`is_in_messenger_gc = false`, `has_paid_dues = false`), Attendance QR ID, personal Passkey Code, seeded Blockchain Credentials |
 | 11 | **Pending Applicant** | Tibo-oc, Paul Felippe G. | `paulfelippegtibooc@gmail.com` | BSIT • Yr 4 • Sec A | `status = pending` — appears in the Pending Membership Applications queue on `/membership` for Adviser/President/VP confirmation |
 
-> **Zero Admin & Data Safety:** Per Constitution governance, there is no generic Admin role, and **self-serve or Adviser account deletion is permanently disabled** (`DELETE /settings/profile` returns `403`) so student governance records stay intact.
+> **Zero Admin & Data Safety:** Per Constitution governance, there is no generic Admin role, direct student/officer promotion to `adviser` is blocked (Adviser authority transfers strictly to incoming Guidance Counselors via `/membership` -> **Adviser Handover**), directly added/approved users automatically receive verified email timestamps (`email_verified_at`), and **account deletion is permanently disabled** (`DELETE /settings/profile` returns `403`).
 
 ---
 
@@ -111,11 +116,14 @@ php artisan db:seed --force
 | Public Landing & Apply Modal | `http://localhost:8000/` |
 | Login (Email, 12-Box Passkey Code, Device Passkey) | `http://localhost:8000/login` |
 | Direct Account Registration | `http://localhost:8000/register` |
-| Peer Dashboard (Attendance QR, Officers Private GC, Passkey Code, Dues Checklist) | `http://localhost:8000/dashboard` |
-| Membership, Pending Approvals & A–Z GC Checklist | `http://localhost:8000/membership` |
-| Campus Operations (Testing Room, Referrals, Full Officers GC & Adviser ZIP Archive) | `http://localhost:8000/campus-hub` |
-| Community Hub (Elections, Time Capsules, Archives) | `http://localhost:8000/community-hub` |
-| My Blockchain Achievements, Certificates & Awards | `http://localhost:8000/my-credentials` |
+| Peer Dashboard (Attendance QR, Officers Private GC, Passkey Code, Events & Dues) | `http://localhost:8000/dashboard` |
+| Events & Activities (Calendar, Officer QR Log-In/Log-Out Scanner, Checklist & Reflections) | `http://localhost:8000/events-activities` |
+| Officers Chat (Dedicated Messenger-Style Officers & Counselors GC) | `http://localhost:8000/officers-chat` |
+| Membership, Pending Approvals, Change Requests, Adviser Handover & A–Z GC Checklist | `http://localhost:8000/membership` |
+| Campus Operations (Testing Room, Referrals, Officers GC & ZIP Archive) | `http://localhost:8000/campus-hub` |
+| Community Hub (Dynamic General Assembly Elections, Time Capsules, Archives) | `http://localhost:8000/community-hub` |
+| Policy & By-Laws (CHMSU Alijis CPF Constitution & By-Laws) | `http://localhost:8000/policy-and-bylaws` |
+| My Blockchain Achievements, Certificates & Awards *(public verification only when signed out)* | `http://localhost:8000/my-credentials` |
 | Public Blockchain Verification (Sample Code) | `http://localhost:8000/credentials/verify/CPF-ACH-2026-KTRN0001` |
 | Account Security (Password, 2FA, Device Passkeys) | `http://localhost:8000/settings/security` |
 | Isolated Prototype Sandbox | `http://localhost:8000/prototype` |

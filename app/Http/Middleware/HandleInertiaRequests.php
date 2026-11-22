@@ -2,6 +2,9 @@
 
 namespace App\Http\Middleware;
 
+use App\Http\Controllers\FirstBootSetupController;
+use App\Models\AdviserHandover;
+use App\Models\Campus;
 use App\Models\CampusMembership;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
@@ -38,10 +41,89 @@ class HandleInertiaRequests extends Middleware
     {
         $user = $request->user();
         $membership = $user?->primaryMembership()->with('campus:id,code,name,slug')->first();
+        $needsAdviserSetup = FirstBootSetupController::needsAdviserSetup();
+
+        $systemBootstrap = [
+            'needsAdviserSetup' => $needsAdviserSetup,
+            'activeCampus' => null,
+            'campuses' => [],
+        ];
+
+        if ($needsAdviserSetup) {
+            try {
+                $campuses = Campus::query()
+                    ->orderByDesc('is_active')
+                    ->orderBy('id')
+                    ->get(['id', 'code', 'name', 'current_academic_year', 'is_active']);
+
+                $activeCampus = $campuses->firstWhere('is_active', true) ?? $campuses->first();
+
+                $systemBootstrap['activeCampus'] = $activeCampus;
+                $systemBootstrap['campuses'] = $campuses->values();
+            } catch (\Throwable) {
+                // Ignore if campuses table is not migrated yet
+            }
+        }
+
+        $pendingAdviserHandover = [
+            'incoming' => null,
+            'outgoing' => null,
+        ];
+
+        if ($user) {
+            try {
+                $incoming = AdviserHandover::query()
+                    ->with(['campus:id,code,name', 'fromUser:id,name'])
+                    ->where('to_user_id', $user->id)
+                    ->where('status', 'pending')
+                    ->where('expires_at', '>', now())
+                    ->latest('id')
+                    ->first();
+
+                if ($incoming) {
+                    $pendingAdviserHandover['incoming'] = [
+                        'id' => $incoming->id,
+                        'campus_name' => $incoming->campus?->name ?? 'CPF Campus',
+                        'from_name' => $incoming->fromUser?->name ?? 'Current Club Adviser',
+                        'handover_notes' => $incoming->handover_notes,
+                        'initiated_at' => $incoming->initiated_at?->toDayDateTimeString(),
+                        'expires_at' => $incoming->expires_at?->toDayDateTimeString(),
+                    ];
+                }
+
+                if ($user->isClubAdviser()) {
+                    $outgoing = AdviserHandover::query()
+                        ->with(['campus:id,code,name', 'toUser:id,name,email', 'toMembership:id,full_name_last_first_mi,course_year_section'])
+                        ->where('from_user_id', $user->id)
+                        ->where('status', 'pending')
+                        ->where('expires_at', '>', now())
+                        ->latest('id')
+                        ->first();
+
+                    if ($outgoing) {
+                        $pendingAdviserHandover['outgoing'] = [
+                            'id' => $outgoing->id,
+                            'campus_name' => $outgoing->campus?->name ?? 'CPF Campus',
+                            'to_name' => $outgoing->toMembership?->full_name_last_first_mi ?? $outgoing->toUser?->name ?? 'Successor',
+                            'to_email' => $outgoing->toUser?->email ?? '',
+                            'to_course_year_section' => $outgoing->toMembership?->course_year_section ?? '',
+                            'confirmation_code' => $outgoing->confirmation_code,
+                            'handover_notes' => $outgoing->handover_notes,
+                            'initiated_at' => $outgoing->initiated_at?->toDayDateTimeString(),
+                            'expires_at' => $outgoing->expires_at?->toDayDateTimeString(),
+                        ];
+                    }
+                }
+            } catch (\Throwable) {
+                // Ignore if adviser_handovers migration has not run yet
+            }
+        }
 
         return [
             ...parent::share($request),
             'name' => config('app.name'),
+            'systemBootstrap' => $systemBootstrap,
+            'pendingAdviserHandover' => $pendingAdviserHandover,
             'auth' => [
                 'user' => $user,
                 'membership' => $membership,

@@ -5,6 +5,7 @@ import { ref, watch } from 'vue';
 import InputError from '@/components/InputError.vue';
 import PasskeyVerify from '@/components/PasskeyVerify.vue';
 import PasswordInput from '@/components/PasswordInput.vue';
+import FirstBootAdviserModal from '@/components/system/FirstBootAdviserModal.vue';
 import TextLink from '@/components/TextLink.vue';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -249,4 +250,6 @@ function submitPasskeyCode() {
             Sign in with Passkey Code
         </Button>
     </form>
+
+    <FirstBootAdviserModal />
 </template>

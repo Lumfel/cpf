@@ -2,11 +2,12 @@
 
 namespace App\Http\Controllers\Credentials;
 
+use App\Enums\MembershipStatus;
 use App\Http\Controllers\Controller;
+use App\Models\CampusMembership;
 use App\Models\DigitalCertificate;
 use App\Models\MemberAchievement;
 use App\Models\MemberAward;
-use App\Models\User;
 use App\Services\Blockchain\BlockchainCredentialService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -24,9 +25,7 @@ class BlockchainCredentialController extends Controller
      */
     public function index(Request $request): Response
     {
-        $user = $request->user()
-            ?? User::query()->where('email', 'katrina@cpf.chmsu.edu.ph')->first()
-            ?? User::query()->first();
+        $user = $request->user();
 
         $achievements = $user
             ? MemberAchievement::query()
@@ -102,6 +101,8 @@ class BlockchainCredentialController extends Controller
             'description' => ['nullable', 'string', 'max:1000'],
         ]);
 
+        $this->authorizeCampusCredentialIssuance($request, (int) $validated['campus_id'], (int) $validated['user_id']);
+
         $code = $this->blockchain->generateCode('CPF-ACH');
 
         $achievement = MemberAchievement::create([
@@ -146,6 +147,8 @@ class BlockchainCredentialController extends Controller
             'issued_on' => ['required', 'date'],
             'file_hdd_path' => ['nullable', 'string', 'max:255'],
         ]);
+
+        $this->authorizeCampusCredentialIssuance($request, (int) $validated['campus_id'], (int) $validated['user_id']);
 
         $code = $this->blockchain->generateCode('CPF-CERT');
 
@@ -192,6 +195,8 @@ class BlockchainCredentialController extends Controller
             'citation' => ['nullable', 'string', 'max:2000'],
         ]);
 
+        $this->authorizeCampusCredentialIssuance($request, (int) $validated['campus_id'], (int) $validated['user_id']);
+
         $code = $this->blockchain->generateCode('CPF-AWD');
 
         $award = MemberAward::create([
@@ -230,5 +235,27 @@ class BlockchainCredentialController extends Controller
         abort_unless($role && $role->isOfficerOrAdviser(), 403, 'Only verified officers or the Club Adviser can audit the ledger.');
 
         return response()->json($this->blockchain->verifyChainIntegrity());
+    }
+
+    private function authorizeCampusCredentialIssuance(Request $request, int $campusId, int $targetUserId): void
+    {
+        $membership = $request->user()?->primaryMembership;
+        abort_unless(
+            $membership !== null && $campusId === $membership->campus_id,
+            403,
+            'You can only issue credentials for your assigned campus.',
+        );
+
+        $recipientApproved = CampusMembership::query()
+            ->where('campus_id', $membership->campus_id)
+            ->where('user_id', $targetUserId)
+            ->where('status', MembershipStatus::Approved->value)
+            ->exists();
+
+        abort_unless(
+            $recipientApproved,
+            422,
+            'Credential recipient must be an approved member of your campus.',
+        );
     }
 }

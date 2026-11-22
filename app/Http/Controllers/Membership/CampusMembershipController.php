@@ -29,7 +29,7 @@ class CampusMembershipController extends Controller
 {
     private function resolveActor(Request $request): ?User
     {
-        return $request->user() ?? User::query()->first();
+        return $request->user();
     }
 
     public function index(Request $request): Response
@@ -100,12 +100,15 @@ class CampusMembershipController extends Controller
             'approvedMembersAZ' => $approvedMembersAZ,
             'myChangeRequests' => $myChangeRequests,
             'pendingChangeRequests' => $pendingChangeRequests,
-            'availableRoles' => collect(CpfRole::cases())->map(fn (CpfRole $r) => [
-                'value' => $r->value,
-                'label' => $r->label(),
-                'canApproveMembers' => $r->canApproveMembers(),
-                'canIssuePasskeys' => $r->canIssuePasskeys(),
-            ]),
+            'availableRoles' => collect(CpfRole::cases())
+                ->filter(fn (CpfRole $r) => $r !== CpfRole::Adviser)
+                ->map(fn (CpfRole $r) => [
+                    'value' => $r->value,
+                    'label' => $r->label(),
+                    'canApproveMembers' => $r->canApproveMembers(),
+                    'canIssuePasskeys' => $r->canIssuePasskeys(),
+                ])
+                ->values(),
         ]);
     }
 
@@ -139,16 +142,21 @@ class CampusMembershipController extends Controller
                 ]);
             }
 
-            $actor = $existing ?? User::create([
-                'name' => CampusMembership::formatLastFirstMi(
-                    (string) $validated['first_name'],
-                    $validated['middle_name'] ?? null,
-                    (string) $validated['last_name'],
-                ),
-                'email' => $email,
-                'password' => Hash::make(Str::password(16)),
-                'email_verified_at' => now(),
-            ]);
+            if ($existing) {
+                $actor = $existing;
+            } else {
+                $actor = new User([
+                    'name' => CampusMembership::formatLastFirstMi(
+                        (string) $validated['first_name'],
+                        $validated['middle_name'] ?? null,
+                        (string) $validated['last_name'],
+                    ),
+                    'email' => $email,
+                    'password' => Hash::make(Str::password(16)),
+                ]);
+                $actor->email_verified_at = now();
+                $actor->save();
+            }
         }
 
         $action->handle($actor, $validated);
@@ -240,6 +248,27 @@ class CampusMembershipController extends Controller
         $validated = $request->validate(['role' => ['required', Rule::enum(CpfRole::class)]]);
         $newRole = CpfRole::from($validated['role']);
         Gate::forUser($actor)->authorize('assignRole', [$membership, $newRole]);
+
+        abort_if(
+            $newRole === CpfRole::Adviser && $membership->role !== CpfRole::Adviser,
+            422,
+            'Club Adviser authority can only be transferred to an incoming Guidance Counselor via the Adviser Handover tab.',
+        );
+
+        if ($membership->role === CpfRole::Adviser && $newRole !== CpfRole::Adviser) {
+            $adviserCount = CampusMembership::query()
+                ->where('campus_id', $membership->campus_id)
+                ->where('status', MembershipStatus::Approved->value)
+                ->where('role', CpfRole::Adviser->value)
+                ->count();
+
+            abort_if(
+                $adviserCount <= 1,
+                422,
+                'Cannot demote the sole Club Adviser for this campus. Use the Adviser Role Handover process to safely transfer authority to a successor.',
+            );
+        }
+
         $action->updateRole($membership, $newRole);
 
         return to_route('membership.index')->with('status', "Updated role to {$newRole->label()}.");

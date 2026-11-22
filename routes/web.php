@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\AdviserHandoverController;
 use App\Http\Controllers\Auth\ForcePasswordChangeController;
 use App\Http\Controllers\Auth\PasskeyCodeLoginController;
 use App\Http\Controllers\CampusOperationsController;
@@ -9,6 +10,7 @@ use App\Http\Controllers\CpfV4Controller;
 use App\Http\Controllers\Credentials\BlockchainCredentialController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EventActivityController;
+use App\Http\Controllers\FirstBootSetupController;
 use App\Http\Controllers\Membership\CampusMembershipController;
 use App\Http\Controllers\OfficersChatController;
 use App\Http\Middleware\EnsureTemporaryPasswordChanged;
@@ -52,6 +54,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         ->name('membership.change-requests.review');
 });
 
+Route::post('first-boot/setup-adviser', [FirstBootSetupController::class, 'store'])
+    ->middleware(['guest', 'throttle:10,1'])
+    ->name('first-boot.setup-adviser');
+
 Route::post('login/passkey-code', [PasskeyCodeLoginController::class, 'store'])
     ->middleware(['guest', 'throttle:5,1'])
     ->name('login.passkey-code');
@@ -64,6 +70,11 @@ Route::middleware(['auth', 'verified'])->group(function () {
 
     Route::middleware(EnsureTemporaryPasswordChanged::class)->group(function () {
         Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
+        Route::get('policy-and-bylaws', fn () => Inertia::render('PolicyAndBylaws'))
+            ->name('policy-and-bylaws');
+        Route::post('adviser-handover', [AdviserHandoverController::class, 'store'])->name('adviser-handover.store');
+        Route::post('adviser-handover/{handover}/respond', [AdviserHandoverController::class, 'respond'])->name('adviser-handover.respond');
+        Route::delete('adviser-handover/{handover}', [AdviserHandoverController::class, 'cancel'])->name('adviser-handover.cancel');
         Route::get('events-activities', [EventActivityController::class, 'index'])->name('events.index');
         Route::post('events-activities', [EventActivityController::class, 'store'])->name('events.store');
         Route::patch('events-activities/{event}/approve', [EventActivityController::class, 'approve'])->name('events.approve');

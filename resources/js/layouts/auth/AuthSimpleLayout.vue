@@ -61,7 +61,7 @@ function toggleTheme() {
                             class="cpf-logo-badge size-16 overflow-hidden rounded-full border-2 border-[#0384C5]/35 bg-white p-0.5 shadow-sm transition duration-300 group-hover:scale-105 dark:border-[#56B4E3]/45"
                         >
                             <img
-                                src="/cpf_logo.jpg"
+                                src="/cpf_logo.png"
                                 alt="Circle of Peer Facilitators Emblem"
                                 class="size-full rounded-full object-cover"
                             />

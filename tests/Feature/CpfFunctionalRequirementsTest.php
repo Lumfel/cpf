@@ -1223,6 +1223,19 @@ class CpfFunctionalRequirementsTest extends TestCase
             ->assertOk();
         $this->assertSame('accepted', $candB->fresh()->nomination_status);
 
+        // Pre-nominate Member A for Vice President before President is finalized to verify automatic revocation upon election
+        $this->actingAs($adviser)
+            ->postJson("/elections/{$election->id}/candidates", [
+                'user_id' => $memberA->id,
+                'position' => 'vice_president',
+            ])
+            ->assertCreated();
+
+        $preCandVpA = ElectionCandidate::where('election_id', $election->id)
+            ->where('user_id', $memberA->id)
+            ->where('position', 'vice_president')
+            ->firstOrFail();
+
         // Only the campus Club Adviser can close nominations (regular members receive 403)
         $this->actingAs($memberC)
             ->postJson("/elections/{$election->id}/close-nominations")
@@ -1235,6 +1248,28 @@ class CpfFunctionalRequirementsTest extends TestCase
 
         $election->refresh();
         $this->assertSame('voting', $election->current_phase);
+
+        // Late nomination response after nominations closed is rejected with 422
+        $latePending = ElectionCandidate::create([
+            'election_id' => $election->id,
+            'user_id' => $memberC->id,
+            'position' => 'president',
+            'nominated_by_user_id' => $memberA->id,
+            'nomination_status' => 'pending',
+        ]);
+        $this->actingAs($memberC)
+            ->patchJson("/elections/{$election->id}/candidates/{$latePending->id}/respond", ['decision' => 'accepted'])
+            ->assertStatus(422);
+
+        // Club Adviser presides and cannot cast floor votes
+        $this->actingAs($adviser)
+            ->postJson("/elections/{$election->id}/vote", ['candidate_id' => $candA->id, 'position' => 'president'])
+            ->assertForbidden();
+
+        // Voting for a non-current position is rejected with 422
+        $this->actingAs($memberC)
+            ->postJson("/elections/{$election->id}/vote", ['candidate_id' => $preCandVpA->id, 'position' => 'vice_president'])
+            ->assertStatus(422);
 
         // Tie vote (1 each) -> finalizing opens automatic tie-breaker runoff round 2
         $this->actingAs($memberA)
@@ -1272,6 +1307,26 @@ class CpfFunctionalRequirementsTest extends TestCase
         $this->assertSame('nomination', $election->current_phase);
         $this->assertSame($memberA->id, $election->position_results['president']['winner_user_id'] ?? null);
 
+        // Elected President's pre-existing nomination for Vice President was automatically revoked
+        $this->assertSame('declined', $preCandVpA->fresh()->nomination_status);
+
+        // Elected President cannot self-nominate or be nominated for Vice President
+        $this->actingAs($memberA)
+            ->postJson("/elections/{$election->id}/nominate", ['nominee_user_id' => $memberA->id])
+            ->assertStatus(422)
+            ->assertJsonPath(
+                'message',
+                'You have already been elected to an officer position in this election and cannot self-nominate for another seat.',
+            );
+
+        $this->actingAs($memberC)
+            ->postJson("/elections/{$election->id}/nominate", ['nominee_user_id' => $memberA->id])
+            ->assertStatus(422)
+            ->assertJsonPath(
+                'message',
+                'This member has already been elected to an officer position in this election.',
+            );
+
         // Strict year-level guard blocks Year 2 member from 4th Year Representative, allows Year 4 member
         $election->update([
             'current_position' => 'fourth_year_rep',
@@ -1301,5 +1356,76 @@ class CpfFunctionalRequirementsTest extends TestCase
         $election->refresh();
         $this->assertSame('skipped', $election->position_results['third_year_rep']['status'] ?? null);
         $this->assertSame('fourth_year_rep', $election->current_position);
+
+        // Skipping final optional seat marks election completed/closed and blocks reopening
+        $this->actingAs($adviser)
+            ->postJson("/elections/{$election->id}/skip-position")
+            ->assertOk();
+
+        $election->refresh();
+        $this->assertSame('completed', $election->current_phase);
+        $this->assertSame('closed', $election->status);
+
+        $this->actingAs($adviser)
+            ->patchJson("/elections/{$election->id}/status", ['status' => 'open'])
+            ->assertStatus(422);
+    }
+
+    public function test_governance_hardening_email_verification_adviser_promotion_guard_and_guest_credentials_privacy(): void
+    {
+        $adviser = $this->createMember($this->talisay, CpfRole::Adviser, 'Montemayor, Elena V.');
+        $member = $this->createMember($this->talisay, CpfRole::Member, 'Reyes, Katrina M.');
+        $memberMembership = $member->primaryMembership;
+
+        // 1. Officer direct-add rejects assigning 'adviser' role and stamps email_verified_at cleanly
+        $this->actingAs($adviser)
+            ->from('/membership')
+            ->post('/membership/officer-add', [
+                'role' => 'adviser',
+                'first_name' => 'Unauthorized',
+                'last_name' => 'AdviserAttempt',
+                'course' => 'BSIT',
+                'year_level' => '4',
+                'section' => 'A',
+                'sex' => 'Female',
+                'birthdate' => '2004-01-10',
+                'active_email' => 'unauth.adviser.attempt@chmsu.edu.ph',
+                'facebook_profile_url' => 'https://www.facebook.com/unauth.attempt',
+                'cellphone_number' => '0917-111-2222',
+            ])
+            ->assertSessionHasErrors('role');
+
+        $this->actingAs($adviser)
+            ->post('/membership/officer-add', [
+                'role' => 'secretary',
+                'first_name' => 'Bianca',
+                'middle_name' => 'F.',
+                'last_name' => 'Navarro',
+                'course' => 'BSIS',
+                'year_level' => '3',
+                'section' => 'A',
+                'sex' => 'Female',
+                'birthdate' => '2005-02-14',
+                'active_email' => 'bianca.verified.test@chmsu.edu.ph',
+                'facebook_profile_url' => 'https://www.facebook.com/bianca.navarro.cpf',
+                'cellphone_number' => '0917-333-4444',
+            ])
+            ->assertRedirect('/membership');
+
+        $addedUser = User::query()->where('email', 'bianca.verified.test@chmsu.edu.ph')->firstOrFail();
+        $this->assertNotNull($addedUser->email_verified_at);
+
+        // 2. Updating a student member's role to 'adviser' directly is blocked (422)
+        $this->actingAs($adviser)
+            ->patchJson("/membership/{$memberMembership->id}/role", ['role' => 'adviser'])
+            ->assertStatus(422);
+
+        // 3. Guest /my-credentials never exposes another user's private info
+        auth()->logout();
+        $this->get('/my-credentials')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('credentials/Index')
+                ->where('owner', null));
     }
 }

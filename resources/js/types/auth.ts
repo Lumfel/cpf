@@ -15,6 +15,7 @@ export type CampusSummary = {
     code: string;
     name: string;
     slug: string;
+    current_academic_year?: string | null;
     adviser_name?: string | null;
     gc_group_name?: string | null;
 };
@@ -82,6 +83,40 @@ export type AuthPermissions = {
     proposeEvents?: boolean;
     isOfficerOrAdviser?: boolean;
     isClubAdviser: boolean;
+};
+
+export type SystemBootstrapState = {
+    needsAdviserSetup: boolean;
+    activeCampus: CampusSummary | null;
+    campuses: Array<{
+        id: number;
+        code: string;
+        name: string;
+        current_academic_year: string | null;
+        is_active: boolean;
+    }>;
+};
+
+export type PendingAdviserHandoverState = {
+    incoming: {
+        id: number;
+        campus_name: string;
+        from_name: string;
+        handover_notes: string | null;
+        initiated_at: string | null;
+        expires_at: string | null;
+    } | null;
+    outgoing: {
+        id: number;
+        campus_name: string;
+        to_name: string;
+        to_email: string;
+        to_course_year_section: string;
+        confirmation_code: string;
+        handover_notes: string | null;
+        initiated_at: string | null;
+        expires_at: string | null;
+    } | null;
 };
 
 export type PasskeyIssuedNotice = {

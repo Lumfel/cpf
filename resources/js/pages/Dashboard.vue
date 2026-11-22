@@ -23,6 +23,7 @@ import {
 import { computed, ref } from 'vue';
 import EventCalendarGrid from '@/components/events/EventCalendarGrid.vue';
 import type { CampusEventSummary } from '@/components/events/EventCalendarGrid.vue';
+import AdviserHandoverPanel from '@/components/membership/AdviserHandoverPanel.vue';
 import { apiRequest } from '@/lib/csrfFetch';
 import { dashboard } from '@/routes';
 import { index as membershipIndex } from '@/routes/membership';
@@ -288,6 +289,11 @@ function toggleDuesStatus(member: DuesRosterMember) {
         >
             {{ flashStatus }}
         </div>
+
+        <AdviserHandoverPanel
+            :is-club-adviser="Boolean(auth.can?.isClubAdviser)"
+            :show-initiate-form="false"
+        />
 
         <!-- QR-First Attendance Digital ID + Verified Profile + Daily Calming Quote -->
         <div class="grid gap-5 lg:grid-cols-3">

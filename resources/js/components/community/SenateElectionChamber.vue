@@ -6,11 +6,13 @@ import {
     Gavel,
     Lock,
     RotateCcw,
+    Search,
     ShieldCheck,
     SkipForward,
     Sparkles,
     UserCheck,
     UserPlus,
+    Users,
     Vote,
     XCircle,
 } from '@lucide/vue';
@@ -94,26 +96,162 @@ const notice = ref<string | null>(null);
 const errorText = ref<string | null>(null);
 const tieBreakWinnerId = ref<number | ''>('');
 
+const chamberSearch = ref('');
+const chamberFilter = ref<'all' | 'candidates' | 'eligible'>('all');
+
 const activePositionMeta = computed(
     () => props.positionOrder.find((p) => p.key === props.election.current_position) ?? null,
 );
 
 // Exclude Club Adviser from the curved member benches since Adviser presides at the Center Podium
-const senateMemberSeats = computed(() =>
+const assemblyMemberSeats = computed(() =>
     props.campusMembers.filter((m) => m.role !== 'adviser'),
 );
 
-// Split into 2 curved semicircular tiers like US Senate floor benches (Inner Tier + Outer Tier)
-const innerTierSeats = computed(() => {
-    const seats = senateMemberSeats.value;
-    const innerCount = Math.min(Math.ceil(seats.length / 2), 8);
-    return seats.slice(0, innerCount);
+const filteredSeats = computed(() => {
+    const q = chamberSearch.value.trim().toLowerCase();
+
+    return assemblyMemberSeats.value.filter((seat) => {
+        if (chamberFilter.value === 'candidates') {
+            const cand = candidateByUserIdForActive.value[seat.user_id];
+            if (!cand || (cand.nomination_status !== 'accepted' && cand.nomination_status !== 'pending')) {
+                return false;
+            }
+        } else if (chamberFilter.value === 'eligible') {
+            if (!canNominateSeat(seat)) {
+                return false;
+            }
+        }
+
+        if (!q) return true;
+        return (
+            seat.full_name_last_first_mi.toLowerCase().includes(q) ||
+            seat.course_year_section.toLowerCase().includes(q) ||
+            seat.role.toLowerCase().includes(q)
+        );
+    });
 });
 
-const outerTierSeats = computed(() => {
-    const seats = senateMemberSeats.value;
-    const innerCount = Math.min(Math.ceil(seats.length / 2), 8);
-    return seats.slice(innerCount);
+type FloorLayoutMode = 'empty' | 'intimate' | 'chapter' | 'assembly' | 'grand';
+
+const floorLayoutMode = computed<FloorLayoutMode>(() => {
+    const n = filteredSeats.value.length;
+    if (n === 0) return 'empty';
+    if (n <= 10) return 'intimate';
+    if (n <= 30) return 'chapter';
+    if (n <= 60) return 'assembly';
+    return 'grand';
+});
+
+const floorLayoutLabel = computed(() => {
+    switch (floorLayoutMode.value) {
+        case 'empty':
+            return 'Awaiting Members';
+        case 'intimate':
+            return 'Compact Circle (1–10)';
+        case 'chapter':
+            return 'Chapter Assembly (11–30)';
+        case 'assembly':
+            return 'General Floor (31–60)';
+        case 'grand':
+            return 'Grand Assembly (61–120+)';
+    }
+});
+
+interface DynamicSeatRow {
+    rowNumber: number;
+    maxWidthPercent: number;
+    seats: Array<{
+        seatNumber: number;
+        seat: SenateMemberSeat;
+    }>;
+}
+
+const dynamicRowsReversed = computed<DynamicSeatRow[]>(() => {
+    const seats = filteredSeats.value;
+    const n = seats.length;
+    if (n === 0) return [];
+
+    let rowCount = 1;
+    if (n <= 5) rowCount = 1;
+    else if (n <= 10) rowCount = 2;
+    else if (n <= 20) rowCount = 3;
+    else if (n <= 32) rowCount = 4;
+    else if (n <= 48) rowCount = 5;
+    else rowCount = Math.max(6, Math.ceil(n / 10.5));
+
+    const weights: number[] = [];
+    for (let r = 0; r < rowCount; r += 1) {
+        const t = rowCount === 1 ? 0.5 : r / (rowCount - 1);
+        weights.push(0.72 + t * 0.56);
+    }
+
+    const totalWeight = weights.reduce((sum, w) => sum + w, 0);
+    const rawCounts = weights.map((w) => (n * w) / totalWeight);
+    const counts = rawCounts.map((val) => Math.floor(val));
+    const remainder = n - counts.reduce((sum, c) => sum + c, 0);
+
+    const remainders = rawCounts
+        .map((val, idx) => ({ idx, frac: val - counts[idx] }))
+        .sort((a, b) => b.frac - a.frac);
+
+    for (let i = 0; i < remainder; i += 1) {
+        counts[remainders[i % remainders.length].idx] += 1;
+    }
+
+    // Taper from narrower inner row (closest to Adviser) to wider back arc
+    counts.sort((a, b) => a - b);
+
+    const rows: DynamicSeatRow[] = [];
+    let cursor = 0;
+
+    for (let r = 0; r < counts.length; r += 1) {
+        const count = counts[r];
+        if (count <= 0) continue;
+
+        const progress = counts.length === 1 ? 1 : r / (counts.length - 1);
+        const maxWidthPercent = Math.round(74 + progress * 26);
+
+        const rowSeats = seats.slice(cursor, cursor + count).map((seat, idx) => ({
+            seatNumber: cursor + idx + 1,
+            seat,
+        }));
+
+        rows.push({
+            rowNumber: r + 1,
+            maxWidthPercent,
+            seats: rowSeats,
+        });
+        cursor += count;
+    }
+
+    return rows.reverse();
+});
+
+const seatCardLayoutClass = computed(() => {
+    switch (floorLayoutMode.value) {
+        case 'intimate':
+            return 'w-44 p-3 text-xs';
+        case 'chapter':
+            return 'w-36 p-2.5 text-[11px]';
+        case 'assembly':
+            return 'w-32 p-2 text-[11px]';
+        default:
+            return 'w-[116px] p-2 text-[10px]';
+    }
+});
+
+const seatArcLiftMaxPx = computed(() => {
+    switch (floorLayoutMode.value) {
+        case 'intimate':
+            return 22;
+        case 'chapter':
+            return 16;
+        case 'assembly':
+            return 12;
+        default:
+            return 8;
+    }
 });
 
 function getArcLiftStyle(index: number, total: number, maxLiftPx = 28): Record<string, string> {
@@ -131,12 +269,15 @@ const electedPositionByUserId = computed<Record<number, string>>(() => {
     const results = props.election.position_results ?? {};
     for (const pos of props.positionOrder) {
         const res = results[pos.key];
-        if (res && res.status === 'elected' && res.winner_user_id) {
-            map[res.winner_user_id] = pos.label;
+        const winnerId = Number(res?.winner_user_id ?? 0);
+        if (res && res.status === 'elected' && winnerId > 0) {
+            map[winnerId] = pos.label;
         }
     }
     return map;
 });
+
+const isMyUserAlreadyElected = computed(() => isAlreadyElected(props.myUserId));
 
 const activePositionCandidates = computed(() => {
     if (!props.election.current_position) return [];
@@ -285,7 +426,7 @@ function castVoteFor(cand: SenateCandidate) {
     );
 }
 
-function finalizePosition(tieResolution?: 'runoff' | 'adviser_tiebreak' | 'draw_lots') {
+async function finalizePosition(tieResolution?: 'runoff' | 'adviser_tiebreak' | 'draw_lots') {
     const body: Record<string, unknown> = {};
     if (tieResolution) {
         body.tie_resolution = tieResolution;
@@ -298,12 +439,16 @@ function finalizePosition(tieResolution?: 'runoff' | 'adviser_tiebreak' | 'draw_
         body.winner_candidate_id = tieBreakWinnerId.value;
     }
 
-    void runAction(
+    await runAction(
         `/elections/${props.election.id}/finalize-position`,
         'POST',
         body,
         'Position tally processed!',
     );
+
+    if (!errorText.value) {
+        tieBreakWinnerId.value = '';
+    }
 }
 
 async function toggleOpenStatus() {
@@ -348,7 +493,7 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
             <div>
                 <div class="flex flex-wrap items-center gap-2">
                     <span class="rounded-full bg-[#0384C5]/10 px-3 py-1 text-xs font-bold text-[#0384C5]">
-                        {{ election.academic_year }} • Sequential Senate Floor
+                        {{ election.academic_year }} • General Assembly Election Floor
                     </span>
                     <span
                         class="rounded-full px-3 py-1 text-xs font-bold uppercase"
@@ -380,7 +525,7 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                 </p>
             </div>
 
-            <div v-if="isClubAdviser" class="flex flex-wrap items-center gap-2">
+            <div v-if="isClubAdviser && election.current_phase !== 'completed'" class="flex flex-wrap items-center gap-2">
                 <button
                     type="button"
                     :disabled="busy"
@@ -408,7 +553,7 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
 
         <!-- Opted-Out Self-Reversal Bar -->
         <div
-            v-if="isMyUserOptedOut && isVerifiedMember && election.status === 'open'"
+            v-if="isMyUserOptedOut && !isMyUserAlreadyElected && isVerifiedMember && election.status === 'open' && election.current_phase !== 'completed'"
             class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-400/50 bg-amber-50 p-4 text-xs text-amber-950"
         >
             <div>
@@ -424,6 +569,17 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                 <RotateCcw class="size-3.5" />
                 Change Mind — Allow Nominations Again
             </button>
+        </div>
+
+        <!-- Already-Elected Lock Banner -->
+        <div
+            v-if="isMyUserAlreadyElected && election.status === 'open' && election.current_phase !== 'completed'"
+            class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#1A8F26]/35 bg-[#1A8F26]/10 p-4 text-xs text-slate-900"
+        >
+            <div>
+                You have been elected as <strong>{{ electedPositionByUserId[myUserId] }}</strong>.
+                Self-nomination and further nominations are locked for your seat, while you can still nominate eligible peers and vote for remaining positions.
+            </div>
         </div>
 
         <!-- Pending Personal Nomination Action Alert -->
@@ -457,243 +613,202 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
             </div>
         </div>
 
-        <!-- 2-COLUMN US SENATE CHAMBER FLOOR + RIGHT OFFICIAL BILLBOARD -->
+        <!-- 2-COLUMN GENERAL ASSEMBLY FLOOR + RIGHT OFFICIAL BILLBOARD -->
         <div class="mt-5 grid gap-6 xl:grid-cols-[1fr_340px]">
-            <!-- LEFT: US SENATE HEMICYCLE CHAMBER -->
-            <div class="flex flex-col justify-between gap-6 rounded-3xl border border-black/10 bg-[#FBF6EE] p-5 md:p-6">
-                <!-- Curved Outer & Inner Member Seat Tiers -->
-                <div class="space-y-6 pt-4">
-                    <div class="text-center text-[11px] font-bold tracking-widest text-slate-400 uppercase">
-                        US Senate Chamber Floor • Member Benches (No Photos • Academic Info Only)
+            <!-- LEFT: DYNAMIC ADAPTIVE GENERAL ASSEMBLY FLOOR (1 TO 120+ MEMBERS, EXCLUDING ADVISER) -->
+            <div class="flex min-w-0 flex-col justify-between gap-6 rounded-3xl border border-black/10 bg-[#FBF6EE] p-5 md:p-6">
+                <!-- Member Count, Dynamic Scale Mode, Search & Filter Controls -->
+                <div class="flex flex-wrap items-center justify-between gap-2.5 border-b border-black/10 pb-3.5 text-xs">
+                    <div class="flex flex-wrap items-center gap-2">
+                        <span class="inline-flex items-center gap-1.5 rounded-full bg-[#0384C5]/10 px-3 py-1 font-bold text-[#0384C5]">
+                            <Users class="size-3.5" />
+                            {{ assemblyMemberSeats.length }} Seated Member(s) (Excludes Adviser)
+                        </span>
+                        <span class="rounded-full bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-black/10">
+                            {{ floorLayoutLabel }}
+                        </span>
                     </div>
 
-                    <!-- Outer Semicircular Bench (if > 8 members) -->
-                    <div
-                        v-if="outerTierSeats.length > 0"
-                        class="flex flex-wrap items-end justify-center gap-2.5 pt-2"
-                    >
-                        <div
-                            v-for="(seat, idx) in outerTierSeats"
-                            :key="`outer-${seat.user_id}`"
-                            :style="getArcLiftStyle(idx, outerTierSeats.length, 22)"
-                            class="flex w-44 flex-col justify-between rounded-2xl border p-3 text-xs shadow-2xs transition"
-                            :class="
-                                candidateByUserIdForActive[seat.user_id]?.nomination_status === 'accepted'
-                                    ? 'border-[#1A8F26] bg-white ring-1 ring-[#1A8F26]/30'
-                                    : candidateByUserIdForActive[seat.user_id]?.nomination_status === 'pending'
-                                      ? 'border-amber-400 bg-amber-50/70'
-                                      : isOptedOut(seat.user_id) || isYearBlocked(seat) || isAlreadyElected(seat.user_id)
-                                        ? 'border-black/10 bg-slate-100/80 opacity-65'
-                                        : 'border-black/15 bg-white'
-                            "
-                        >
-                            <div>
-                                <div class="font-bold text-slate-900 leading-snug">{{ seat.full_name_last_first_mi }}</div>
-                                <div class="mt-0.5 text-[11px] font-medium text-[#0384C5]">
-                                    {{ seat.course_year_section }}
-                                </div>
+                    <div class="flex flex-wrap items-center gap-2">
+                        <div class="relative">
+                            <Search class="pointer-events-none absolute top-2 left-2.5 size-3.5 text-slate-400" />
+                            <input
+                                v-model="chamberSearch"
+                                type="text"
+                                placeholder="Find name, course, year..."
+                                class="w-44 rounded-xl border border-black/15 bg-white py-1.5 pr-2.5 pl-8 text-xs text-slate-900 focus:border-[#0384C5] focus:outline-none"
+                            />
+                        </div>
 
-                                <div class="mt-2 flex flex-wrap gap-1">
-                                    <span
-                                        v-if="isAlreadyElected(seat.user_id)"
-                                        class="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-900"
-                                    >
-                                        Elected: {{ electedPositionByUserId[seat.user_id] }}
-                                    </span>
-                                    <span
-                                        v-else-if="isOptedOut(seat.user_id)"
-                                        class="inline-flex items-center gap-0.5 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700"
-                                    >
-                                        <Lock class="size-2.5" /> Declined
-                                    </span>
-                                    <span
-                                        v-else-if="isYearBlocked(seat)"
-                                        class="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-600"
-                                    >
-                                        Yr {{ activePositionMeta?.required_year }} Only
-                                    </span>
-                                    <span
-                                        v-else-if="candidateByUserIdForActive[seat.user_id]?.nomination_status === 'pending'"
-                                        class="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-800"
-                                    >
-                                        Pending Accept
-                                    </span>
-                                    <span
-                                        v-else-if="candidateByUserIdForActive[seat.user_id]?.nomination_status === 'accepted'"
-                                        class="rounded-full bg-[#1A8F26]/15 px-2 py-0.5 text-[10px] font-bold text-[#1A8F26]"
-                                    >
-                                        Candidate • {{ candidateByUserIdForActive[seat.user_id].votes }} vote(s)
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div class="mt-2.5 flex flex-wrap gap-1.5">
-                                <button
-                                    v-if="canNominateSeat(seat)"
-                                    type="button"
-                                    :disabled="busy"
-                                    @click="nominateMember(seat)"
-                                    class="inline-flex w-full items-center justify-center gap-1 rounded-lg border border-[#0384C5]/35 bg-[#0384C5]/10 px-2 py-1 text-[11px] font-bold text-[#0384C5] hover:bg-[#0384C5] hover:text-white"
-                                >
-                                    <UserPlus class="size-3" />
-                                    {{ seat.user_id === myUserId ? 'Self-Nominate' : 'Nominate' }}
-                                </button>
-
-                                <template
-                                    v-else-if="
-                                        seat.user_id === myUserId &&
-                                        candidateByUserIdForActive[seat.user_id]?.nomination_status === 'pending' &&
-                                        election.current_phase === 'nomination'
-                                    "
-                                >
-                                    <button
-                                        type="button"
-                                        :disabled="busy"
-                                        @click="respondNomination(candidateByUserIdForActive[seat.user_id].id, 'accepted')"
-                                        class="flex-1 rounded-lg bg-[#1A8F26] px-2 py-1 text-[11px] font-bold text-white"
-                                    >
-                                        Accept
-                                    </button>
-                                    <button
-                                        type="button"
-                                        :disabled="busy"
-                                        @click="respondNomination(candidateByUserIdForActive[seat.user_id].id, 'declined')"
-                                        class="flex-1 rounded-lg border border-red-300 bg-white px-2 py-1 text-[11px] font-bold text-red-700"
-                                    >
-                                        Decline
-                                    </button>
-                                </template>
-
-                                <template v-else-if="isActiveVotingContender(candidateByUserIdForActive[seat.user_id]) && isVerifiedMember">
-                                    <span
-                                        v-if="election.my_votes[election.current_position ?? ''] === candidateByUserIdForActive[seat.user_id].id"
-                                        class="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-[#1A8F26]/15 px-2 py-1 text-[11px] font-bold text-[#1A8F26]"
-                                    >
-                                        <CheckCircle2 class="size-3" /> Your Vote ✓
-                                    </span>
-                                    <button
-                                        v-else-if="!election.my_votes[election.current_position ?? '']"
-                                        type="button"
-                                        :disabled="busy"
-                                        @click="castVoteFor(candidateByUserIdForActive[seat.user_id])"
-                                        class="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-[#FF8D06] px-2 py-1 text-[11px] font-bold text-white hover:bg-[#e57d00]"
-                                    >
-                                        <Vote class="size-3" /> Cast Vote
-                                    </button>
-                                </template>
-                            </div>
+                        <div class="flex rounded-xl border border-black/15 bg-white p-0.5 text-[11px] font-semibold">
+                            <button
+                                type="button"
+                                @click="chamberFilter = 'all'"
+                                class="rounded-lg px-2.5 py-1 transition"
+                                :class="chamberFilter === 'all' ? 'bg-[#0384C5] text-white' : 'text-slate-600'"
+                            >
+                                All
+                            </button>
+                            <button
+                                type="button"
+                                @click="chamberFilter = 'candidates'"
+                                class="rounded-lg px-2.5 py-1 transition"
+                                :class="chamberFilter === 'candidates' ? 'bg-[#1A8F26] text-white' : 'text-slate-600'"
+                            >
+                                Candidates
+                            </button>
+                            <button
+                                type="button"
+                                @click="chamberFilter = 'eligible'"
+                                class="rounded-lg px-2.5 py-1 transition"
+                                :class="chamberFilter === 'eligible' ? 'bg-[#FF8D06] text-white' : 'text-slate-600'"
+                            >
+                                Eligible
+                            </button>
                         </div>
                     </div>
+                </div>
 
-                    <!-- Inner Semicircular Bench (Closest to Adviser Podium) -->
-                    <div class="flex flex-wrap items-end justify-center gap-2.5 pt-3">
+                <!-- Dynamic Curved Amphitheater Rows (Only Actual Members; Zero Empty Placeholders, Zero Horizontal Scrollbars) -->
+                <div
+                    class="flex flex-col items-center gap-3 pt-4"
+                    :class="floorLayoutMode === 'grand' ? 'max-h-[680px] overflow-y-auto pr-1' : ''"
+                >
+                    <div
+                        v-if="dynamicRowsReversed.length === 0"
+                        class="w-full rounded-2xl border border-black/10 bg-white/80 p-6 text-center text-xs text-slate-500"
+                    >
+                        {{
+                            assemblyMemberSeats.length === 0
+                                ? 'No verified campus members seated yet (excluding Club Adviser). Approve members in Membership & GC Checklist to populate the floor.'
+                                : 'No member seats match your search or filter.'
+                        }}
+                    </div>
+
+                    <div
+                        v-for="row in dynamicRowsReversed"
+                        :key="`dyn-row-${row.rowNumber}`"
+                        :style="{ maxWidth: `${row.maxWidthPercent}%` }"
+                        class="flex w-full flex-wrap items-end justify-center pt-3"
+                        :class="
+                            floorLayoutMode === 'intimate'
+                                ? 'gap-2.5'
+                                : floorLayoutMode === 'chapter'
+                                  ? 'gap-2'
+                                  : 'gap-1.5'
+                        "
+                    >
                         <div
-                            v-for="(seat, idx) in innerTierSeats"
-                            :key="`inner-${seat.user_id}`"
-                            :style="getArcLiftStyle(idx, innerTierSeats.length, 26)"
-                            class="flex w-44 flex-col justify-between rounded-2xl border p-3 text-xs shadow-2xs transition"
-                            :class="
-                                candidateByUserIdForActive[seat.user_id]?.nomination_status === 'accepted'
+                            v-for="(item, sIdx) in row.seats"
+                            :key="`seat-${item.seat.user_id}`"
+                            :style="getArcLiftStyle(sIdx, row.seats.length, seatArcLiftMaxPx)"
+                            :title="`${item.seat.full_name_last_first_mi} • ${item.seat.course_year_section}`"
+                            class="flex flex-col justify-between rounded-2xl border shadow-2xs transition"
+                            :class="[
+                                seatCardLayoutClass,
+                                candidateByUserIdForActive[item.seat.user_id]?.nomination_status === 'accepted'
                                     ? 'border-[#1A8F26] bg-white ring-1 ring-[#1A8F26]/30'
-                                    : candidateByUserIdForActive[seat.user_id]?.nomination_status === 'pending'
+                                    : candidateByUserIdForActive[item.seat.user_id]?.nomination_status === 'pending'
                                       ? 'border-amber-400 bg-amber-50/70'
-                                      : isOptedOut(seat.user_id) || isYearBlocked(seat) || isAlreadyElected(seat.user_id)
+                                      : isOptedOut(item.seat.user_id) || isYearBlocked(item.seat) || isAlreadyElected(item.seat.user_id)
                                         ? 'border-black/10 bg-slate-100/80 opacity-65'
-                                        : 'border-black/15 bg-white'
-                            "
+                                        : 'border-black/15 bg-white',
+                            ]"
                         >
                             <div>
-                                <div class="font-bold text-slate-900 leading-snug">{{ seat.full_name_last_first_mi }}</div>
-                                <div class="mt-0.5 text-[11px] font-medium text-[#0384C5]">
-                                    {{ seat.course_year_section }}
+                                <div class="truncate leading-snug font-bold text-slate-900">
+                                    {{ item.seat.full_name_last_first_mi }}
+                                </div>
+                                <div class="mt-0.5 truncate text-[10px] font-medium text-[#0384C5]">
+                                    {{ item.seat.course_year_section }}
                                 </div>
 
-                                <div class="mt-2 flex flex-wrap gap-1">
+                                <div class="mt-1.5 flex flex-wrap gap-1">
                                     <span
-                                        v-if="isAlreadyElected(seat.user_id)"
-                                        class="rounded-full bg-amber-500/20 px-2 py-0.5 text-[10px] font-bold text-amber-900"
+                                        v-if="isAlreadyElected(item.seat.user_id)"
+                                        class="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold text-amber-900"
                                     >
-                                        Elected: {{ electedPositionByUserId[seat.user_id] }}
+                                        Elected: {{ electedPositionByUserId[item.seat.user_id] }}
                                     </span>
                                     <span
-                                        v-else-if="isOptedOut(seat.user_id)"
-                                        class="inline-flex items-center gap-0.5 rounded-full bg-red-100 px-2 py-0.5 text-[10px] font-bold text-red-700"
+                                        v-else-if="isOptedOut(item.seat.user_id)"
+                                        class="inline-flex items-center gap-0.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-bold text-red-700"
                                     >
                                         <Lock class="size-2.5" /> Declined
                                     </span>
                                     <span
-                                        v-else-if="isYearBlocked(seat)"
-                                        class="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-600"
+                                        v-else-if="isYearBlocked(item.seat)"
+                                        class="rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] font-bold text-slate-600"
                                     >
                                         Yr {{ activePositionMeta?.required_year }} Only
                                     </span>
                                     <span
-                                        v-else-if="candidateByUserIdForActive[seat.user_id]?.nomination_status === 'pending'"
-                                        class="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-bold text-amber-800"
+                                        v-else-if="candidateByUserIdForActive[item.seat.user_id]?.nomination_status === 'pending'"
+                                        class="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold text-amber-800"
                                     >
                                         Pending Accept
                                     </span>
                                     <span
-                                        v-else-if="candidateByUserIdForActive[seat.user_id]?.nomination_status === 'accepted'"
-                                        class="rounded-full bg-[#1A8F26]/15 px-2 py-0.5 text-[10px] font-bold text-[#1A8F26]"
+                                        v-else-if="candidateByUserIdForActive[item.seat.user_id]?.nomination_status === 'accepted'"
+                                        class="rounded-full bg-[#1A8F26]/15 px-1.5 py-0.5 text-[9px] font-bold text-[#1A8F26]"
                                     >
-                                        Candidate • {{ candidateByUserIdForActive[seat.user_id].votes }} vote(s)
+                                        {{ candidateByUserIdForActive[item.seat.user_id].votes }} vote(s)
                                     </span>
                                 </div>
                             </div>
 
-                            <div class="mt-2.5 flex flex-wrap gap-1.5">
+                            <div class="mt-2 flex flex-wrap gap-1">
                                 <button
-                                    v-if="canNominateSeat(seat)"
+                                    v-if="canNominateSeat(item.seat)"
                                     type="button"
                                     :disabled="busy"
-                                    @click="nominateMember(seat)"
-                                    class="inline-flex w-full items-center justify-center gap-1 rounded-lg border border-[#0384C5]/35 bg-[#0384C5]/10 px-2 py-1 text-[11px] font-bold text-[#0384C5] hover:bg-[#0384C5] hover:text-white"
+                                    @click="nominateMember(item.seat)"
+                                    class="inline-flex w-full items-center justify-center gap-1 rounded-lg border border-[#0384C5]/35 bg-[#0384C5]/10 px-1.5 py-1 text-[10px] font-bold text-[#0384C5] hover:bg-[#0384C5] hover:text-white"
                                 >
-                                    <UserPlus class="size-3" />
-                                    {{ seat.user_id === myUserId ? 'Self-Nominate' : 'Nominate' }}
+                                    <UserPlus class="size-3 shrink-0" />
+                                    <span class="truncate">{{ item.seat.user_id === myUserId ? 'Self-Nominate' : 'Nominate' }}</span>
                                 </button>
 
                                 <template
                                     v-else-if="
-                                        seat.user_id === myUserId &&
-                                        candidateByUserIdForActive[seat.user_id]?.nomination_status === 'pending' &&
+                                        item.seat.user_id === myUserId &&
+                                        candidateByUserIdForActive[item.seat.user_id]?.nomination_status === 'pending' &&
                                         election.current_phase === 'nomination'
                                     "
                                 >
                                     <button
                                         type="button"
                                         :disabled="busy"
-                                        @click="respondNomination(candidateByUserIdForActive[seat.user_id].id, 'accepted')"
-                                        class="flex-1 rounded-lg bg-[#1A8F26] px-2 py-1 text-[11px] font-bold text-white"
+                                        @click="respondNomination(candidateByUserIdForActive[item.seat.user_id].id, 'accepted')"
+                                        class="flex-1 rounded-lg bg-[#1A8F26] px-1.5 py-1 text-[10px] font-bold text-white"
                                     >
                                         Accept
                                     </button>
                                     <button
                                         type="button"
                                         :disabled="busy"
-                                        @click="respondNomination(candidateByUserIdForActive[seat.user_id].id, 'declined')"
-                                        class="flex-1 rounded-lg border border-red-300 bg-white px-2 py-1 text-[11px] font-bold text-red-700"
+                                        @click="respondNomination(candidateByUserIdForActive[item.seat.user_id].id, 'declined')"
+                                        class="flex-1 rounded-lg border border-red-300 bg-white px-1.5 py-1 text-[10px] font-bold text-red-700"
                                     >
                                         Decline
                                     </button>
                                 </template>
 
-                                <template v-else-if="isActiveVotingContender(candidateByUserIdForActive[seat.user_id]) && isVerifiedMember">
+                                <template v-else-if="isActiveVotingContender(candidateByUserIdForActive[item.seat.user_id]) && isVerifiedMember && !isClubAdviser">
                                     <span
-                                        v-if="election.my_votes[election.current_position ?? ''] === candidateByUserIdForActive[seat.user_id].id"
-                                        class="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-[#1A8F26]/15 px-2 py-1 text-[11px] font-bold text-[#1A8F26]"
+                                        v-if="election.my_votes[election.current_position ?? ''] === candidateByUserIdForActive[item.seat.user_id].id"
+                                        class="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-[#1A8F26]/15 px-1.5 py-1 text-[10px] font-bold text-[#1A8F26]"
                                     >
-                                        <CheckCircle2 class="size-3" /> Your Vote ✓
+                                        <CheckCircle2 class="size-3 shrink-0" /> Your Vote ✓
                                     </span>
                                     <button
                                         v-else-if="!election.my_votes[election.current_position ?? '']"
                                         type="button"
                                         :disabled="busy"
-                                        @click="castVoteFor(candidateByUserIdForActive[seat.user_id])"
-                                        class="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-[#FF8D06] px-2 py-1 text-[11px] font-bold text-white hover:bg-[#e57d00]"
+                                        @click="castVoteFor(candidateByUserIdForActive[item.seat.user_id])"
+                                        class="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-[#FF8D06] px-1.5 py-1 text-[10px] font-bold text-white hover:bg-[#e57d00]"
                                     >
-                                        <Vote class="size-3" /> Cast Vote
+                                        <Vote class="size-3 shrink-0" /> Cast Vote
                                     </button>
                                 </template>
                             </div>
@@ -720,7 +835,7 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                         <!-- Nomination Phase Controls -->
                         <template v-if="election.current_phase === 'nomination'">
                             <button
-                                v-if="acceptedForActive.length >= 2 && isVerifiedMember"
+                                v-if="acceptedForActive.length >= 2 && isClubAdviser"
                                 type="button"
                                 :disabled="busy"
                                 @click="closeNominations"
@@ -747,8 +862,10 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                             >
                                 {{
                                     acceptedForActive.length === 0
-                                        ? 'Nominate candidates on the Senate benches above (at least 2 accepted for any member to close nominations).'
-                                        : '1 accepted candidate — need 1 more candidate or Adviser to close unopposed.'
+                                        ? 'Nominate candidates on the Assembly seats above (Club Adviser closes nominations when ready).'
+                                        : acceptedForActive.length === 1
+                                          ? '1 accepted candidate — waiting for additional nominees or Club Adviser to close unopposed.'
+                                          : `${acceptedForActive.length} accepted candidates — waiting for Club Adviser to close nominations and open voting.`
                                 }}
                             </span>
 

@@ -10,40 +10,66 @@ export type UseAppearanceReturn = {
     updateAppearance: (value: Appearance) => void;
 };
 
-let themeTransitionTimer: number | null = null;
+type DocumentWithViewTransition = Document & {
+    startViewTransition?: (updateCallback: () => void) => {
+        finished: Promise<void>;
+    };
+};
 
-function playSkyTransition(targetIsDark: boolean): void {
+let themeTransitionTimer: number | null = null;
+let activeTransitionId = 0;
+
+function applyThemeTransition(nextIsDark: boolean): void {
     if (typeof window === 'undefined' || typeof document === 'undefined') {
         return;
     }
 
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+    const root = document.documentElement;
+    const prefersReducedMotion = window.matchMedia(
+        '(prefers-reduced-motion: reduce)',
+    ).matches;
+
+    if (prefersReducedMotion) {
+        root.classList.toggle('dark', nextIsDark);
         return;
     }
 
-    const root = document.documentElement;
+    const doc = document as DocumentWithViewTransition;
+
+    if (typeof doc.startViewTransition === 'function') {
+        const transitionId = ++activeTransitionId;
+        root.classList.add('cpf-theme-switching');
+
+        try {
+            const transition = doc.startViewTransition(() => {
+                root.classList.toggle('dark', nextIsDark);
+            });
+
+            void transition.finished.finally(() => {
+                if (transitionId === activeTransitionId) {
+                    root.classList.remove('cpf-theme-switching');
+                }
+            });
+
+            return;
+        } catch {
+            if (transitionId === activeTransitionId) {
+                root.classList.remove('cpf-theme-switching');
+            }
+        }
+    }
+
     if (themeTransitionTimer !== null) {
         window.clearTimeout(themeTransitionTimer);
     }
 
-    root.classList.add('cpf-theme-transitioning');
-
-    const existingVeil = document.getElementById('cpf-sky-veil');
-    if (existingVeil) {
-        existingVeil.remove();
-    }
-
-    const veil = document.createElement('div');
-    veil.id = 'cpf-sky-veil';
-    veil.setAttribute('aria-hidden', 'true');
-    veil.className = targetIsDark ? 'cpf-sky-veil cpf-sky-sunset' : 'cpf-sky-veil cpf-sky-sunrise';
-    document.body.appendChild(veil);
+    root.classList.add('cpf-theme-fallback-transition');
+    root.classList.toggle('dark', nextIsDark);
 
     themeTransitionTimer = window.setTimeout(() => {
-        root.classList.remove('cpf-theme-transitioning');
-        veil.remove();
+        root.classList.remove('cpf-theme-fallback-transition');
         themeTransitionTimer = null;
-    }, 1050);
+    }, 240);
 }
 
 export function updateTheme(value: Appearance, animate = false): void {
@@ -64,7 +90,8 @@ export function updateTheme(value: Appearance, animate = false): void {
     }
 
     if (animate && currentlyDark !== nextIsDark) {
-        playSkyTransition(nextIsDark);
+        applyThemeTransition(nextIsDark);
+        return;
     }
 
     document.documentElement.classList.toggle('dark', nextIsDark);
@@ -104,7 +131,11 @@ const prefersDark = (): boolean => {
     return window.matchMedia('(prefers-color-scheme: dark)').matches;
 };
 
+const appearance = ref<Appearance>('system');
+const systemPrefersDark = ref<boolean>(prefersDark());
+
 const handleSystemThemeChange = () => {
+    systemPrefersDark.value = prefersDark();
     const currentAppearance = getStoredAppearance();
 
     updateTheme(currentAppearance || 'system');
@@ -115,18 +146,20 @@ export function initializeTheme(): void {
         return;
     }
 
+    systemPrefersDark.value = prefersDark();
+
     // Initialize theme from saved preference or default to system...
     const savedAppearance = getStoredAppearance();
-    updateTheme(savedAppearance || 'system');
+    appearance.value = savedAppearance || 'system';
+    updateTheme(appearance.value);
 
     // Set up system theme change listener...
     mediaQuery()?.addEventListener('change', handleSystemThemeChange);
 }
 
-const appearance = ref<Appearance>('system');
-
 export function useAppearance(): UseAppearanceReturn {
     onMounted(() => {
+        systemPrefersDark.value = prefersDark();
         const savedAppearance = localStorage.getItem(
             'appearance',
         ) as Appearance | null;
@@ -138,7 +171,7 @@ export function useAppearance(): UseAppearanceReturn {
 
     const resolvedAppearance = computed<ResolvedAppearance>(() => {
         if (appearance.value === 'system') {
-            return prefersDark() ? 'dark' : 'light';
+            return systemPrefersDark.value ? 'dark' : 'light';
         }
 
         return appearance.value;

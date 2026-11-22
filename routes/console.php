@@ -39,5 +39,40 @@ Artisan::command('cpf:sync-campus-events', function () {
     $this->info("Synchronized lifecycle status for {$events->count()} approved campus event(s).");
 })->purpose('Automatically activate scheduled CPF events and notify members when windows open or finish');
 
+Artisan::command('cpf:reset-blank', function () {
+    if (app()->isProduction()) {
+        $this->error('Refusing to reset database in production.');
+
+        return 1;
+    }
+
+    $this->call('migrate:fresh', [
+        '--seed' => true,
+        '--seeder' => \Database\Seeders\BlankSystemSeeder::class,
+        '--force' => true,
+    ]);
+
+    $this->info('Database reset to BLANK FIRST-BOOT state. Open / or /login in your browser to enter as the first Club Adviser.');
+
+    return 0;
+})->purpose('Wipe database and seed clean blank campuses for first-boot Adviser setup');
+
+Artisan::command('cpf:reset-demo', function () {
+    if (app()->isProduction()) {
+        $this->error('Refusing to reset database in production.');
+
+        return 1;
+    }
+
+    $this->call('migrate:fresh', [
+        '--seed' => true,
+        '--force' => true,
+    ]);
+
+    $this->info('Database reset to full DEMO seeded environment.');
+
+    return 0;
+})->purpose('Wipe database and re-seed sample CHMSU demo data');
+
 Schedule::command('cpf:unlock-time-capsules')->daily();
 Schedule::command('cpf:sync-campus-events')->everyMinute();

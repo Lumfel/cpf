@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Link, usePage } from '@inertiajs/vue3';
 import {
     SidebarGroup,
     SidebarGroupContent,
@@ -15,6 +16,17 @@ type Props = {
 };
 
 defineProps<Props>();
+
+const page = usePage();
+
+function isInternalRoute(href: NavItem['href']): boolean {
+    return toUrl(href).startsWith('/');
+}
+
+function isCurrentUrl(href: NavItem['href']): boolean {
+    const target = toUrl(href);
+    return page.url === target || page.url.startsWith(`${target}?`);
+}
 </script>
 
 <template>
@@ -39,6 +51,17 @@ defineProps<Props>();
                         >
                             {{ item.badge }}
                         </span>
+                    </SidebarMenuButton>
+                    <SidebarMenuButton
+                        v-else-if="isInternalRoute(item.href)"
+                        :is-active="isCurrentUrl(item.href)"
+                        :tooltip="item.title"
+                        as-child
+                    >
+                        <Link :href="item.href">
+                            <component :is="item.icon" />
+                            <span>{{ item.title }}</span>
+                        </Link>
                     </SidebarMenuButton>
                     <SidebarMenuButton
                         v-else

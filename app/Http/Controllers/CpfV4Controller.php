@@ -33,6 +33,15 @@ class CpfV4Controller extends Controller
             'description' => ['nullable', 'string', 'max:1000'],
         ]);
 
+        $membership = $request->user()?->primaryMembership;
+        if ($membership !== null) {
+            abort_unless(
+                (int) $validated['campus_id'] === $membership->campus_id,
+                403,
+                'Records must belong to your assigned campus chapter.',
+            );
+        }
+
         $item = MemberAchievement::create([...$validated, 'user_id' => $request->user()->id]);
 
         return response()->json(['status' => 'created', 'achievement' => $item], 201);
@@ -46,6 +55,15 @@ class CpfV4Controller extends Controller
             'message' => ['required', 'string', 'max:4000'],
             'unlock_at' => ['required', 'date', 'after:now'],
         ]);
+
+        $membership = $request->user()?->primaryMembership;
+        if ($membership !== null) {
+            abort_unless(
+                (int) $validated['campus_id'] === $membership->campus_id,
+                403,
+                'Records must belong to your assigned campus chapter.',
+            );
+        }
 
         $capsule = TimeCapsule::create([
             'campus_id' => $validated['campus_id'],
@@ -138,6 +156,18 @@ class CpfV4Controller extends Controller
             'platform' => ['nullable', 'string', 'max:1000'],
         ]);
 
+        abort_if(
+            $election->status === 'closed' || $election->current_phase === 'completed',
+            422,
+            'Cannot add candidates to a closed or completed election.',
+        );
+
+        abort_if(
+            isset(($election->position_results ?? [])[$validated['position']]),
+            422,
+            'This position has already been finalized or skipped.',
+        );
+
         $member = $this->validateNomineeEligibility($election, (int) $validated['user_id'], $validated['position']);
 
         $candidate = ElectionCandidate::updateOrCreate(
@@ -182,7 +212,7 @@ class CpfV4Controller extends Controller
         $position = (string) $election->current_position;
         $nomineeUserId = (int) $validated['nominee_user_id'];
 
-        $this->validateNomineeEligibility($election, $nomineeUserId, $position);
+        $this->validateNomineeEligibility($election, $nomineeUserId, $position, $user->id);
 
         $existing = ElectionCandidate::query()
             ->where('election_id', $election->id)
@@ -226,21 +256,26 @@ class CpfV4Controller extends Controller
             'You can only respond to your own campus election nomination.',
         );
 
+        abort_unless(
+            $election->status === 'open'
+                && $election->current_phase === 'nomination'
+                && $candidate->position === $election->current_position,
+            422,
+            'Nominations are not currently open for this position.',
+        );
+
+        abort_unless(
+            $candidate->nomination_status === 'pending',
+            422,
+            'This nomination has already been responded to.',
+        );
+
         $validated = $request->validate([
             'decision' => ['required', Rule::in(['accepted', 'declined'])],
         ]);
 
         if ($validated['decision'] === 'accepted') {
-            $optedOut = ElectionOptOut::query()
-                ->where('election_id', $election->id)
-                ->where('user_id', $user->id)
-                ->exists();
-
-            abort_if(
-                $optedOut,
-                422,
-                'You opted out of nominations. Re-enable your eligibility first before accepting.',
-            );
+            $this->validateNomineeEligibility($election, $user->id, $candidate->position, $user->id);
 
             $candidate->update(['nomination_status' => 'accepted']);
         } else {
@@ -280,6 +315,22 @@ class CpfV4Controller extends Controller
             $user?->verifiedRole() !== null && $membership?->campus_id === $election->campus_id,
             403,
             'Only verified members of this campus may update nomination eligibility.',
+        );
+
+        abort_unless(
+            $election->status === 'open' && $election->current_phase !== 'completed',
+            422,
+            'This election is no longer open for nominations.',
+        );
+
+        $alreadyWinner = collect($election->position_results ?? [])
+            ->contains(fn (array $res) => ($res['status'] ?? 'elected') === 'elected'
+                && (int) ($res['winner_user_id'] ?? 0) === $user->id);
+
+        abort_if(
+            $alreadyWinner,
+            422,
+            'You have already been elected to an officer position in this election.',
         );
 
         ElectionOptOut::query()
@@ -411,6 +462,12 @@ class CpfV4Controller extends Controller
             'status' => ['required', 'in:draft,open,closed'],
         ]);
 
+        abort_if(
+            $election->current_phase === 'completed' && $validated['status'] === 'open',
+            422,
+            'Completed elections cannot be reopened. Start a new election session instead.',
+        );
+
         $election->update(['status' => $validated['status']]);
 
         return response()->json(['status' => $election->status, 'election' => $election]);
@@ -425,6 +482,12 @@ class CpfV4Controller extends Controller
             $user?->verifiedRole() !== null && $membership?->campus_id === $election->campus_id,
             403,
             'Only verified members of this campus may cast a vote.',
+        );
+
+        abort_if(
+            $user->isClubAdviser(),
+            403,
+            'The Club Adviser presides over the election and only breaks ties — student members cast floor votes.',
         );
 
         abort_unless($election->status === 'open', 422, 'Election is not currently open.');
@@ -443,6 +506,14 @@ class CpfV4Controller extends Controller
             'position' => ['required', 'string', 'max:60'],
         ]);
 
+        if ($election->current_position !== null) {
+            abort_unless(
+                $validated['position'] === $election->current_position,
+                422,
+                'Voting is currently open only for the active position.',
+            );
+        }
+
         $candidate = ElectionCandidate::query()
             ->where('id', $validated['candidate_id'])
             ->where('election_id', $election->id)
@@ -451,6 +522,16 @@ class CpfV4Controller extends Controller
             ->first();
 
         abort_unless($candidate !== null, 422, 'Selected candidate is not eligible for this election and position.');
+
+        $candidateAlreadyElected = collect($election->position_results ?? [])
+            ->contains(fn (array $res) => ($res['status'] ?? 'elected') === 'elected'
+                && (int) ($res['winner_user_id'] ?? 0) === (int) $candidate->user_id);
+
+        abort_if(
+            $candidateAlreadyElected,
+            422,
+            'This candidate has already been elected to another position in this election.',
+        );
 
         if ($phase === 'tie_breaker' && $validated['position'] === $election->current_position) {
             abort_unless(
@@ -591,8 +672,12 @@ class CpfV4Controller extends Controller
         ]);
     }
 
-    private function validateNomineeEligibility(Election $election, int $userId, string $position): CampusMembership
-    {
+    private function validateNomineeEligibility(
+        Election $election,
+        int $userId,
+        string $position,
+        ?int $actorUserId = null,
+    ): CampusMembership {
         $membership = CampusMembership::query()
             ->where('user_id', $userId)
             ->where('campus_id', $election->campus_id)
@@ -623,12 +708,15 @@ class CpfV4Controller extends Controller
         );
 
         $alreadyWinner = collect($election->position_results ?? [])
-            ->contains(fn (array $res) => (int) ($res['winner_user_id'] ?? 0) === $userId);
+            ->contains(fn (array $res) => ($res['status'] ?? 'elected') === 'elected'
+                && (int) ($res['winner_user_id'] ?? 0) === $userId);
 
         abort_if(
             $alreadyWinner,
             422,
-            'This member has already been elected to an officer position in this election.',
+            ($actorUserId !== null && $actorUserId === $userId)
+                ? 'You have already been elected to an officer position in this election and cannot self-nominate for another seat.'
+                : 'This member has already been elected to an officer position in this election.',
         );
 
         $requiredYear = CpfElectionPositions::requiredYear($position);
@@ -693,21 +781,38 @@ class CpfV4Controller extends Controller
             'won_by' => $wonBy,
         ];
 
-        $this->advanceElectionPosition($election, $position, $results);
+        $this->advanceElectionPosition($election, $position, $results, (int) $winner->user_id);
     }
 
     /**
      * @param  array<string, mixed>  $results
      */
-    private function advanceElectionPosition(Election $election, string $currentPosition, array $results): void
-    {
+    private function advanceElectionPosition(
+        Election $election,
+        string $currentPosition,
+        array $results,
+        ?int $winnerUserId = null,
+    ): void {
         $nextPosition = CpfElectionPositions::nextAfter($currentPosition);
 
-        DB::transaction(function () use ($election, $currentPosition, $nextPosition, $results): void {
+        DB::transaction(function () use ($election, $currentPosition, $nextPosition, $results, $winnerUserId): void {
             ElectionCandidate::query()
                 ->where('election_id', $election->id)
                 ->where('position', $currentPosition)
                 ->update(['is_tie_contender' => false]);
+
+            if ($winnerUserId !== null) {
+                $finalizedPositions = array_keys($results);
+                ElectionCandidate::query()
+                    ->where('election_id', $election->id)
+                    ->where('user_id', $winnerUserId)
+                    ->whereNotIn('position', $finalizedPositions)
+                    ->whereIn('nomination_status', ['pending', 'accepted'])
+                    ->update([
+                        'nomination_status' => 'declined',
+                        'is_tie_contender' => false,
+                    ]);
+            }
 
             if ($nextPosition === null) {
                 $election->update([
@@ -852,6 +957,7 @@ class CpfV4Controller extends Controller
         ]);
 
         $quote = PeerQuote::create([
+            'campus_id' => $request->user()?->primaryMembership?->campus_id,
             'submitted_by_user_id' => $request->user()?->id,
             'quote_text' => trim($validated['quote_text']),
             'author_name' => trim((string) ($validated['author_name'] ?? 'CPF Peer Circle')),

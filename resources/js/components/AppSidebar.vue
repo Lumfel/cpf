@@ -69,10 +69,8 @@ const mainNavItems = computed<NavItem[]>(() => [
 const footerNavItems: NavItem[] = [
     {
         title: 'Policy & By-Laws',
-        href: '#',
+        href: '/policy-and-bylaws',
         icon: ScrollText,
-        disabled: true,
-        badge: 'Soon',
     },
 ];
 </script>

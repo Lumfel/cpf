@@ -75,7 +75,7 @@ function submitOfficerAdd() {
 
 <template>
     <div
-        class="mx-auto w-full max-w-3xl rounded-2xl border border-black/10 bg-white/90 p-6 shadow-sm backdrop-blur-md"
+        class="mx-auto w-full max-w-3xl rounded-2xl border border-black/10 bg-white p-6 shadow-sm"
     >
         <div class="border-b border-black/10 pb-4">
             <span class="rounded-full bg-[#FF8D06]/15 px-3 py-1 text-xs font-bold text-[#FF8D06]">

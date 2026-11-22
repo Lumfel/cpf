@@ -6,8 +6,10 @@ use App\Actions\Gc\ArchiveAndResetOfficerGc;
 use App\Actions\Security\IssueMemberPasskey;
 use App\Actions\Support\RequestTestingRoom;
 use App\Actions\Support\SubmitGuidanceReferral;
+use App\Enums\MembershipStatus;
 use App\Enums\ReferralPriority;
 use App\Events\OfficerGcMessageSent;
+use App\Models\CampusCounselor;
 use App\Models\CampusMembership;
 use App\Models\CounselorGcMessage;
 use App\Models\GuidanceReferral;
@@ -49,7 +51,11 @@ class CpfFeatureController extends Controller
     {
         $user = $request->user();
         $membership = $user?->primaryMembership;
-        abort_unless($user && $membership, 403, 'A verified campus membership is required to manage a passkey code.');
+        abort_unless(
+            $user && $membership && $membership->status === MembershipStatus::Approved,
+            403,
+            'An approved campus membership is required to manage a passkey code.',
+        );
 
         $forceRegenerate = (bool) $request->boolean('regenerate', true);
         $result = $action->handle($user, $membership, true, $forceRegenerate);
@@ -79,6 +85,17 @@ class CpfFeatureController extends Controller
         ]);
 
         abort_unless($campusId > 0, 422, 'A valid campus is required for Testing Room requests.');
+
+        if (! empty($validated['counselor_id'])) {
+            abort_unless(
+                CampusCounselor::query()
+                    ->where('id', (int) $validated['counselor_id'])
+                    ->where('campus_id', $campusId)
+                    ->exists(),
+                422,
+                'Selected counselor does not belong to this campus.',
+            );
+        }
 
         $roomRequest = $action->handle($request->user(), $campusId, $validated);
 

@@ -2,6 +2,7 @@
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import { Moon, Sun } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import FirstBootAdviserModal from '@/components/system/FirstBootAdviserModal.vue';
 import { useAppearance } from '@/composables/useAppearance';
 import type { CampusSummary } from '@/types';
 
@@ -297,13 +298,14 @@ function submitApplication() {
 
 <template>
     <Head title="Circle of Peer Facilitators" />
+    <FirstBootAdviserModal />
 
     <div class="cpf-soft-cream">
         <header class="sticky top-0 z-30 border-b border-slate-900/10 bg-[#FBF6EE]/90 px-4 py-3 backdrop-blur-xl">
             <div class="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-3">
                 <div class="flex items-center gap-3">
                     <div class="cpf-logo-badge size-10 overflow-hidden rounded-full border border-[#0384C5]/30 bg-white shadow-sm">
-                        <img src="/cpf_logo.jpg" alt="Circle of Peer Facilitators Emblem" class="size-full object-cover" />
+                        <img src="/cpf_logo.png" alt="Circle of Peer Facilitators Emblem" class="size-full object-cover" />
                     </div>
                     <div>
                         <div class="text-sm font-extrabold tracking-wide text-slate-900">CIRCLE OF PEER FACILITATORS</div>

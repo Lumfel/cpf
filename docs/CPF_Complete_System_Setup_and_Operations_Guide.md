@@ -18,6 +18,10 @@ php artisan config:clear
 # 3. Reset all 11 sample accounts cleanly (resets Paul to Pending & clears his old passkeys)
 php artisan db:seed --force
 
+# 3b. Switch between Blank First-Boot ("Enter as Club Adviser") and Demo seeded environments
+php artisan cpf:reset-blank
+php artisan cpf:reset-demo
+
 # 4. Apply any new database migrations
 php artisan migrate --force
 
@@ -43,21 +47,23 @@ npm.cmd run build
 
 | # | Role | Sample Name | Email | Course / Yr / Sec | Core Authority |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1 | **Club Adviser** | Montemayor, Elena V. | `adviser@cpf.chmsu.edu.ph` | Guidance Services / Adviser | Top authority: approve/add members, assign all roles, confirm GC & Dues, issue passkeys, **exclusively approve/decline Member Info Change Requests**, triage encrypted referrals, manage elections & ZIP archives, **Officers Chat** |
-| 2 | **President** | Mercado, Sofia R. | `president@cpf.chmsu.edu.ph` | BS Psychology • 4A | Approve/add members, co-sign Dues Checklist, confirm Messenger GC, issue passkeys, review Testing Room requests, **Officers Chat** |
-| 3 | **Vice President** | Bautista, Miguel A. | `vice_president@cpf.chmsu.edu.ph` | BSIT • 4B | Assumes President duties in absence; approve/add members, co-sign Dues Checklist, confirm Messenger GC, issue passkeys, **Officers Chat** |
+| 1 | **Club Adviser** | Montemayor, Elena V. | `adviser@cpf.chmsu.edu.ph` | Guidance Services / Adviser | Top authority: approve/add members, assign officer roles (`student officers` only — Club Adviser transfers strictly to an incoming Guidance Counselor via **Adviser Handover**), confirm GC & Dues, issue passkeys, **exclusively approve/decline Member Info Change Requests**, schedule & finalize events, triage encrypted referrals, **preside & break ties** in elections (no floor votes), ZIP archives, **Officers Chat** |
+| 2 | **President** | Mercado, Sofia R. | `president@cpf.chmsu.edu.ph` | BS Psychology • 4A | Approve/add members, co-sign Dues Checklist, propose events, confirm Messenger GC, issue passkeys, review Testing Room requests, **Officers Chat** |
+| 3 | **Vice President** | Bautista, Miguel A. | `vice_president@cpf.chmsu.edu.ph` | BSIT • 4B | Assumes President duties in absence; approve/add members, co-sign Dues Checklist, propose events, confirm Messenger GC, issue passkeys, **Officers Chat** |
 | 4 | **Secretary** | Alvarez, Hannah G. | `secretary@cpf.chmsu.edu.ph` | BSIS • 3A | View pending queue, confirm Messenger GC, issue passkeys, **Officers Chat** |
 | 5 | **Treasurer** | Delgado, Liam C. | `treasurer@cpf.chmsu.edu.ph` | BSIT • 3B | Confirm A–Z Membership Dues Checklist on `/dashboard` & `/membership`, **Officers Chat** |
 | 6 | **Auditor** | Castillo, Marco D. | `auditor@cpf.chmsu.edu.ph` | BSA • 4A | **Read-only Audit View** of Campus Dues Checklist on `/dashboard`, **Officers Chat** |
 | 7 | **Business Manager** | Soriano, Patricia E. | `business@cpf.chmsu.edu.ph` | BSBA • 3A | Campus roster & organizational projects, **Officers Chat** |
 | 8 | **Public Information Officer (PIO)** | Navarro, Bianca F. | `pio@cpf.chmsu.edu.ph` | BS Psychology • 2B | Confirm Messenger GC, issue passkeys, announcements, **Officers Chat** |
 | 9 | **Sergeant-at-Arms** | Mendoza, Rafael J. | `saa@cpf.chmsu.edu.ph` | BSED • 3A | Peace & order oversight, campus roster, **Officers Chat** |
-| 10 | **Verified Member** | Reyes, Katrina M. | `katrina@cpf.chmsu.edu.ph` | BSIT • 4A | Attendance QR ID, personal locked Passkey Code, Blockchain Credentials, Official Profile & Change Requests |
+| 10 | **Verified Member** | Reyes, Katrina M. | `katrina@cpf.chmsu.edu.ph` | BSIT • 4A | Attendance QR ID, personal locked Passkey Code, General Assembly nominations/voting, Blockchain Credentials, Official Profile & Change Requests |
 | 11 | **Pending Applicant** | Tibo-oc, Paul Felippe G. | `paulfelippegtibooc@gmail.com` | BSIT • 4A | Starts in **Pending Membership Applications** on `/membership` for approval testing |
 
 ### Data & Account Safety Rules
-- **No Admin Role:** Governance is led by the **Club Adviser** (Guidance Counselor) and elected student officers per the CPF Constitution & By-Laws.
+- **No Admin Role:** Governance is led by the **Club Adviser** (Guidance Counselor) and elected student officers per the CPF Constitution & By-Laws. Direct promotion of students/officers to `adviser` is blocked (`422`); succession runs exclusively through the two-step **Guidance Counselor Adviser Handover**.
 - **Account Deletion Disabled:** `DELETE /settings/profile` returns HTTP `403` for all users (including the Club Adviser) and the delete UI is removed so student records cannot be accidentally wiped.
+- **Election Double-Seat Protection:** Elected winners are automatically locked from self-nominating or entering ballots for subsequent officer positions, and pre-existing nominations for later seats are automatically revoked upon winning.
+- **Guest Privacy Protection:** Visiting `/my-credentials` while signed out exposes only public verification lookup (`owner: null`), with zero leaked member PII.
 
 ---
 
@@ -156,20 +162,36 @@ When ready to deliver straight to real student Gmail inboxes:
 
 | Page | URL |
 | :--- | :--- |
-| Public Landing & Apply Modal | `http://localhost:8000/` |
+| Public Landing & Apply Modal (First-Boot Adviser Modal if blank) | `http://localhost:8000/` |
 | Login (Email, 12-Box Passkey Code, Device Passkey) | `http://localhost:8000/login` |
 | Direct Account Registration | `http://localhost:8000/register` |
-| Peer Dashboard (Attendance QR, Passkey Code, Dues Checklist) | `http://localhost:8000/dashboard` |
+| Peer Dashboard (Attendance QR, Passkey Code, Events Calendar & Notifications, Dues Checklist) | `http://localhost:8000/dashboard` |
+| Events & Activities (Schedule, Officer QR Scanner, Attendance Checklist & Time Capsule Reflections) | `http://localhost:8000/events-activities` |
 | Officers Chat (Dedicated Messenger-Style Officers GC) | `http://localhost:8000/officers-chat` |
-| Membership, Pending Approvals, Change Requests & A–Z GC Checklist | `http://localhost:8000/membership` |
+| Membership, Pending Approvals, Change Requests, Adviser Handover & A–Z GC Checklist | `http://localhost:8000/membership` |
 | Campus Hub (Testing Room, Encrypted Referrals, Officers GC) | `http://localhost:8000/campus-hub` |
-| Community Hub (Elections, Time Capsules, Archives) | `http://localhost:8000/community-hub` |
-| My Blockchain Achievements, Certificates & Awards | `http://localhost:8000/my-credentials` |
+| Community Hub (Dynamic 1–120+ Seat General Assembly Elections, Time Capsules, Archives) | `http://localhost:8000/community-hub` |
+| Policy & By-Laws (CHMSU Alijis CPF Constitution & By-Laws) | `http://localhost:8000/policy-and-bylaws` |
+| My Blockchain Achievements, Certificates & Awards (`owner: null` public verify when signed out) | `http://localhost:8000/my-credentials` |
 | Account Security (Password, 2FA, Device Passkeys) | `http://localhost:8000/settings/security` |
 | Isolated Prototype Sandbox | `http://localhost:8000/prototype` |
 
+### UI Branding & Theme Switching Notes
+- **Transparent PNG Favicon:** Served from `/favicon.png?v=2` (`256x256`) and `/apple-touch-icon.png?v=2` alongside `/cpf_logo.png` with transparent outer corners and opaque white emblem interior.
+- **Smooth Dark / Light Transitions:** Uses GPU-composited `document.startViewTransition()` (`::view-transition-old/new(root)`) with a lightweight fallback transition and reduced-motion support.
+
+### Related Documentation & Presentations
+- **Next-Push Commit & Release Message Log:** `docs/NEXT_PUSH_MESSAGE_LOG.md`
+- **First-Boot Setup, Club Adviser Role Handover & Events Guide:** `docs/CPF_First_Boot_Adviser_Handover_and_Events_Guide.md`
+- **Sample Accounts & Auth Guide:** `docs/CPF_Sample_Accounts_and_Auth_Guide.md`
+- **Google Forms Live Webhook Guide:** `docs/CPF_Google_Forms_Webhook_Guide.md`
+- **PowerPoint Presentations:**
+  - `docs/presentations/01_CPF_Capstone_Proposal.pptx`
+  - `docs/presentations/02_CPF_System_How_To_Guide.pptx`
+  - `docs/presentations/03_CPF_System_Development_Plan.pptx`
+
 ### Running the Automated Test Suite
 ```powershell
-php artisan test tests/Feature/CpfFunctionalRequirementsTest.php tests/Feature/DashboardTest.php tests/Feature/ExampleTest.php
+php artisan test
 ```
-*(20 tests / 384 assertions covering Constitution role governance, Passkey-First onboarding, one-time approval emails, Adviser-only Member Information Change Requests, disabled account deletion, Officers Chat access, and Google Forms webhook normalization.)*
+*(**77 passed, 855 assertions, 0 failures** — covering First-Boot blank setup & Counselor-only Adviser handover, Events & Activities QR attendance & reflections, Constitution role governance, election self-nomination/tie-break integrity, Passkey-First onboarding, one-time approval emails, Adviser-only Member Information Change Requests, disabled account deletion (`403`), Officers Chat access, and Google Forms webhook normalization.)*

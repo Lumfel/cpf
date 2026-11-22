@@ -66,14 +66,15 @@ class AddOrApproveCampusMember
             $targetUser = User::query()->where('email', $email)->first();
 
             if (! $targetUser) {
-                $targetUser = User::create([
+                $targetUser = new User([
                     'name' => $formatted,
                     'email' => $email,
                     'password' => Hash::make(Str::password(24)),
-                    'email_verified_at' => now(),
                     'must_change_password' => true,
                     'temporary_password_issued_at' => now(),
                 ]);
+                $targetUser->email_verified_at = now();
+                $targetUser->save();
             } else {
                 $hasApprovedMembership = CampusMembership::query()
                     ->where('user_id', $targetUser->id)

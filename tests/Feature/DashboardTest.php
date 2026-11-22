@@ -24,4 +24,18 @@ class DashboardTest extends TestCase
         $response = $this->get(route('dashboard'));
         $response->assertOk();
     }
+
+    public function test_authenticated_users_can_view_policy_and_bylaws()
+    {
+        $this->get('/policy-and-bylaws')->assertRedirect(route('login'));
+
+        $user = User::factory()->create([
+            'must_change_password' => false,
+        ]);
+
+        $this->actingAs($user)
+            ->get('/policy-and-bylaws')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->component('PolicyAndBylaws'));
+    }
 }

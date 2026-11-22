@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Head, router, useForm, usePage } from '@inertiajs/vue3';
 import {
+    ArrowRightLeft,
     CheckCircle2,
     ClipboardCheck,
     Clock,
@@ -21,6 +22,7 @@ import {
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import InputError from '@/components/InputError.vue';
+import AdviserHandoverPanel from '@/components/membership/AdviserHandoverPanel.vue';
 import OfficerAddMemberForm from '@/components/membership/OfficerAddMemberForm.vue';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -92,8 +94,8 @@ const passkeyIssuedNotice = computed(() => page.props.flash?.passkey_issued_noti
 const isApprovedMember = computed(() => props.myMembership?.status === 'approved');
 const isPendingApplicant = computed(() => props.myMembership?.status === 'pending');
 
-// Active tab: 'checklist' (A-Z Roster), 'profile' (Official Member Profile & Change Request), 'apply' (New Application / Pending Status), 'add' (Officer Direct Add)
-const activeTab = ref<'checklist' | 'profile' | 'apply' | 'add'>(
+// Active tab: 'checklist' (A-Z Roster), 'profile' (Official Member Profile & Change Request), 'apply' (New Application / Pending Status), 'add' (Officer Direct Add), 'handover' (Club Adviser Handover)
+const activeTab = ref<'checklist' | 'profile' | 'apply' | 'add' | 'handover'>(
     props.permissions.canViewRoster
         ? 'checklist'
         : props.myMembership?.status === 'approved'
@@ -394,7 +396,7 @@ function formatFieldLabel(key: string): string {
 
     <div class="flex min-h-full flex-1 flex-col gap-6 bg-[#FBF6EE] p-4 text-slate-900 md:p-6">
         <!-- Top Role & Campus Authority Banner -->
-        <div class="rounded-2xl border border-black/10 bg-white/85 p-5 shadow-sm backdrop-blur-md">
+        <div class="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
             <div class="flex flex-wrap items-center justify-between gap-4">
                 <div>
                     <div class="flex flex-wrap items-center gap-2">
@@ -425,7 +427,7 @@ function formatFieldLabel(key: string): string {
                         v-if="permissions.canViewRoster"
                         type="button"
                         @click="activeTab = 'checklist'"
-                        class="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition-all"
+                        class="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition-[border-color,background-color,color] duration-200"
                         :class="
                             activeTab === 'checklist'
                                 ? 'bg-[#0384C5] text-white shadow-sm'
@@ -461,7 +463,7 @@ function formatFieldLabel(key: string): string {
                         v-if="isApprovedMember"
                         type="button"
                         @click="activeTab = 'profile'"
-                        class="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition-all"
+                        class="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition-[border-color,background-color,color] duration-200"
                         :class="
                             activeTab === 'profile'
                                 ? 'bg-[#1A8F26] text-white shadow-sm'
@@ -476,7 +478,7 @@ function formatFieldLabel(key: string): string {
                         v-else
                         type="button"
                         @click="activeTab = 'apply'"
-                        class="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition-all"
+                        class="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition-[border-color,background-color,color] duration-200"
                         :class="
                             activeTab === 'apply'
                                 ? 'bg-[#1A8F26] text-white shadow-sm'
@@ -485,6 +487,21 @@ function formatFieldLabel(key: string): string {
                     >
                         <PlusCircle class="size-4" />
                         {{ isPendingApplicant ? 'Application Status (Pending)' : 'Online Membership Form' }}
+                    </button>
+
+                    <button
+                        v-if="permissions.isClubAdviser"
+                        type="button"
+                        @click="activeTab = 'handover'"
+                        class="inline-flex items-center gap-1.5 rounded-xl px-4 py-2 text-xs font-semibold transition-[border-color,background-color,color] duration-200"
+                        :class="
+                            activeTab === 'handover'
+                                ? 'bg-slate-900 text-white shadow-sm'
+                                : 'border border-black/15 bg-white text-slate-800 hover:border-[#0384C5]'
+                        "
+                    >
+                        <ArrowRightLeft class="size-4" />
+                        Adviser Handover
                     </button>
                 </div>
             </div>
@@ -556,6 +573,12 @@ function formatFieldLabel(key: string): string {
             </div>
         </div>
 
+        <AdviserHandoverPanel
+            v-if="activeTab !== 'handover'"
+            :is-club-adviser="permissions.isClubAdviser"
+            :show-initiate-form="false"
+        />
+
         <!-- =================================================================== -->
         <!-- TAB 1: OFFICER & ADVISER A-Z ROSTER, PENDING APPROVALS & GC CHECKLIST -->
         <!-- =================================================================== -->
@@ -563,7 +586,7 @@ function formatFieldLabel(key: string): string {
             <!-- Club Adviser Exclusive: Member Information Change Requests -->
             <div
                 v-if="permissions.isClubAdviser && pendingChangeRequests.length > 0"
-                class="rounded-2xl border border-[#0384C5]/40 bg-white/90 p-5 shadow-sm backdrop-blur-md"
+                class="rounded-2xl border border-[#0384C5]/40 bg-white p-5 shadow-sm"
             >
                 <div class="flex flex-wrap items-center justify-between gap-2">
                     <div class="flex items-center gap-2">
@@ -649,7 +672,7 @@ function formatFieldLabel(key: string): string {
             <!-- Pending Online & Google Form Submissions -->
             <div
                 v-if="pendingApplications.length > 0"
-                class="rounded-2xl border border-[#FF8D06]/40 bg-white/90 p-5 shadow-sm backdrop-blur-md"
+                class="rounded-2xl border border-[#FF8D06]/40 bg-white p-5 shadow-sm"
             >
                 <div class="flex flex-wrap items-center justify-between gap-2">
                     <div class="flex items-center gap-2">
@@ -737,7 +760,7 @@ function formatFieldLabel(key: string): string {
             </div>
 
             <!-- Upward-Flowing A-Z Card-by-Card Messenger GC & Dues Checklist -->
-            <div class="rounded-2xl border border-black/10 bg-white/85 p-5 shadow-sm backdrop-blur-md">
+            <div class="rounded-2xl border border-black/10 bg-white p-5 shadow-sm">
                 <div class="flex flex-wrap items-center justify-between gap-4 border-b border-black/10 pb-4">
                     <div>
                         <div class="flex items-center gap-2">
@@ -781,7 +804,7 @@ function formatFieldLabel(key: string): string {
                     <div
                         v-for="(member, idx) in filteredMembersAZ"
                         :key="member.id"
-                        class="group flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-4 transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md"
+                        class="group flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-4 transition-[transform,border-color,background-color] duration-200 hover:-translate-y-0.5 hover:shadow-md"
                         :class="
                             member.is_in_messenger_gc
                                 ? 'border-[#1A8F26]/35 bg-[#FBF6EE]/90'
@@ -860,16 +883,23 @@ function formatFieldLabel(key: string): string {
                         <div class="flex flex-wrap items-center gap-3">
                             <!-- Only Club Adviser (In Charge) can promote/change roles -->
                             <div v-if="permissions.isClubAdviser" class="flex items-center gap-1.5">
-                                <label class="text-[11px] font-semibold text-slate-500">Role:</label>
-                                <select
-                                    :value="member.role"
-                                    @change="changeMemberRole(member, ($event.target as HTMLSelectElement).value)"
-                                    class="rounded-xl border border-black/15 bg-[#FBF6EE] px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:border-[#0384C5] focus:outline-none"
-                                >
-                                    <option v-for="r in availableRoles" :key="r.value" :value="r.value">
-                                        {{ r.label }}
-                                    </option>
-                                </select>
+                                <template v-if="member.role === 'adviser'">
+                                    <span class="rounded-xl border border-[#0384C5]/30 bg-[#0384C5]/10 px-2.5 py-1.5 text-[11px] font-semibold text-[#0384C5]">
+                                        Club Adviser • Use Handover Tab
+                                    </span>
+                                </template>
+                                <template v-else>
+                                    <label class="text-[11px] font-semibold text-slate-500">Role:</label>
+                                    <select
+                                        :value="member.role"
+                                        @change="changeMemberRole(member, ($event.target as HTMLSelectElement).value)"
+                                        class="rounded-xl border border-black/15 bg-[#FBF6EE] px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:border-[#0384C5] focus:outline-none"
+                                    >
+                                        <option v-for="r in availableRoles" :key="r.value" :value="r.value">
+                                            {{ r.label }}
+                                        </option>
+                                    </select>
+                                </template>
                             </div>
 
                             <!-- Messenger GC Confirmation Button (Adviser, President, VP, or Secretary) -->
@@ -877,7 +907,7 @@ function formatFieldLabel(key: string): string {
                                 type="button"
                                 :disabled="!permissions.canConfirmMessengerGc"
                                 @click="toggleGcChecklist(member)"
-                                class="inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all"
+                                class="inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-[border-color,background-color,color] duration-200"
                                 :class="[
                                     member.is_in_messenger_gc
                                         ? 'border border-[#1A8F26] bg-[#1A8F26] text-white'
@@ -902,7 +932,7 @@ function formatFieldLabel(key: string): string {
                                 v-if="permissions.canConfirmDues"
                                 type="button"
                                 @click="toggleDuesChecklist(member)"
-                                class="inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all"
+                                class="inline-flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-[border-color,background-color,color] duration-200"
                                 :class="
                                     member.has_paid_dues
                                         ? 'border border-[#1A8F26] bg-[#1A8F26]/10 text-[#1A8F26] hover:bg-[#1A8F26]/20'
@@ -944,7 +974,7 @@ function formatFieldLabel(key: string): string {
             v-if="activeTab === 'profile' && isApprovedMember && myMembership"
             class="mx-auto flex w-full max-w-3xl flex-col gap-6"
         >
-            <div class="rounded-2xl border border-black/10 bg-white/90 p-6 shadow-sm backdrop-blur-md">
+            <div class="rounded-2xl border border-black/10 bg-white p-6 shadow-sm">
                 <div class="flex flex-wrap items-start justify-between gap-4 border-b border-black/10 pb-4">
                     <div>
                         <span class="inline-flex items-center gap-1.5 rounded-full bg-[#1A8F26]/12 px-3 py-1 text-xs font-bold text-[#1A8F26]">
@@ -1174,7 +1204,7 @@ function formatFieldLabel(key: string): string {
             <!-- Member's Change Request History -->
             <div
                 v-if="myChangeRequests.length > 0"
-                class="rounded-2xl border border-black/10 bg-white/90 p-5 shadow-sm backdrop-blur-md"
+                class="rounded-2xl border border-black/10 bg-white p-5 shadow-sm"
             >
                 <h3 class="text-sm font-bold text-slate-900">
                     My Information Change Requests
@@ -1225,7 +1255,7 @@ function formatFieldLabel(key: string): string {
         <!-- =================================================================== -->
         <div
             v-if="activeTab === 'apply' && !isApprovedMember"
-            class="mx-auto w-full max-w-3xl rounded-2xl border border-black/10 bg-white/90 p-6 shadow-sm backdrop-blur-md"
+            class="mx-auto w-full max-w-3xl rounded-2xl border border-black/10 bg-white p-6 shadow-sm"
         >
             <!-- Pending Application Status Card (Prevents Duplicate Form Submissions) -->
             <div v-if="isPendingApplicant && myMembership" class="space-y-4">
@@ -1557,6 +1587,15 @@ function formatFieldLabel(key: string): string {
             :is-club-adviser="permissions.isClubAdviser"
             :verified-role-label="permissions.verifiedRoleLabel"
             @added="activeTab = 'checklist'"
+        />
+
+        <!-- =================================================================== -->
+        <!-- TAB 5: CLUB ADVISER ROLE HANDOVER & SUCCESSION (LOCKOUT-SAFE)       -->
+        <!-- =================================================================== -->
+        <AdviserHandoverPanel
+            v-if="activeTab === 'handover' && permissions.isClubAdviser"
+            :is-club-adviser="permissions.isClubAdviser"
+            :show-initiate-form="true"
         />
 
         <!-- Passkey + 2FA Enrollment Code Issuance Modal (FR-03) -->

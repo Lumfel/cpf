@@ -30,9 +30,9 @@
             }
         </style>
 
-        <link rel="icon" type="image/jpeg" href="/cpf_logo.jpg?v=cpf">
-        <link rel="shortcut icon" href="/cpf_logo.jpg?v=cpf">
-        <link rel="apple-touch-icon" href="/cpf_logo.jpg?v=cpf">
+        <link rel="icon" type="image/png" sizes="256x256" href="/favicon.png?v=2">
+        <link rel="shortcut icon" type="image/png" href="/favicon.png?v=2">
+        <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=2">
 
         @fonts
 

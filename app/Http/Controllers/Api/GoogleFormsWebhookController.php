@@ -130,17 +130,22 @@ class GoogleFormsWebhookController extends Controller
             ], 422);
         }
 
-        $targetUser = $existingUser ?? User::create([
-            'name' => CampusMembership::formatLastFirstMi(
-                (string) $validated['first_name'],
-                $validated['middle_name'] ?? null,
-                (string) $validated['last_name'],
-            ),
-            'email' => $email,
-            'password' => Hash::make(Str::password(16)),
-            'email_verified_at' => now(),
-            'must_change_password' => false,
-        ]);
+        if ($existingUser) {
+            $targetUser = $existingUser;
+        } else {
+            $targetUser = new User([
+                'name' => CampusMembership::formatLastFirstMi(
+                    (string) $validated['first_name'],
+                    $validated['middle_name'] ?? null,
+                    (string) $validated['last_name'],
+                ),
+                'email' => $email,
+                'password' => Hash::make(Str::password(16)),
+                'must_change_password' => false,
+            ]);
+            $targetUser->email_verified_at = now();
+            $targetUser->save();
+        }
 
         $membership = $action->handle($targetUser, $validated, 'google_forms_api');
 

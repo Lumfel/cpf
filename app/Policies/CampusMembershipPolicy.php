@@ -109,6 +109,10 @@ class CampusMembershipPolicy
             return false;
         }
 
+        if ($target->role === CpfRole::Adviser) {
+            return $actorMembership->role->isTopAuthority();
+        }
+
         if ($newRole === CpfRole::Member) {
             return $actorMembership->role->canApproveMembers();
         }

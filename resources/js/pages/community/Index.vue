@@ -61,7 +61,7 @@ const activeTab = ref<'elections' | 'capsules' | 'archives'>('elections');
 const statusBanner = ref<string | null>(null);
 const errorBanner = ref<string | null>(null);
 
-// FR-09: Elections State (Adviser activation + sequential US Senate chamber below)
+// FR-09: Elections State (Adviser activation + sequential General Assembly chamber below)
 const electionTitle = ref('');
 const electionAy = ref('2026-2027');
 const electionStatus = ref<'draft' | 'open'>('open');
@@ -180,7 +180,7 @@ async function openCapsule(capsuleId: number) {
             {{ errorBanner }}
         </div>
 
-        <!-- TAB 1: FR-09 CAMPUS ELECTIONS (US SENATE FLOOR + SEQUENTIAL CONSTITUTION ORDER) -->
+        <!-- TAB 1: FR-09 CAMPUS ELECTIONS (GENERAL ASSEMBLY FLOOR + SEQUENTIAL CONSTITUTION ORDER) -->
         <div v-if="activeTab === 'elections'" class="flex flex-col gap-5">
             <section v-if="isClubAdviser" class="bento p-5">
                 <div>

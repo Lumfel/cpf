@@ -14,10 +14,10 @@ In PowerShell inside `c:\laragon\www\cpf`:
 php artisan serve --host=localhost --port=8000
 ```
 
-### Step 2 — Start a Free Zero-Install HTTPS Tunnel
+### Step 2 — Start a Free Zero-Install HTTPS Tunnel (With Keepalive)
 Open a **second PowerShell window** and run (built right into Windows):
 ```powershell
-ssh -R 80:localhost:8000 nokey@localhost.run
+ssh -o ServerAliveInterval=30 -o ServerAliveCountMax=3 -R 80:localhost:8000 nokey@localhost.run
 ```
 - Type `yes` if asked to trust the host key.
 - Copy the printed HTTPS URL that looks like `https://xxxxxxxx.lhr.life`.
@@ -38,10 +38,10 @@ ssh -R 80:localhost:8000 nokey@localhost.run
    - It automatically creates every matching CPF field (First/Middle/Last Name, Course, Year Level, Section, Sex, Gender Identity with "Other", Birthdate, Active Email, Facebook Profile Link, FB Note, Cellphone No.) and wires the automatic **`onFormSubmit`** trigger for you!
 
 ### Step 5 — Submit & Approve
-1. Open the generated Google Form URL, fill out a student response, and submit.
+1. Open the generated Google Form URL, fill out a student response, and submit. Newly ingested student accounts are automatically stamped with `email_verified_at` so once approved they can onboard cleanly without email-verification stalls.
 2. Open `http://localhost:8000/membership` logged in as **Club Adviser**, **President**, or **Vice President**.
 3. The applicant appears under **Pending Membership Applications** with a **`Google Forms API`** badge.
-4. Click **Confirm & Issue Passkey Code** — their locked Passkey Code is issued and delivered via email (one time only).
+4. Click **Confirm & Issue Passkey Code** — their locked Passkey Code is issued and delivered via email (one time only). When signing in via the 12-box Passkey Code, the member proceeds straight to `/force-password-change` to set their personal password and unlock `/dashboard`.
 
 ---
 
