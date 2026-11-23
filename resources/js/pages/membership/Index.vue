@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { Head, router, useForm, usePage } from '@inertiajs/vue3';
+import { Head, Link, router, useForm, usePage } from '@inertiajs/vue3';
 import {
+    Archive,
     ArrowRightLeft,
     CheckCircle2,
     ClipboardCheck,
@@ -8,6 +9,7 @@ import {
     Copy,
     ExternalLink,
     FilePenLine,
+    GraduationCap,
     KeyRound,
     Lock,
     MessageCircle,
@@ -61,6 +63,7 @@ const props = defineProps<{
     };
     pendingApplications: CampusMembershipRecord[];
     approvedMembersAZ: CampusMembershipRecord[];
+    alumniCount?: number;
     myChangeRequests: MemberInfoChangeRequestRecord[];
     pendingChangeRequests: MemberInfoChangeRequestRecord[];
     availableRoles: Array<{
@@ -327,6 +330,49 @@ function changeMemberRole(member: CampusMembershipRecord, newRole: string) {
         updateRole.url(member.id),
         { role: newRole },
         { preserveScroll: true },
+    );
+}
+
+// 2c. Club Adviser Transition to Former / Alumni Archive
+const alumniModalOpen = ref(false);
+const alumniTarget = ref<CampusMembershipRecord | null>(null);
+const alumniReason = ref<'graduated' | 'term_completed' | 'stepped_down' | 'transferred'>('graduated');
+const alumniRemarks = ref('');
+const transitioningAlumni = ref(false);
+const alumniModalError = ref<string | null>(null);
+
+function openAlumniModal(member: CampusMembershipRecord) {
+    alumniTarget.value = member;
+    alumniReason.value = member.role === 'member' ? 'graduated' : 'term_completed';
+    alumniRemarks.value = '';
+    alumniModalError.value = null;
+    alumniModalOpen.value = true;
+}
+
+function submitAlumniTransition() {
+    if (!alumniTarget.value || transitioningAlumni.value) return;
+    transitioningAlumni.value = true;
+    alumniModalError.value = null;
+
+    router.post(
+        `/membership/${alumniTarget.value.id}/transition-alumni`,
+        {
+            reason: alumniReason.value,
+            remarks: alumniRemarks.value || null,
+        },
+        {
+            preserveScroll: true,
+            onSuccess: () => {
+                alumniModalOpen.value = false;
+                alumniTarget.value = null;
+            },
+            onError: (errors) => {
+                alumniModalError.value = Object.values(errors)[0] ?? 'Unable to transition member to Former status.';
+            },
+            onFinish: () => {
+                transitioningAlumni.value = false;
+            },
+        },
     );
 }
 
@@ -834,6 +880,14 @@ function formatFieldLabel(key: string): string {
                             <option value="unconfirmed">Needs GC Check ({{ approvedMembersAZ.length - gcConfirmedCount }})</option>
                             <option value="confirmed">In Messenger GC ({{ gcConfirmedCount }})</option>
                         </select>
+
+                        <Link
+                            href="/alumni-archive"
+                            class="inline-flex items-center gap-1.5 rounded-xl border border-[#0384C5]/35 bg-[#0384C5]/10 px-3 py-1.5 text-xs font-bold text-[#0384C5] hover:bg-[#0384C5] hover:text-white"
+                        >
+                            <Archive class="size-3.5" />
+                            Former Members ({{ alumniCount ?? 0 }})
+                        </Link>
                     </div>
                 </div>
 
@@ -1001,6 +1055,17 @@ function formatFieldLabel(key: string): string {
                             >
                                 <KeyRound class="size-3.5" />
                                 Issue Passkey
+                            </button>
+
+                            <!-- Transition to Former Member / Officer Archive (Club Adviser only, non-Adviser members) -->
+                            <button
+                                v-if="permissions.isClubAdviser && member.role !== 'adviser'"
+                                type="button"
+                                @click="openAlumniModal(member)"
+                                class="inline-flex items-center gap-1.5 rounded-xl border border-slate-300 bg-[#FBF6EE] px-3 py-2 text-xs font-semibold text-slate-700 transition hover:border-slate-500 hover:bg-slate-900 hover:text-white"
+                            >
+                                <GraduationCap class="size-3.5" />
+                                Mark as Former
                             </button>
                         </div>
                     </div>
@@ -1750,8 +1815,8 @@ function formatFieldLabel(key: string): string {
             class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-md"
             @click.self="qrModalOpen = false"
         >
-            <div class="bento w-full max-w-sm p-6 text-center">
-                <div class="mb-4 flex items-center justify-between border-b border-black/10 pb-3">
+            <div class="bento mx-auto flex w-full max-w-sm flex-col items-center justify-center p-6 text-center">
+                <div class="mb-4 flex w-full items-center justify-between border-b border-black/10 pb-3">
                     <div class="flex items-center gap-2 text-sm font-bold text-[#0384C5]">
                         <QrCode class="size-4" />
                         <span>Member Attendance QR</span>
@@ -1772,14 +1837,14 @@ function formatFieldLabel(key: string): string {
 
                 <div
                     v-else-if="memberQrError"
-                    class="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700"
+                    class="w-full rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700"
                 >
                     {{ memberQrError }}
                 </div>
 
-                <div v-else-if="memberQrCard" class="flex flex-col items-center gap-4">
+                <div v-else-if="memberQrCard" class="mx-auto flex w-full flex-col items-center justify-center gap-4">
                     <div
-                        class="cpf-qr-surface inline-flex rounded-2xl border border-black/10 bg-white p-3.5 shadow-sm"
+                        class="cpf-qr-surface mx-auto flex aspect-square w-[min(72vw,260px)] items-center justify-center rounded-2xl border border-black/10 bg-white p-4 shadow-sm sm:w-64 [&_svg]:block [&_svg]:h-full [&_svg]:w-full"
                         v-html="memberQrCard.qr_svg"
                     />
 
@@ -1803,6 +1868,82 @@ function formatFieldLabel(key: string): string {
                         Close
                     </button>
                 </div>
+            </div>
+        </div>
+
+        <!-- Transition Member / Officer to Former Members & Legacy Archive Modal -->
+        <div
+            v-if="alumniModalOpen && alumniTarget"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-md"
+            @click.self="alumniModalOpen = false"
+        >
+            <div class="bento w-full max-w-md p-6 text-xs">
+                <div class="mb-4 flex items-center justify-between border-b border-black/10 pb-3">
+                    <div class="flex items-center gap-2 text-sm font-bold text-slate-900">
+                        <GraduationCap class="size-4 text-[#0384C5]" />
+                        <span>Mark as Former Member / Officer</span>
+                    </div>
+                    <button
+                        type="button"
+                        @click="alumniModalOpen = false"
+                        class="rounded-lg border border-black/10 bg-white p-1 text-slate-600 hover:bg-slate-50"
+                        aria-label="Close Transition Modal"
+                    >
+                        <X class="size-4" />
+                    </button>
+                </div>
+
+                <p class="text-slate-600">
+                    Moving <strong>{{ alumniTarget.full_name_last_first_mi }}</strong> ({{ alumniTarget.role.toUpperCase() }}) preserves their account with <strong>verified club tenure</strong>, automatically titled by the highest position they ever held (e.g., <strong>Former President</strong> or <strong>Former Member</strong>), with read-only access to Awards, Time Capsules, Archived GCs, and zero active permissions.
+                </p>
+
+                <div
+                    v-if="alumniModalError"
+                    class="mt-3 rounded-xl border border-red-200 bg-red-50 p-2.5 font-semibold text-red-700"
+                >
+                    {{ alumniModalError }}
+                </div>
+
+                <form class="mt-4 space-y-3" @submit.prevent="submitAlumniTransition">
+                    <div>
+                        <label class="mb-1 block font-bold text-slate-800">Transition Reason</label>
+                        <select
+                            v-model="alumniReason"
+                            class="w-full rounded-xl border border-black/15 bg-white px-3 py-2 font-medium text-slate-900"
+                        >
+                            <option value="graduated">Graduated</option>
+                            <option value="term_completed">Completed Officer Term</option>
+                            <option value="stepped_down">Stepped Down</option>
+                            <option value="transferred">Transferred Campus / Program</option>
+                        </select>
+                    </div>
+
+                    <div>
+                        <label class="mb-1 block font-bold text-slate-800">Archive Note (Optional)</label>
+                        <input
+                            v-model="alumniRemarks"
+                            placeholder="e.g. Served faithfully during AY 2025–2026"
+                            class="w-full rounded-xl border border-black/15 bg-white px-3 py-2 text-slate-900"
+                        />
+                    </div>
+
+                    <div class="flex justify-end gap-2 pt-2">
+                        <button
+                            type="button"
+                            @click="alumniModalOpen = false"
+                            class="rounded-xl border border-black/15 bg-white px-4 py-2 font-semibold text-slate-700"
+                        >
+                            Cancel
+                        </button>
+                        <button
+                            type="submit"
+                            :disabled="transitioningAlumni"
+                            class="bento-btn px-4 py-2"
+                        >
+                            {{ transitioningAlumni ? 'Transitioning...' : 'Confirm Transition' }}
+                        </button>
+                    </div>
+                </form>
             </div>
         </div>
     </div>

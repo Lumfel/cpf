@@ -11,6 +11,7 @@ use App\Models\CampusRoom;
 use App\Models\OfficerGcChannel;
 use App\Models\PeerQuote;
 use App\Models\User;
+use App\Services\ClubTenureService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -131,7 +132,7 @@ class FirstBootSetupController extends Controller
             $adviser->email_verified_at = now();
             $adviser->save();
 
-            CampusMembership::create([
+            $adviserMembership = CampusMembership::create([
                 'user_id' => $adviser->id,
                 'campus_id' => $campus->id,
                 'role' => CpfRole::Adviser,
@@ -162,6 +163,8 @@ class FirstBootSetupController extends Controller
                 'dues_confirmed_by' => $adviser->id,
                 'dues_confirmed_at' => now(),
             ]);
+
+            app(ClubTenureService::class)->openTenure($adviserMembership, $adviser, $adviserMembership->approved_at);
 
             if (PeerQuote::query()->where('is_approved', true)->doesntExist()) {
                 PeerQuote::create([

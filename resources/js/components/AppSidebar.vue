@@ -23,48 +23,81 @@ const page = usePage<{ auth: Auth }>();
 const roleLabel = computed(() => page.props.auth?.roleLabel ?? 'Ordinary Account');
 const campusName = computed(() => page.props.auth?.membership?.campus?.name ?? 'No Campus Assigned');
 const isOfficerOrAdviser = computed(() => Boolean(page.props.auth?.can?.isOfficerOrAdviser));
+const isAlumni = computed(() => Boolean(page.props.auth?.isAlumni));
+const canAccessAlumniArchive = computed(() => Boolean(page.props.auth?.can?.accessAlumniArchive));
 
-const mainNavItems = computed<NavItem[]>(() => [
-    {
-        title: 'Dashboard',
-        href: dashboard(),
-        icon: LayoutGrid,
-    },
-    {
-        title: 'Events & Activities',
-        href: '/events-activities',
-        icon: CalendarDays,
-    },
-    ...(isOfficerOrAdviser.value
-        ? [
-              {
-                  title: 'Officers Chat',
-                  href: '/officers-chat',
-                  icon: MessageCircle,
-              },
-          ]
-        : []),
-    {
-        title: 'Membership & GC Checklist',
-        href: membershipIndex(),
-        icon: Users,
-    },
-    {
-        title: 'My Achievements & Awards',
-        href: '/my-credentials',
-        icon: Award,
-    },
-    {
-        title: 'Campus Hub',
-        href: '/campus-hub',
-        icon: Building2,
-    },
-    {
-        title: 'Community & Archives',
-        href: '/community-hub',
-        icon: Archive,
-    },
-]);
+const mainNavItems = computed<NavItem[]>(() => {
+    if (isAlumni.value) {
+        return [
+            {
+                title: 'Former Members & Archive',
+                href: '/alumni-archive',
+                icon: Archive,
+            },
+            {
+                title: 'My Achievements & Awards',
+                href: '/my-credentials',
+                icon: Award,
+            },
+            {
+                title: 'Dashboard',
+                href: dashboard(),
+                icon: LayoutGrid,
+            },
+        ];
+    }
+
+    return [
+        {
+            title: 'Dashboard',
+            href: dashboard(),
+            icon: LayoutGrid,
+        },
+        {
+            title: 'Events & Activities',
+            href: '/events-activities',
+            icon: CalendarDays,
+        },
+        ...(isOfficerOrAdviser.value
+            ? [
+                  {
+                      title: 'Officers Chat',
+                      href: '/officers-chat',
+                      icon: MessageCircle,
+                  },
+              ]
+            : []),
+        {
+            title: 'Membership & GC Checklist',
+            href: membershipIndex(),
+            icon: Users,
+        },
+        {
+            title: 'My Achievements & Awards',
+            href: '/my-credentials',
+            icon: Award,
+        },
+        {
+            title: 'Campus Hub',
+            href: '/campus-hub',
+            icon: Building2,
+        },
+        {
+            title: 'Community & Archives',
+            href: '/community-hub',
+            icon: Archive,
+        },
+        ...(canAccessAlumniArchive.value
+            ? [
+                  {
+                      title: 'Former Members & Archive',
+                      href: '/alumni-archive',
+                      icon: Archive,
+                  },
+              ]
+            : []),
+    ];
+});
 
 const footerNavItems: NavItem[] = [
     {

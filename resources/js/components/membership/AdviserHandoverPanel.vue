@@ -368,7 +368,7 @@ async function copyCode() {
                 <div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300/60 bg-amber-50 p-3 text-[11px] text-amber-900">
                     <span class="inline-flex items-center gap-1.5">
                         <ShieldAlert class="size-4 shrink-0 text-amber-700" />
-                        Once your successor accepts with the 6-character code, your account will safely step down to Verified Peer Member.
+                        Once your successor accepts with the 6-character code, your account transitions to Former Club Adviser with read-only access to Awards, Time Capsules, and Archived GCs, and zero active system control.
                     </span>
                     <button type="submit" :disabled="busy" class="bento-btn">
                         <ArrowRightLeft class="size-3.5" />

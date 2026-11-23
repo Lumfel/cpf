@@ -25,6 +25,12 @@ class CpfV4Controller extends Controller
 {
     public function storeAchievement(Request $request): JsonResponse
     {
+        abort_if(
+            $request->user()?->isAlumni(),
+            403,
+            'Former member and officer accounts have read-only archive access.',
+        );
+
         $validated = $request->validate([
             'campus_id' => ['required', 'integer', 'exists:campuses,id'],
             'title' => ['required', 'string', 'max:160'],
@@ -49,6 +55,12 @@ class CpfV4Controller extends Controller
 
     public function storeTimeCapsule(Request $request): JsonResponse
     {
+        abort_if(
+            $request->user()?->isAlumni(),
+            403,
+            'Former member and officer accounts have read-only archive access.',
+        );
+
         $validated = $request->validate([
             'campus_id' => ['required', 'integer', 'exists:campuses,id'],
             'title' => ['required', 'string', 'max:160'],
@@ -957,6 +969,12 @@ class CpfV4Controller extends Controller
 
     public function storeQuote(Request $request): JsonResponse
     {
+        abort_if(
+            $request->user()?->isAlumni(),
+            403,
+            'Former member and officer accounts have read-only archive access.',
+        );
+
         $validated = $request->validate([
             'quote_text' => ['required', 'string', 'max:400'],
             'author_name' => ['nullable', 'string', 'max:120'],

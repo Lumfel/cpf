@@ -8,6 +8,7 @@ use App\Models\AdviserHandover;
 use App\Models\Campus;
 use App\Models\CampusMembership;
 use App\Models\User;
+use App\Services\ClubTenureService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -16,6 +17,9 @@ use Illuminate\Validation\Rule;
 
 class AdviserHandoverController extends Controller
 {
+    public function __construct(
+        private readonly ClubTenureService $tenureService,
+    ) {}
     public function store(Request $request): JsonResponse
     {
         $user = $request->user();
@@ -120,7 +124,7 @@ class AdviserHandoverController extends Controller
                 'to_user_id' => $targetMembership->user_id,
                 'to_membership_id' => $targetMembership->id,
                 'status' => 'pending',
-                'outgoing_role' => CpfRole::Member->value,
+                'outgoing_role' => 'alumni',
                 'confirmation_code' => $confirmationCode,
                 'handover_notes' => isset($validated['handover_notes']) && filled($validated['handover_notes'])
                     ? trim((string) $validated['handover_notes'])
@@ -159,7 +163,7 @@ class AdviserHandoverController extends Controller
 
         $enteredCode = strtoupper(trim((string) ($validated['confirmation_code'] ?? '')));
 
-        $resultStatus = DB::transaction(function () use ($handover, $validated, $enteredCode): string {
+        $resultStatus = DB::transaction(function () use ($handover, $validated, $enteredCode, $user): string {
             $lockedHandover = AdviserHandover::query()
                 ->whereKey($handover->id)
                 ->lockForUpdate()
@@ -195,6 +199,7 @@ class AdviserHandoverController extends Controller
                 'section' => 'Adviser',
                 'course_year_section' => 'Guidance Services / Adviser',
             ]);
+            $this->tenureService->openTenure($incomingMembership->fresh(), $user);
 
             $outgoingMembership = CampusMembership::query()
                 ->where('campus_id', $lockedHandover->campus_id)
@@ -203,8 +208,7 @@ class AdviserHandoverController extends Controller
                 ->first();
 
             if ($outgoingMembership) {
-                $outgoingRole = CpfRole::tryFrom((string) $lockedHandover->outgoing_role) ?? CpfRole::Member;
-                $outgoingMembership->update(['role' => $outgoingRole]);
+                $this->tenureService->transitionToAlumni($outgoingMembership, $user, 'adviser_handover');
             }
 
             Campus::query()

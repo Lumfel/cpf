@@ -701,4 +701,133 @@ class CampusEventsAndActivitiesTest extends TestCase
             $this->travelBack();
         }
     }
+
+    public function test_officer_manual_attendance_fallback_enforces_login_before_logout_and_blocks_regular_members(): void
+    {
+        $adviser = $this->createMember($this->talisay, CpfRole::Adviser, 'Montemayor, Elena V.');
+        $saa = $this->createMember($this->talisay, CpfRole::SergeantAtArms, 'Mendoza, Rafael J.');
+        $member = $this->createMember($this->talisay, CpfRole::Member, 'Reyes, Katrina M.');
+
+        $alijis = Campus::create([
+            'code' => 'ALIJIS',
+            'name' => 'CHMSU Alijis Campus',
+            'slug' => 'alijis',
+            'adviser_name' => 'Ms. Alijis Adviser, RGC',
+            'gc_group_name' => 'CPF Alijis Official Peer GC',
+            'is_active' => true,
+        ]);
+        $otherCampusMember = $this->createMember($alijis, CpfRole::Member, 'Gomez, Paolo L.');
+
+        $eventDate = now()->addDays(2)->toDateString();
+        $event = CampusEvent::create([
+            'campus_id' => $this->talisay->id,
+            'title' => 'Manual Checklist Peer Assembly',
+            'event_date' => $eventDate,
+            'start_time' => '09:00',
+            'end_time' => '11:00',
+            'status' => 'approved',
+            'created_by_user_id' => $adviser->id,
+            'approved_by_user_id' => $adviser->id,
+            'approved_at' => now(),
+        ]);
+
+        // Locked before the active event window
+        $this->actingAs($saa)
+            ->postJson("/events-activities/{$event->id}/manual-attendance", [
+                'user_id' => $member->id,
+                'scan_type' => 'login',
+            ])
+            ->assertStatus(422);
+
+        $this->travelTo(Carbon::parse($eventDate.' 09:30:00'));
+
+        try {
+            // Regular members cannot use manual attendance fallback (403)
+            $this->actingAs($member)
+                ->postJson("/events-activities/{$event->id}/manual-attendance", [
+                    'user_id' => $member->id,
+                    'scan_type' => 'login',
+                ])
+                ->assertForbidden();
+
+            // Officer cannot check out before check-in (422)
+            $this->actingAs($saa)
+                ->postJson("/events-activities/{$event->id}/manual-attendance", [
+                    'user_id' => $member->id,
+                    'scan_type' => 'logout',
+                ])
+                ->assertStatus(422);
+
+            // Officer cannot check in a member from another campus (422)
+            $this->actingAs($saa)
+                ->postJson("/events-activities/{$event->id}/manual-attendance", [
+                    'user_id' => $otherCampusMember->id,
+                    'scan_type' => 'login',
+                ])
+                ->assertStatus(422);
+
+            // Officer Check-In succeeds (201) and duplicate Check-In is idempotent (200)
+            $this->actingAs($saa)
+                ->postJson("/events-activities/{$event->id}/manual-attendance", [
+                    'user_id' => $member->id,
+                    'scan_type' => 'login',
+                ])
+                ->assertCreated()
+                ->assertJsonPath('status', 'logged_in');
+
+            $this->actingAs($saa)
+                ->postJson("/events-activities/{$event->id}/manual-attendance", [
+                    'user_id' => $member->id,
+                    'scan_type' => 'login',
+                ])
+                ->assertOk()
+                ->assertJsonPath('status', 'already_logged_in');
+
+            // Officer Check-Out succeeds after Check-In (200) and duplicate Check-Out is idempotent (200)
+            $this->actingAs($saa)
+                ->postJson("/events-activities/{$event->id}/manual-attendance", [
+                    'user_id' => $member->id,
+                    'scan_type' => 'logout',
+                ])
+                ->assertOk()
+                ->assertJsonPath('status', 'logged_out');
+
+            $this->actingAs($saa)
+                ->postJson("/events-activities/{$event->id}/manual-attendance", [
+                    'user_id' => $member->id,
+                    'scan_type' => 'logout',
+                ])
+                ->assertOk()
+                ->assertJsonPath('status', 'already_logged_out');
+
+            $attendance = CampusEventAttendance::where('campus_event_id', $event->id)
+                ->where('user_id', $member->id)
+                ->firstOrFail();
+
+            $this->assertNotNull($attendance->logged_in_at);
+            $this->assertNotNull($attendance->logged_out_at);
+            $this->assertSame($saa->id, $attendance->logged_in_by_user_id);
+            $this->assertSame($saa->id, $attendance->logged_out_by_user_id);
+
+            // Officer Inertia page receives approved same-campus roster; regular member does not
+            $this->actingAs($saa)
+                ->get('/events-activities')
+                ->assertOk()
+                ->assertInertia(fn ($page) => $page
+                    ->component('events/Index')
+                    ->has('campusMembers', 3)
+                    ->where('campusMembers.0.id', fn ($id) => is_int($id))
+                    ->where('campusMembers.0.full_name_last_first_mi', fn ($name) => is_string($name) && $name !== '')
+                    ->where('campusMembers.0.course_year_section', fn ($cys) => is_string($cys) && $cys !== ''));
+
+            $this->actingAs($member)
+                ->get('/events-activities')
+                ->assertOk()
+                ->assertInertia(fn ($page) => $page
+                    ->component('events/Index')
+                    ->has('campusMembers', 0));
+        } finally {
+            $this->travelBack();
+        }
+    }
 }

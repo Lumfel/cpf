@@ -98,4 +98,36 @@ enum CpfRole: string
     {
         return in_array($this, [self::Adviser, self::President, self::VicePresident], true);
     }
+
+    public function rank(): int
+    {
+        return match ($this) {
+            self::Adviser => 100,
+            self::President => 90,
+            self::VicePresident => 80,
+            self::Secretary => 70,
+            self::Treasurer => 60,
+            self::Auditor => 50,
+            self::BusinessManager => 40,
+            self::Pio => 30,
+            self::SergeantAtArms => 20,
+            self::Member => 10,
+        };
+    }
+
+    public function formerTitle(): string
+    {
+        return match ($this) {
+            self::Adviser => 'Former Club Adviser',
+            self::President => 'Former President',
+            self::VicePresident => 'Former Vice President',
+            self::Secretary => 'Former Secretary',
+            self::Treasurer => 'Former Treasurer',
+            self::Auditor => 'Former Auditor',
+            self::BusinessManager => 'Former Business Manager',
+            self::Pio => 'Former Public Information Officer (PIO)',
+            self::SergeantAtArms => 'Former Sergeant-at-Arms',
+            self::Member => 'Former Member',
+        };
+    }
 }

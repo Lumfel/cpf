@@ -5,9 +5,13 @@ namespace App\Actions\Membership;
 use App\Enums\CpfRole;
 use App\Models\CampusMembership;
 use App\Models\User;
+use App\Services\ClubTenureService;
 
 class ToggleMessengerGcChecklist
 {
+    public function __construct(
+        private readonly ClubTenureService $tenureService,
+    ) {}
     /**
      * Confirm or unconfirm that a verified member is present in the campus
      * Messenger Group Chat (GC). Strictly restricted to Adviser or President.
@@ -46,8 +50,12 @@ class ToggleMessengerGcChecklist
      * Assign or update an officer role (President, Secretary, Treasurer, Member).
      * Strictly restricted to the Club Adviser (highest authority in charge; no Admin role).
      */
-    public function updateRole(CampusMembership $membership, CpfRole $newRole): CampusMembership
+    public function updateRole(CampusMembership $membership, CpfRole $newRole, ?User $actor = null): CampusMembership
     {
+        if ($membership->role !== $newRole) {
+            $this->tenureService->recordRoleTransition($membership, $newRole, $actor, 'role_change');
+        }
+
         $membership->update([
             'role' => $newRole,
         ]);

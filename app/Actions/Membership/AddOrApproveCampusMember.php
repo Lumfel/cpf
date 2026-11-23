@@ -9,6 +9,7 @@ use App\Models\CampusMembership;
 use App\Models\PasskeyIssuance;
 use App\Models\User;
 use App\Notifications\MembershipApprovedPasskeyNotification;
+use App\Services\ClubTenureService;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
@@ -20,6 +21,7 @@ class AddOrApproveCampusMember
 {
     public function __construct(
         private readonly IssueMemberPasskey $issuePasskey,
+        private readonly ClubTenureService $tenureService,
     ) {}
 
     /**
@@ -125,6 +127,7 @@ class AddOrApproveCampusMember
             );
 
             $passkeyResult = $this->issuePasskey->handle($actor, $membership, true, false);
+            $this->tenureService->openTenure($membership, $actor, $membership->approved_at);
 
             return [
                 'membership' => $membership,
@@ -171,6 +174,7 @@ class AddOrApproveCampusMember
             }
 
             $passkeyResult = $this->issuePasskey->handle($actor, $membership, true, false);
+            $this->tenureService->openTenure($membership, $actor, $membership->approved_at);
 
             return [
                 'membership' => $membership->refresh(),

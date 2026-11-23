@@ -40,7 +40,9 @@ class HandleInertiaRequests extends Middleware
     public function share(Request $request): array
     {
         $user = $request->user();
-        $membership = $user?->primaryMembership()->with('campus:id,code,name,slug')->first();
+        $membership = $user?->primaryMembership()
+            ->with(['campus:id,code,name,slug', 'tenures:id,campus_membership_id,role'])
+            ->first();
         $needsAdviserSetup = FirstBootSetupController::needsAdviserSetup();
 
         $systemBootstrap = [
@@ -128,7 +130,9 @@ class HandleInertiaRequests extends Middleware
                 'user' => $user,
                 'membership' => $membership,
                 'role' => $user?->verifiedRole()?->value,
-                'roleLabel' => $user?->verifiedRole()?->label() ?? 'Ordinary Account',
+                'formerRole' => $user?->formerRole()?->value,
+                'isAlumni' => (bool) ($user?->isAlumni() ?? false),
+                'roleLabel' => $user?->verifiedRole()?->label() ?? $user?->formerRoleLabel() ?? 'Ordinary Account',
                 'roleDuties' => $user?->verifiedRole()?->dutiesSummary() ?? null,
                 'mustChangePassword' => (bool) ($user?->requiresPasswordChange() ?? false),
                 'can' => [
@@ -141,6 +145,7 @@ class HandleInertiaRequests extends Middleware
                     'proposeEvents' => $user ? $user->canProposeEvents() : false,
                     'isOfficerOrAdviser' => $user ? ($user->verifiedRole()?->isOfficerOrAdviser() ?? false) : false,
                     'isClubAdviser' => $user ? $user->isClubAdviser() : false,
+                    'accessAlumniArchive' => $user ? $user->canAccessAlumniArchive() : false,
                 ],
             ],
             'flash' => [

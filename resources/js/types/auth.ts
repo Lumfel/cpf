@@ -25,7 +25,7 @@ export type CampusMembershipRecord = {
     user_id: number;
     campus_id: number;
     role: CpfRoleValue;
-    status: 'pending' | 'approved' | 'rejected';
+    status: 'pending' | 'approved' | 'rejected' | 'alumni';
     enrollment_source: 'online_form' | 'officer_added' | 'google_forms_api';
     recorded_email: string;
     first_name?: string;
@@ -52,6 +52,8 @@ export type CampusMembershipRecord = {
     has_paid_dues?: boolean;
     dues_confirmed_by?: number | null;
     dues_confirmed_at?: string | null;
+    alumni_since?: string | null;
+    alumni_reason?: string | null;
     remarks?: string | null;
     campus?: CampusSummary;
     approver?: { id: number; name: string } | null;
@@ -83,6 +85,7 @@ export type AuthPermissions = {
     proposeEvents?: boolean;
     isOfficerOrAdviser?: boolean;
     isClubAdviser: boolean;
+    accessAlumniArchive?: boolean;
 };
 
 export type SystemBootstrapState = {
@@ -162,6 +165,8 @@ export type Auth = {
     user: User | null;
     membership?: CampusMembershipRecord | null;
     role?: CpfRoleValue | null;
+    formerRole?: CpfRoleValue | null;
+    isAlumni?: boolean;
     roleLabel?: string;
     roleDuties?: string | null;
     mustChangePassword?: boolean;

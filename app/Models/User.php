@@ -17,6 +17,7 @@ use Illuminate\Support\Carbon;
 use Laravel\Fortify\Contracts\PasskeyUser;
 use Laravel\Fortify\PasskeyAuthenticatable;
 use Laravel\Fortify\TwoFactorAuthenticatable;
+use Laravel\Sanctum\HasApiTokens;
 
 /**
  * @property int $id
@@ -36,7 +37,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
 class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
-    use HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
+    use HasApiTokens, HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
 
     protected $appends = ['avatar'];
 
@@ -158,5 +159,45 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     public function canProposeEvents(): bool
     {
         return $this->verifiedRole()?->canProposeEvents() ?? false;
+    }
+
+    /**
+     * @return HasMany<ClubServiceTenure, $this>
+     */
+    public function tenures(): HasMany
+    {
+        return $this->hasMany(ClubServiceTenure::class);
+    }
+
+    public function isAlumni(): bool
+    {
+        if (app()->environment(['local', 'testing']) && session()->has('cpf_test_role_override')) {
+            return false;
+        }
+
+        return $this->primaryMembership?->status === MembershipStatus::Alumni;
+    }
+
+    public function formerRole(): ?CpfRole
+    {
+        if (! $this->isAlumni()) {
+            return null;
+        }
+
+        return $this->primaryMembership?->highestRoleHeld();
+    }
+
+    public function formerRoleLabel(): ?string
+    {
+        if (! $this->isAlumni() || ! $this->primaryMembership) {
+            return null;
+        }
+
+        return $this->primaryMembership->formerRoleLabel();
+    }
+
+    public function canAccessAlumniArchive(): bool
+    {
+        return $this->isAlumni() || $this->verifiedRole() !== null;
     }
 }

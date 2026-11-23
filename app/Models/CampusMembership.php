@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'user_id',
@@ -40,6 +41,9 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'has_paid_dues',
     'dues_confirmed_by',
     'dues_confirmed_at',
+    'alumni_since',
+    'alumni_reason',
+    'alumni_transitioned_by',
     'remarks',
 ])]
 class CampusMembership extends Model
@@ -55,6 +59,7 @@ class CampusMembership extends Model
             'gc_confirmed_at' => 'datetime',
             'has_paid_dues' => 'boolean',
             'dues_confirmed_at' => 'datetime',
+            'alumni_since' => 'datetime',
         ];
     }
 
@@ -108,6 +113,49 @@ class CampusMembership extends Model
     public function duesConfirmer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'dues_confirmed_by');
+    }
+
+    public function alumniTransitionedBy(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'alumni_transitioned_by');
+    }
+
+    /**
+     * @return HasMany<ClubServiceTenure, $this>
+     */
+    public function tenures(): HasMany
+    {
+        return $this->hasMany(ClubServiceTenure::class, 'campus_membership_id')
+            ->orderBy('started_at')
+            ->orderBy('id');
+    }
+
+    public function highestRoleHeld(): CpfRole
+    {
+        $highest = $this->role instanceof CpfRole
+            ? $this->role
+            : (CpfRole::tryFrom((string) $this->role) ?? CpfRole::Member);
+
+        $tenures = $this->relationLoaded('tenures')
+            ? $this->tenures
+            : $this->tenures()->get(['role']);
+
+        foreach ($tenures as $tenure) {
+            $tRole = $tenure->role instanceof CpfRole
+                ? $tenure->role
+                : (CpfRole::tryFrom((string) $tenure->role) ?? CpfRole::Member);
+
+            if ($tRole->rank() > $highest->rank()) {
+                $highest = $tRole;
+            }
+        }
+
+        return $highest;
+    }
+
+    public function formerRoleLabel(): string
+    {
+        return $this->highestRoleHeld()->formerTitle();
     }
 
     public function scopeAlphabetical(Builder $query): Builder

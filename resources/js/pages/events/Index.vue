@@ -77,6 +77,7 @@ const props = defineProps<{
     minScheduleDate: string;
     events: CampusEventFull[];
     campusMembers: Array<{
+        id: number;
         user_id: number;
         full_name_last_first_mi: string;
         course_year_section: string;
@@ -1107,6 +1108,7 @@ function statusPillClasses(ev: CampusEventFull): string {
                     :event-id="selectedEvent.id"
                     :event-title="selectedEvent.title"
                     :campus-members="campusMembers"
+                    :checklist="selectedEvent.checklist"
                     @scanned="router.reload()"
                 />
 

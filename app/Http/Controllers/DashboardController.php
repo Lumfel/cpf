@@ -4,11 +4,16 @@ namespace App\Http\Controllers;
 
 use App\Enums\MembershipStatus;
 use App\Models\CampusEvent;
+use App\Models\CampusEventAttendance;
 use App\Models\CampusEventNotification;
 use App\Models\CampusMembership;
+use App\Models\DigitalCertificate;
+use App\Models\MemberAchievement;
+use App\Models\MemberAward;
 use App\Models\OfficerGcChannel;
 use App\Models\PasskeyIssuance;
 use App\Models\PeerQuote;
+use App\Services\ClubTenureService;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
@@ -19,18 +24,19 @@ use Inertia\Response;
 
 class DashboardController extends Controller
 {
-    public function index(Request $request): Response
+    public function index(Request $request, ClubTenureService $tenureService): Response
     {
         $user = $request->user();
         $membership = $user->primaryMembership()
-            ->with(['campus:id,code,name,slug,gc_group_name', 'duesConfirmer:id,name'])
+            ->with(['campus:id,code,name,slug,gc_group_name,current_academic_year', 'duesConfirmer:id,name', 'tenures'])
             ->first();
         $campusId = $membership?->campus_id;
         $campusCode = $membership?->campus?->code ?? 'CHMSU';
         $roleValue = $user->verifiedRole()?->value ?? 'applicant';
+        $isAlumni = $user->isAlumni();
 
-        // Attendance QR is unlocked once the member creates their personal password.
-        $qrUnlocked = $user->must_change_password === false;
+        // Attendance QR is unlocked once the verified active member creates their personal password.
+        $qrUnlocked = ! $isAlumni && $user->must_change_password === false && $user->verifiedRole() !== null;
         $qrSvg = null;
         $qrPayload = null;
         $memberIdCode = null;
@@ -182,7 +188,28 @@ class DashboardController extends Controller
             ->whereNull('read_at')
             ->count();
 
+        $myTenureSummary = null;
+        if ($membership) {
+            $eventsCount = CampusEventAttendance::query()
+                ->where('user_id', $user->id)
+                ->whereNotNull('logged_in_at')
+                ->count();
+            $awardsCount = MemberAward::query()->where('user_id', $user->id)->count();
+            $achievementsCount = MemberAchievement::query()->where('user_id', $user->id)->count();
+            $certificatesCount = DigitalCertificate::query()->where('user_id', $user->id)->count();
+
+            $myTenureSummary = $tenureService->buildTenureSummary(
+                $membership,
+                $eventsCount,
+                $awardsCount,
+                $achievementsCount,
+                $certificatesCount,
+            );
+        }
+
         return Inertia::render('Dashboard', [
+            'isAlumni' => $isAlumni,
+            'myTenureSummary' => $myTenureSummary,
             'qrUnlocked' => $qrUnlocked,
             'memberIdCode' => $memberIdCode,
             'qrSvg' => $qrSvg,

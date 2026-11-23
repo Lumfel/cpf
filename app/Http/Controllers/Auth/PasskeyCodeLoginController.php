@@ -21,7 +21,24 @@ class PasskeyCodeLoginController extends Controller
             'passkey_code' => ['required', 'string'],
         ]);
 
-        $clean = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', (string) $validated['passkey_code']) ?? '');
+        $user = self::claimPasskeyCode(
+            (string) $validated['email'],
+            (string) $validated['passkey_code'],
+        );
+
+        Auth::login($user, true);
+        $request->session()->regenerate();
+
+        if ($user->requiresPasswordChange()) {
+            return redirect()->route('password.force-change.edit');
+        }
+
+        return redirect()->intended(route('dashboard'));
+    }
+
+    public static function claimPasskeyCode(string $email, string $passkeyCode): User
+    {
+        $clean = strtoupper(preg_replace('/[^A-Za-z0-9]/', '', $passkeyCode) ?? '');
 
         if (strlen($clean) !== 12) {
             throw ValidationException::withMessages([
@@ -30,7 +47,7 @@ class PasskeyCodeLoginController extends Controller
         }
 
         $formattedCode = implode('-', str_split($clean, 4));
-        $user = User::query()->where('email', strtolower(trim((string) $validated['email'])))->first();
+        $user = User::query()->where('email', strtolower(trim($email)))->first();
 
         if (! $user) {
             throw ValidationException::withMessages([
@@ -60,13 +77,6 @@ class PasskeyCodeLoginController extends Controller
             ])->save();
         });
 
-        Auth::login($user, true);
-        $request->session()->regenerate();
-
-        if ($user->requiresPasswordChange()) {
-            return redirect()->route('password.force-change.edit');
-        }
-
-        return redirect()->intended(route('dashboard'));
+        return $user;
     }
 }

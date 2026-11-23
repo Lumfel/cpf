@@ -1,26 +1,56 @@
 <script setup lang="ts">
-import { Camera, CameraOff, CheckCircle2, LogIn, LogOut, QrCode, ScanLine, ShieldAlert } from '@lucide/vue';
-import { onBeforeUnmount, ref } from 'vue';
+import {
+    Camera,
+    CameraOff,
+    CheckCircle2,
+    ClipboardCheck,
+    LogIn,
+    LogOut,
+    QrCode,
+    ScanLine,
+    Search,
+    ShieldAlert,
+} from '@lucide/vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import { apiRequest } from '@/lib/csrfFetch';
 
-const props = defineProps<{
-    eventId: number;
-    eventTitle: string;
-    campusMembers: Array<{
-        user_id: number;
-        full_name_last_first_mi: string;
-        course_year_section: string;
-        member_id_code: string;
-    }>;
-}>();
+interface ChecklistMemberRow {
+    user_id: number;
+    full_name_last_first_mi: string;
+    course_year_section: string;
+    member_id_code: string;
+    logged_in_at: string | null;
+    logged_out_at: string | null;
+}
+
+const props = withDefaults(
+    defineProps<{
+        eventId: number;
+        eventTitle: string;
+        campusMembers: Array<{
+            id?: number;
+            user_id: number;
+            full_name_last_first_mi: string;
+            course_year_section: string;
+            member_id_code: string;
+        }>;
+        checklist?: ChecklistMemberRow[];
+    }>(),
+    {
+        checklist: () => [],
+    },
+);
 
 const emit = defineEmits<{
     (e: 'scanned'): void;
 }>();
 
+const activeMode = ref<'scanner' | 'manual'>('scanner');
 const scanType = ref<'login' | 'logout'>('login');
 const manualCode = ref('');
 const selectedQuickMember = ref('');
+const manualSearch = ref('');
+const manualSubmittingUserId = ref<number | null>(null);
 const submitting = ref(false);
 const resultNotice = ref<string | null>(null);
 const errorNotice = ref<string | null>(null);
@@ -29,6 +59,8 @@ const errorNotice = ref<string | null>(null);
 const videoRef = ref<HTMLVideoElement | null>(null);
 const cameraActive = ref(false);
 const cameraWarning = ref<string | null>(null);
+const videoDevices = ref<MediaDeviceInfo[]>([]);
+const selectedDeviceId = ref<string>('');
 let mediaStream: MediaStream | null = null;
 let scanIntervalId: ReturnType<typeof setInterval> | null = null;
 let lastScannedPayload = '';
@@ -42,6 +74,67 @@ interface BarcodeDetectorCtor {
     new (options: { formats: string[] }): {
         detect(source: HTMLVideoElement): Promise<DetectedBarcode[]>;
     };
+}
+
+const manualChecklistRows = computed(() => {
+    const statusByUserId = new Map<number, ChecklistMemberRow>();
+    for (const row of props.checklist) {
+        statusByUserId.set(row.user_id, row);
+    }
+
+    const baseRoster =
+        props.campusMembers.length > 0
+            ? props.campusMembers.map((member) => {
+                  const status = statusByUserId.get(member.user_id);
+                  return {
+                      user_id: member.user_id,
+                      full_name_last_first_mi: member.full_name_last_first_mi,
+                      course_year_section: member.course_year_section,
+                      member_id_code: member.member_id_code,
+                      logged_in_at: status?.logged_in_at ?? null,
+                      logged_out_at: status?.logged_out_at ?? null,
+                  };
+              })
+            : props.checklist;
+
+    const query = manualSearch.value.trim().toLowerCase();
+    if (!query) return baseRoster;
+
+    return baseRoster.filter(
+        (row) =>
+            row.full_name_last_first_mi.toLowerCase().includes(query) ||
+            row.course_year_section.toLowerCase().includes(query) ||
+            row.member_id_code.toLowerCase().includes(query),
+    );
+});
+
+function formatAttendanceResult(
+    data: {
+        status?: string;
+        member_name?: string;
+        course_year_section?: string;
+    },
+): string {
+    const label = data.member_name ? `${data.member_name} (${data.course_year_section ?? ''})` : 'Member';
+
+    if (data.status === 'logged_in') {
+        return `Log-In recorded at activity start for ${label}.`;
+    }
+    if (data.status === 'already_logged_in') {
+        return `${label} is already logged in for this event.`;
+    }
+    if (data.status === 'logged_out') {
+        return `Log-Out recorded at activity end for ${label}.`;
+    }
+
+    return `${label} is already logged out for this event.`;
+}
+
+function switchMode(mode: 'scanner' | 'manual') {
+    if (mode === 'manual') {
+        stopCamera();
+    }
+    activeMode.value = mode;
 }
 
 async function submitScan(payload: string) {
@@ -69,20 +162,37 @@ async function submitScan(payload: string) {
         return;
     }
 
-    const label = data.member_name ? `${data.member_name} (${data.course_year_section ?? ''})` : 'Member';
-
-    if (data.status === 'logged_in') {
-        resultNotice.value = `Log-In recorded at activity start for ${label}.`;
-    } else if (data.status === 'already_logged_in') {
-        resultNotice.value = `${label} is already logged in for this event.`;
-    } else if (data.status === 'logged_out') {
-        resultNotice.value = `Log-Out recorded at activity end for ${label}.`;
-    } else {
-        resultNotice.value = `${label} is already logged out for this event.`;
-    }
-
+    resultNotice.value = formatAttendanceResult(data);
     manualCode.value = '';
     selectedQuickMember.value = '';
+    emit('scanned');
+}
+
+async function submitManualAttendance(userId: number, type: 'login' | 'logout') {
+    if (manualSubmittingUserId.value !== null) return;
+
+    manualSubmittingUserId.value = userId;
+    resultNotice.value = null;
+    errorNotice.value = null;
+
+    const { ok, data } = await apiRequest<{
+        status?: string;
+        member_name?: string;
+        course_year_section?: string;
+        message?: string;
+    }>(`/events-activities/${props.eventId}/manual-attendance`, 'POST', {
+        user_id: userId,
+        scan_type: type,
+    });
+
+    manualSubmittingUserId.value = null;
+
+    if (!ok) {
+        errorNotice.value = data.message ?? 'Unable to record manual attendance.';
+        return;
+    }
+
+    resultNotice.value = formatAttendanceResult(data);
     emit('scanned');
 }
 
@@ -91,22 +201,61 @@ function handleQuickMemberPick() {
     manualCode.value = selectedQuickMember.value;
 }
 
-async function startCamera() {
+async function refreshVideoDevices() {
+    if (typeof navigator === 'undefined' || !navigator.mediaDevices?.enumerateDevices) {
+        return;
+    }
+
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const inputs = devices.filter((device) => device.kind === 'videoinput');
+        videoDevices.value = inputs;
+
+        const activeDeviceId = mediaStream?.getVideoTracks()[0]?.getSettings().deviceId ?? '';
+        if (!selectedDeviceId.value && (activeDeviceId || inputs[0]?.deviceId)) {
+            selectedDeviceId.value = activeDeviceId || inputs[0].deviceId;
+        }
+    } catch {
+        // Ignore device enumeration permission errors before camera starts
+    }
+}
+
+async function acquireCameraStream(deviceId?: string): Promise<MediaStream> {
+    if (deviceId) {
+        try {
+            return await navigator.mediaDevices.getUserMedia({
+                video: { deviceId: { exact: deviceId } },
+            });
+        } catch {
+            return await navigator.mediaDevices.getUserMedia({ video: true });
+        }
+    }
+
+    try {
+        return await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'environment' },
+        });
+    } catch {
+        return await navigator.mediaDevices.getUserMedia({ video: true });
+    }
+}
+
+async function startCamera(deviceIdOverride?: string) {
     cameraWarning.value = null;
     errorNotice.value = null;
 
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
         cameraWarning.value =
-            'Camera API unavailable on this connection/browser. Use a USB QR scanner or enter the signed QR / Member ID code below.';
+            'Camera API unavailable on this connection/browser. Use a USB QR scanner, enter the Member ID code below, or switch to Manual Checklist.';
         return;
     }
+
+    stopCamera();
 
     const BarcodeDetectorClass = (window as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector;
 
     try {
-        mediaStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'environment' },
-        });
+        mediaStream = await acquireCameraStream(deviceIdOverride ?? (selectedDeviceId.value || undefined));
         cameraActive.value = true;
 
         if (videoRef.value) {
@@ -114,9 +263,11 @@ async function startCamera() {
             await videoRef.value.play();
         }
 
+        await refreshVideoDevices();
+
         if (!BarcodeDetectorClass) {
             cameraWarning.value =
-                'Camera preview started, but native BarcodeDetector is unsupported in this browser. Paste or type the Member ID / QR payload below.';
+                'Camera preview started, but native BarcodeDetector is unsupported in this browser. Paste or type the Member ID / QR payload below, or switch to Manual Checklist.';
             return;
         }
 
@@ -144,7 +295,13 @@ async function startCamera() {
     } catch {
         stopCamera();
         cameraWarning.value =
-            'Could not access device camera (permission denied or no camera detected). You can still scan or enter Member IDs below.';
+            'Could not access device camera (permission denied or no camera detected). You can still enter Member IDs below or use the Manual Checklist tab.';
+    }
+}
+
+async function handleCameraDeviceChange() {
+    if (cameraActive.value) {
+        await startCamera(selectedDeviceId.value);
     }
 }
 
@@ -165,6 +322,10 @@ function stopCamera() {
     cameraActive.value = false;
 }
 
+onMounted(() => {
+    void refreshVideoDevices();
+});
+
 onBeforeUnmount(() => {
     stopCamera();
 });
@@ -176,73 +337,125 @@ onBeforeUnmount(() => {
             <div>
                 <div class="inline-flex items-center gap-1.5 rounded-full bg-[#1A8F26]/12 px-3 py-1 text-[11px] font-bold text-[#1A8F26]">
                     <ScanLine class="size-3.5" />
-                    Officer QR Attendance Scanner Active
+                    Officer Attendance Check-In Active
                 </div>
                 <h3 class="mt-1.5 text-base font-bold text-slate-900">
-                    Scan Member Attendance QR • {{ eventTitle }}
+                    Member Attendance • {{ eventTitle }}
                 </h3>
                 <p class="text-xs text-slate-600">
-                    Switch between <strong>Log-In (Start)</strong> and <strong>Log-Out (End)</strong> to record each member’s timestamps onto the checklist below.
+                    Scan Member QR codes (mobile or PC/laptop webcam) or switch to <strong>Manual Checklist</strong> for students without a phone.
                 </p>
             </div>
 
-            <div class="flex items-center gap-2">
-                <button
-                    type="button"
-                    @click="scanType = 'login'"
-                    class="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition"
-                    :class="
-                        scanType === 'login'
-                            ? 'bg-[#1A8F26] text-white shadow-sm'
-                            : 'border border-black/15 bg-white text-slate-700'
-                    "
-                >
-                    <LogIn class="size-3.5" />
-                    Log-In (Start)
-                </button>
-                <button
-                    type="button"
-                    @click="scanType = 'logout'"
-                    class="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition"
-                    :class="
-                        scanType === 'logout'
-                            ? 'bg-[#FF8D06] text-white shadow-sm'
-                            : 'border border-black/15 bg-white text-slate-700'
-                    "
-                >
-                    <LogOut class="size-3.5" />
-                    Log-Out (End)
-                </button>
+            <div class="flex flex-wrap items-center gap-2">
+                <div class="inline-flex rounded-xl border border-black/10 bg-[#FBF6EE] p-1">
+                    <button
+                        type="button"
+                        @click="switchMode('scanner')"
+                        class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition"
+                        :class="
+                            activeMode === 'scanner'
+                                ? 'bg-[#0384C5] text-white shadow-sm'
+                                : 'text-slate-700 hover:bg-white'
+                        "
+                    >
+                        <QrCode class="size-3.5" />
+                        QR Scanner
+                    </button>
+                    <button
+                        type="button"
+                        @click="switchMode('manual')"
+                        class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-bold transition"
+                        :class="
+                            activeMode === 'manual'
+                                ? 'bg-[#1A8F26] text-white shadow-sm'
+                                : 'text-slate-700 hover:bg-white'
+                        "
+                    >
+                        <ClipboardCheck class="size-3.5" />
+                        Manual Checklist
+                    </button>
+                </div>
+
+                <template v-if="activeMode === 'scanner'">
+                    <button
+                        type="button"
+                        @click="scanType = 'login'"
+                        class="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition"
+                        :class="
+                            scanType === 'login'
+                                ? 'bg-[#1A8F26] text-white shadow-sm'
+                                : 'border border-black/15 bg-white text-slate-700'
+                        "
+                    >
+                        <LogIn class="size-3.5" />
+                        Log-In (Start)
+                    </button>
+                    <button
+                        type="button"
+                        @click="scanType = 'logout'"
+                        class="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-bold transition"
+                        :class="
+                            scanType === 'logout'
+                                ? 'bg-[#FF8D06] text-white shadow-sm'
+                                : 'border border-black/15 bg-white text-slate-700'
+                        "
+                    >
+                        <LogOut class="size-3.5" />
+                        Log-Out (End)
+                    </button>
+                </template>
             </div>
         </div>
 
-        <div class="mt-4 grid gap-4 lg:grid-cols-2">
+        <div v-if="activeMode === 'scanner'" class="mt-4 grid gap-4 lg:grid-cols-2">
             <!-- Camera QR Stream Panel -->
             <div class="flex flex-col justify-between rounded-2xl border border-black/10 bg-[#FBF6EE] p-4">
                 <div>
-                    <div class="flex items-center justify-between gap-2">
+                    <div class="flex flex-wrap items-center justify-between gap-2">
                         <span class="inline-flex items-center gap-1.5 text-xs font-bold text-slate-900">
                             <QrCode class="size-4 text-[#0384C5]" />
                             Live Camera QR Scanner
                         </span>
-                        <button
-                            v-if="!cameraActive"
-                            type="button"
-                            @click="startCamera"
-                            class="inline-flex items-center gap-1 rounded-xl bg-[#0384C5] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#026da3]"
+                        <div class="flex items-center gap-2">
+                            <button
+                                v-if="!cameraActive"
+                                type="button"
+                                @click="startCamera()"
+                                class="inline-flex items-center gap-1 rounded-xl bg-[#0384C5] px-3 py-1.5 text-xs font-semibold text-white hover:bg-[#026da3]"
+                            >
+                                <Camera class="size-3.5" />
+                                Start Camera
+                            </button>
+                            <button
+                                v-else
+                                type="button"
+                                @click="stopCamera"
+                                class="inline-flex items-center gap-1 rounded-xl border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700"
+                            >
+                                <CameraOff class="size-3.5" />
+                                Stop Camera
+                            </button>
+                        </div>
+                    </div>
+
+                    <div v-if="videoDevices.length > 1" class="mt-2.5">
+                        <label class="mb-1 block text-[11px] font-bold text-slate-700">
+                            Camera Source
+                        </label>
+                        <select
+                            v-model="selectedDeviceId"
+                            @change="handleCameraDeviceChange"
+                            class="w-full rounded-xl border border-black/15 bg-white px-2.5 py-1.5 text-xs text-slate-800"
                         >
-                            <Camera class="size-3.5" />
-                            Start Camera
-                        </button>
-                        <button
-                            v-else
-                            type="button"
-                            @click="stopCamera"
-                            class="inline-flex items-center gap-1 rounded-xl border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700"
-                        >
-                            <CameraOff class="size-3.5" />
-                            Stop Camera
-                        </button>
+                            <option
+                                v-for="(device, idx) in videoDevices"
+                                :key="device.deviceId || `cam-${idx}`"
+                                :value="device.deviceId"
+                            >
+                                {{ device.label || `Camera ${idx + 1}` }}
+                            </option>
+                        </select>
                     </div>
 
                     <div class="mt-3 overflow-hidden rounded-xl border border-black/10 bg-slate-950/90">
@@ -258,7 +471,7 @@ onBeforeUnmount(() => {
                             class="flex h-36 flex-col items-center justify-center gap-1 px-4 text-center text-xs text-slate-300"
                         >
                             <Camera class="size-6 text-slate-400" />
-                            <span>Point camera at a member’s Dashboard Attendance QR code</span>
+                            <span>Point camera or laptop webcam at a member’s Attendance QR code</span>
                         </div>
                     </div>
                 </div>
@@ -338,6 +551,103 @@ onBeforeUnmount(() => {
                     class="mt-3 rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700"
                 >
                     {{ errorNotice }}
+                </div>
+            </div>
+        </div>
+
+        <!-- Compact Manual Attendance Checklist Fallback (No-Phone Students) -->
+        <div v-else class="mt-4 space-y-3">
+            <div class="flex flex-wrap items-center justify-between gap-3">
+                <div class="relative min-w-[220px] flex-1">
+                    <Search class="pointer-events-none absolute top-2.5 left-3 size-3.5 text-slate-400" />
+                    <input
+                        v-model="manualSearch"
+                        type="text"
+                        placeholder="Search student name, course/section, or ID..."
+                        class="w-full rounded-xl border border-black/15 bg-[#FBF6EE] py-2 pr-3 pl-8 text-xs text-slate-900"
+                    />
+                </div>
+                <span class="text-[11px] font-semibold text-slate-600">
+                    Showing {{ manualChecklistRows.length }} approved campus member(s)
+                </span>
+            </div>
+
+            <div
+                v-if="resultNotice"
+                class="flex items-center gap-1.5 rounded-xl border border-[#1A8F26]/30 bg-[#1A8F26]/10 px-3 py-2 text-xs font-semibold text-[#1A8F26]"
+            >
+                <CheckCircle2 class="size-4 shrink-0" />
+                <span>{{ resultNotice }}</span>
+            </div>
+            <div
+                v-if="errorNotice"
+                class="rounded-xl border border-red-300 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700"
+            >
+                {{ errorNotice }}
+            </div>
+
+            <div
+                v-if="manualChecklistRows.length === 0"
+                class="rounded-2xl border border-black/10 bg-[#FBF6EE] py-6 text-center text-xs text-slate-500"
+            >
+                No approved campus members match your search.
+            </div>
+            <div v-else class="max-h-96 space-y-2 overflow-y-auto pr-1">
+                <div
+                    v-for="row in manualChecklistRows"
+                    :key="`manual-${row.user_id}`"
+                    class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border bg-white p-3 text-xs"
+                    :class="
+                        row.logged_in_at && row.logged_out_at
+                            ? 'border-[#1A8F26]/35 bg-[#1A8F26]/5'
+                            : row.logged_in_at
+                              ? 'border-amber-300 bg-amber-50/70'
+                              : 'border-black/10'
+                    "
+                >
+                    <div class="min-w-0">
+                        <div class="flex flex-wrap items-center gap-2">
+                            <span class="font-bold text-slate-900">{{ row.full_name_last_first_mi }}</span>
+                            <span class="rounded-full bg-[#0384C5]/10 px-2 py-0.5 text-[10px] font-semibold text-[#0384C5]">
+                                {{ row.course_year_section }}
+                            </span>
+                        </div>
+                        <div class="mt-1 flex flex-wrap items-center gap-2 text-[11px]">
+                            <span
+                                class="rounded-full px-2 py-0.5 font-semibold"
+                                :class="row.logged_in_at ? 'bg-[#1A8F26]/15 text-[#1A8F26]' : 'bg-slate-100 text-slate-500'"
+                            >
+                                {{ row.logged_in_at ? `In: ${row.logged_in_at}` : 'Not Checked In' }}
+                            </span>
+                            <span
+                                class="rounded-full px-2 py-0.5 font-semibold"
+                                :class="row.logged_out_at ? 'bg-[#0384C5]/15 text-[#0384C5]' : 'bg-slate-100 text-slate-500'"
+                            >
+                                {{ row.logged_out_at ? `Out: ${row.logged_out_at}` : 'Out: Pending' }}
+                            </span>
+                        </div>
+                    </div>
+
+                    <div class="flex items-center gap-2">
+                        <button
+                            type="button"
+                            :disabled="Boolean(row.logged_in_at) || manualSubmittingUserId === row.user_id"
+                            @click="submitManualAttendance(row.user_id, 'login')"
+                            class="inline-flex items-center gap-1 rounded-xl bg-[#1A8F26] px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-[#15741f] disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                            <LogIn class="size-3.5" />
+                            {{ row.logged_in_at ? 'Checked In ✓' : 'Check-In' }}
+                        </button>
+                        <button
+                            type="button"
+                            :disabled="!row.logged_in_at || Boolean(row.logged_out_at) || manualSubmittingUserId === row.user_id"
+                            @click="submitManualAttendance(row.user_id, 'logout')"
+                            class="inline-flex items-center gap-1 rounded-xl bg-[#FF8D06] px-3 py-1.5 text-[11px] font-bold text-white transition hover:bg-[#e57d00] disabled:cursor-not-allowed disabled:opacity-45"
+                        >
+                            <LogOut class="size-3.5" />
+                            {{ row.logged_out_at ? 'Checked Out ✓' : 'Check-Out' }}
+                        </button>
+                    </div>
                 </div>
             </div>
         </div>

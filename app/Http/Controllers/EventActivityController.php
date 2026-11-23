@@ -10,6 +10,7 @@ use App\Models\CampusEventNotification;
 use App\Models\CampusEventReflection;
 use App\Models\CampusMembership;
 use App\Models\TimeCapsule;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -49,6 +50,7 @@ class EventActivityController extends Controller
 
             $year = now()->format('Y');
             $campusMembers = $approvedMembers->map(fn (CampusMembership $m): array => [
+                'id' => $m->user_id,
                 'user_id' => $m->user_id,
                 'full_name_last_first_mi' => $m->full_name_last_first_mi,
                 'course_year_section' => $m->course_year_section,
@@ -169,7 +171,7 @@ class EventActivityController extends Controller
             'todayDate' => now()->toDateString(),
             'minScheduleDate' => now()->addDay()->toDateString(),
             'events' => $events,
-            'campusMembers' => $campusMembers,
+            'campusMembers' => $isOfficerOrAdviser ? $campusMembers : [],
             'notifications' => $notifications,
             'unreadNotificationCount' => $unreadNotificationCount,
         ]);
@@ -633,8 +635,56 @@ class EventActivityController extends Controller
         ]);
 
         $targetMembership = $this->resolveScannedMember($event, trim($validated['qr_payload']));
-        $scanType = $validated['scan_type'];
 
+        return $this->recordAttendance($event, $targetMembership, $user, $validated['scan_type']);
+    }
+
+    public function manualAttendance(Request $request, CampusEvent $event): JsonResponse
+    {
+        $user = $request->user();
+        $membership = $user?->primaryMembership;
+        $role = $user?->verifiedRole();
+
+        abort_unless(
+            $role && $role->isOfficerOrAdviser() && $membership?->campus_id === $event->campus_id,
+            403,
+            'Only verified campus officers and the Club Adviser can record manual attendance.',
+        );
+
+        $event->syncLifecycleTimestamps();
+
+        abort_unless(
+            $event->effectiveStatus() === 'active',
+            422,
+            'Manual attendance is only available while this event is active.',
+        );
+
+        $validated = $request->validate([
+            'user_id' => ['required', 'integer'],
+            'scan_type' => ['required', Rule::in(['login', 'logout'])],
+        ]);
+
+        $targetMembership = CampusMembership::query()
+            ->where('campus_id', $event->campus_id)
+            ->where('user_id', (int) $validated['user_id'])
+            ->where('status', MembershipStatus::Approved->value)
+            ->first();
+
+        abort_unless(
+            $targetMembership !== null,
+            422,
+            'Selected member is not an approved member of this campus.',
+        );
+
+        return $this->recordAttendance($event, $targetMembership, $user, $validated['scan_type']);
+    }
+
+    private function recordAttendance(
+        CampusEvent $event,
+        CampusMembership $targetMembership,
+        User $actor,
+        string $scanType,
+    ): JsonResponse {
         $attendance = CampusEventAttendance::query()->firstOrNew([
             'campus_event_id' => $event->id,
             'user_id' => $targetMembership->user_id,
@@ -651,7 +701,7 @@ class EventActivityController extends Controller
             }
 
             $attendance->logged_in_at = now();
-            $attendance->logged_in_by_user_id = $user->id;
+            $attendance->logged_in_by_user_id = $actor->id;
             $attendance->save();
 
             return response()->json([
@@ -676,7 +726,7 @@ class EventActivityController extends Controller
         }
 
         $attendance->logged_out_at = now();
-        $attendance->logged_out_by_user_id = $user->id;
+        $attendance->logged_out_by_user_id = $actor->id;
         $attendance->save();
 
         return response()->json([

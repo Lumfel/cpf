@@ -14,6 +14,7 @@ use App\Models\Campus;
 use App\Models\CampusMembership;
 use App\Models\MemberInfoChangeRequest;
 use App\Models\User;
+use App\Services\ClubTenureService;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
 use BaconQrCode\Renderer\ImageRenderer;
 use BaconQrCode\Renderer\RendererStyle\RendererStyle;
@@ -99,7 +100,15 @@ class CampusMembershipController extends Controller
 
         $pendingApplications = [];
         $approvedMembersAZ = [];
+        $alumniCount = 0;
         $activeCampus = $myMembership?->campus ?? $campuses->first();
+
+        if ($activeCampus) {
+            $alumniCount = CampusMembership::query()
+                ->where('campus_id', $activeCampus->id)
+                ->where('status', MembershipStatus::Alumni->value)
+                ->count();
+        }
 
         if ($permissions['canViewRoster'] && $activeCampus) {
             $pendingApplications = CampusMembership::query()
@@ -142,6 +151,7 @@ class CampusMembershipController extends Controller
             'permissions' => $permissions,
             'pendingApplications' => $pendingApplications,
             'approvedMembersAZ' => $approvedMembersAZ,
+            'alumniCount' => $alumniCount,
             'myChangeRequests' => $myChangeRequests,
             'pendingChangeRequests' => $pendingChangeRequests,
             'availableRoles' => collect(CpfRole::cases())
@@ -313,9 +323,66 @@ class CampusMembershipController extends Controller
             );
         }
 
-        $action->updateRole($membership, $newRole);
+        $action->updateRole($membership, $newRole, $actor);
 
         return to_route('membership.index')->with('status', "Updated role to {$newRole->label()}.");
+    }
+
+    public function transitionToAlumni(
+        Request $request,
+        CampusMembership $membership,
+        ClubTenureService $tenureService,
+    ): JsonResponse|RedirectResponse {
+        $actor = $this->resolveActor($request);
+        abort_if(! $actor, 401);
+
+        abort_unless(
+            $actor->isClubAdviser() && $actor->primaryMembership?->campus_id === $membership->campus_id,
+            403,
+            'Only the campus Club Adviser can transition members or officers to Former status.',
+        );
+
+        abort_unless(
+            $membership->status === MembershipStatus::Approved,
+            422,
+            'Only currently verified active members or officers can be marked as Former.',
+        );
+
+        abort_if(
+            $membership->role === CpfRole::Adviser,
+            422,
+            'Use the Adviser Role Handover tab to safely transfer Club Adviser authority before stepping down.',
+        );
+
+        $validated = $request->validate([
+            'reason' => ['nullable', Rule::in(['graduated', 'term_completed', 'stepped_down', 'transferred'])],
+            'ended_at' => ['nullable', 'date', 'before_or_equal:today'],
+            'remarks' => ['nullable', 'string', 'max:500'],
+        ]);
+
+        if (array_key_exists('remarks', $validated) && filled($validated['remarks'])) {
+            $membership->remarks = trim((string) $validated['remarks']);
+            $membership->save();
+        }
+
+        $reason = (string) ($validated['reason'] ?? 'graduated');
+        $endedAt = ! empty($validated['ended_at'])
+            ? \Illuminate\Support\Carbon::parse((string) $validated['ended_at'])->endOfDay()
+            : null;
+
+        $updated = $tenureService->transitionToAlumni($membership, $actor, $reason, $endedAt);
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'status' => 'alumni',
+                'membership' => $updated,
+            ]);
+        }
+
+        return to_route('membership.index')->with(
+            'status',
+            "Transitioned {$updated->full_name_last_first_mi} ({$updated->formerRoleLabel()}) to the Former Members & Legacy Archive with read-only access.",
+        );
     }
 
     public function storeChangeRequest(Request $request): RedirectResponse

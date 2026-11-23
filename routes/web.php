@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AdviserHandoverController;
+use App\Http\Controllers\AlumniArchiveController;
 use App\Http\Controllers\Auth\ForcePasswordChangeController;
 use App\Http\Controllers\Auth\PasskeyCodeLoginController;
 use App\Http\Controllers\CampusOperationsController;
@@ -12,6 +13,7 @@ use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\EventActivityController;
 use App\Http\Controllers\FirstBootSetupController;
 use App\Http\Controllers\Membership\CampusMembershipController;
+use App\Http\Controllers\MobileReleaseController;
 use App\Http\Controllers\OfficersChatController;
 use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Middleware\EnsureTemporaryPasswordChanged;
@@ -39,6 +41,10 @@ Route::get('/', function () {
         'campuses' => $campuses,
     ]);
 })->name('home');
+
+// Public Android APK Download (for cpf_mobile QR install)
+Route::get('download/android', [MobileReleaseController::class, 'android'])
+    ->name('download.android');
 
 // Public Blockchain Credential Verification (Achievements, Certificates, Awards)
 Route::get('my-credentials', [BlockchainCredentialController::class, 'index'])
@@ -82,6 +88,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('events-activities/{event}/schedule', [EventActivityController::class, 'updateSchedule'])->name('events.schedule');
         Route::patch('events-activities/{event}/cancel', [EventActivityController::class, 'cancel'])->name('events.cancel');
         Route::post('events-activities/{event}/scan', [EventActivityController::class, 'scanQr'])->name('events.scan');
+        Route::post('events-activities/{event}/manual-attendance', [EventActivityController::class, 'manualAttendance'])
+            ->name('events.manual-attendance');
         Route::post('events-activities/{event}/reflection', [EventActivityController::class, 'storeReflection'])->name('events.reflection');
         Route::patch('events-activities/{event}/reflection-setting', [EventActivityController::class, 'updateReflectionSetting'])->name('events.reflection-setting');
         Route::patch('events-activities/{event}/reflection-setting/review', [EventActivityController::class, 'reviewReflectionSetting'])->name('events.reflection-setting.review');
@@ -94,6 +102,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('membership/{membership}/toggle-gc', [CampusMembershipController::class, 'toggleGc'])->name('membership.toggle-gc');
         Route::patch('membership/{membership}/toggle-dues', [CampusMembershipController::class, 'toggleDues'])->name('membership.toggle-dues');
         Route::patch('membership/{membership}/role', [CampusMembershipController::class, 'updateRole'])->name('membership.update-role');
+        Route::post('membership/{membership}/transition-alumni', [CampusMembershipController::class, 'transitionToAlumni'])
+            ->name('membership.transition-alumni');
+        Route::get('alumni-archive', [AlumniArchiveController::class, 'index'])
+            ->name('alumni-archive.index');
+        Route::get('alumni-archive/gc/{archive}/transcript', [AlumniArchiveController::class, 'gcTranscript'])
+            ->name('alumni-archive.gc-transcript');
         Route::post('membership/change-requests', [CampusMembershipController::class, 'storeChangeRequest'])
             ->name('membership.change-requests.store');
         Route::patch('membership/change-requests/{changeRequest}/review', [CampusMembershipController::class, 'reviewChangeRequest'])

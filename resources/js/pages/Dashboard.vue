@@ -1,7 +1,9 @@
 <script setup lang="ts">
 import { Head, Link, router, usePage } from '@inertiajs/vue3';
 import {
+    Archive,
     Award,
+    BadgeCheck,
     Bell,
     CalendarDays,
     CheckCircle2,
@@ -68,6 +70,16 @@ interface EventNotificationItem {
 
 const props = withDefaults(
     defineProps<{
+        isAlumni?: boolean;
+        myTenureSummary?: {
+            first_joined_at: string;
+            served_until: string;
+            total_duration_label: string;
+            academic_years: string[];
+            is_fully_verified: boolean;
+            events_attended_count: number;
+            awards_count: number;
+        } | null;
         qrUnlocked: boolean;
         memberIdCode: string | null;
         qrSvg: string | null;
@@ -101,6 +113,8 @@ const props = withDefaults(
         } | null;
     }>(),
     {
+        isAlumni: false,
+        myTenureSummary: null,
         qrPayload: null,
         campusEvents: () => [],
         eventNotifications: () => [],
@@ -258,29 +272,48 @@ function toggleDuesStatus(member: DuesRosterMember) {
                 </div>
 
                 <div class="flex flex-wrap items-center gap-2.5">
-                    <Link
-                        href="/events-activities"
-                        class="inline-flex items-center gap-2 rounded-xl border-[1.5px] border-[#1A8F26] bg-white px-4 py-2.5 text-sm font-semibold text-[#1A8F26] transition-colors duration-200 hover:bg-[#1A8F26] hover:text-white"
-                    >
-                        <CalendarDays class="size-4" />
-                        Events &amp; Activities
-                    </Link>
+                    <template v-if="isAlumni || auth.isAlumni">
+                        <Link
+                            href="/alumni-archive"
+                            class="inline-flex items-center gap-2 rounded-xl border-[1.5px] border-[#0384C5] bg-[#0384C5] px-4 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[#026da3]"
+                        >
+                            <Archive class="size-4" />
+                            Former Members &amp; Archive
+                        </Link>
 
-                    <Link
-                        href="/my-credentials"
-                        class="inline-flex items-center gap-2 rounded-xl border-[1.5px] border-[#0384C5] bg-white px-4 py-2.5 text-sm font-semibold text-[#0384C5] transition-colors duration-200 hover:bg-[#0384C5] hover:text-white"
-                    >
-                        <Award class="size-4" />
-                        My Achievements &amp; Awards
-                    </Link>
+                        <Link
+                            href="/my-credentials"
+                            class="inline-flex items-center gap-2 rounded-xl border-[1.5px] border-[#FF8D06] bg-white px-4 py-2.5 text-sm font-semibold text-[#FF8D06] transition-colors duration-200 hover:bg-[#FF8D06] hover:text-white"
+                        >
+                            <Award class="size-4" />
+                            My Achievements &amp; Awards
+                        </Link>
+                    </template>
+                    <template v-else>
+                        <Link
+                            href="/events-activities"
+                            class="inline-flex items-center gap-2 rounded-xl border-[1.5px] border-[#1A8F26] bg-white px-4 py-2.5 text-sm font-semibold text-[#1A8F26] transition-colors duration-200 hover:bg-[#1A8F26] hover:text-white"
+                        >
+                            <CalendarDays class="size-4" />
+                            Events &amp; Activities
+                        </Link>
 
-                    <Link
-                        :href="membershipIndex().url"
-                        class="inline-flex items-center gap-2 rounded-xl border-[1.5px] border-[#FF8D06] bg-[#FF8D06] px-4 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[#FBF6EE] hover:text-[#FF8D06]"
-                    >
-                        <Users class="size-4" />
-                        Membership &amp; GC Checklist
-                    </Link>
+                        <Link
+                            href="/my-credentials"
+                            class="inline-flex items-center gap-2 rounded-xl border-[1.5px] border-[#0384C5] bg-white px-4 py-2.5 text-sm font-semibold text-[#0384C5] transition-colors duration-200 hover:bg-[#0384C5] hover:text-white"
+                        >
+                            <Award class="size-4" />
+                            My Achievements &amp; Awards
+                        </Link>
+
+                        <Link
+                            :href="membershipIndex().url"
+                            class="inline-flex items-center gap-2 rounded-xl border-[1.5px] border-[#FF8D06] bg-[#FF8D06] px-4 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[#FBF6EE] hover:text-[#FF8D06]"
+                        >
+                            <Users class="size-4" />
+                            Membership &amp; GC Checklist
+                        </Link>
+                    </template>
                 </div>
             </div>
         </div>
@@ -299,8 +332,57 @@ function toggleDuesStatus(member: DuesRosterMember) {
 
         <!-- QR-First Attendance Digital ID + Verified Profile + Daily Calming Quote -->
         <div class="grid gap-5 lg:grid-cols-3">
+            <!-- Alumni Archive & Verified Club Tenure Card (When Alumni) OR Attendance QR Card -->
+            <div v-if="isAlumni || auth.isAlumni" class="bento flex flex-col justify-between p-6">
+                <div>
+                    <div class="flex items-center justify-between gap-2 text-xs font-bold">
+                        <span class="inline-flex items-center gap-1.5 text-[#0384C5]">
+                            <Archive class="size-4" />
+                            Read-Only Legacy Archive
+                        </span>
+                        <span
+                            v-if="myTenureSummary?.is_fully_verified"
+                            class="inline-flex items-center gap-1 rounded-full bg-[#1A8F26]/15 px-2.5 py-0.5 text-[10px] font-bold text-[#1A8F26]"
+                        >
+                            <BadgeCheck class="size-3" />
+                            Verified Tenure
+                        </span>
+                    </div>
+
+                    <h2 class="font-editorial mt-3 text-lg font-bold text-slate-900">
+                        {{ auth.roleLabel ?? 'Former Member' }}
+                    </h2>
+                    <p class="mt-1 text-xs leading-relaxed text-slate-600">
+                        Your account is preserved with <strong>zero active system control</strong>. Browse your verified club tenure, awards, unlocked time capsules, archived Officers GCs, and fellow former members anytime.
+                    </p>
+
+                    <div v-if="myTenureSummary" class="mt-4 space-y-2 rounded-2xl border border-black/10 bg-[#FBF6EE] p-3.5 text-xs">
+                        <div class="flex items-center justify-between">
+                            <span class="text-slate-600">Verified Time at CPF:</span>
+                            <strong class="text-[#0384C5]">{{ myTenureSummary.total_duration_label }}</strong>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-slate-600">Service Window:</span>
+                            <span class="font-semibold text-slate-900">{{ myTenureSummary.first_joined_at }} &rarr; {{ myTenureSummary.served_until }}</span>
+                        </div>
+                        <div class="flex items-center justify-between">
+                            <span class="text-slate-600">Events &amp; Awards:</span>
+                            <span class="font-semibold text-slate-900">{{ myTenureSummary.events_attended_count }} Events • {{ myTenureSummary.awards_count }} Awards</span>
+                        </div>
+                    </div>
+                </div>
+
+                <Link
+                    href="/alumni-archive"
+                    class="bento-btn mt-4 w-full justify-center"
+                >
+                    <Archive class="size-4" />
+                    Open Former Members &amp; Legacy Archive
+                </Link>
+            </div>
+
             <!-- Attendance QR Card (Only generated when temporary password has been changed) -->
-            <div class="bento flex flex-col items-center justify-between p-6 text-center">
+            <div v-else class="bento mx-auto flex w-full flex-col items-center justify-center p-6 text-center">
                 <div class="flex w-full items-center justify-between text-xs font-bold">
                     <span class="inline-flex items-center gap-1.5 text-[#0384C5]">
                         <QrCode class="size-4" />
@@ -311,9 +393,9 @@ function toggleDuesStatus(member: DuesRosterMember) {
                     </span>
                 </div>
 
-                <div v-if="qrUnlocked && qrSvg" class="my-4 flex flex-col items-center gap-2">
+                <div v-if="qrUnlocked && qrSvg" class="my-4 flex w-full flex-col items-center justify-center gap-3">
                     <div
-                        class="cpf-qr-surface rounded-2xl border border-black/10 bg-white p-3 shadow-sm"
+                        class="cpf-qr-surface mx-auto flex aspect-square w-[min(72vw,260px)] items-center justify-center rounded-2xl border border-black/10 bg-white p-4 shadow-sm sm:w-64 [&_svg]:block [&_svg]:h-full [&_svg]:w-full"
                         v-html="qrSvg"
                     />
                     <button
@@ -328,7 +410,7 @@ function toggleDuesStatus(member: DuesRosterMember) {
                 </div>
                 <div
                     v-else
-                    class="my-4 flex w-full flex-col items-center gap-2 rounded-2xl border border-amber-400/40 bg-amber-50 p-5 text-xs text-amber-900"
+                    class="my-4 mx-auto flex w-full flex-col items-center justify-center gap-2 rounded-2xl border border-amber-400/40 bg-amber-50 p-5 text-xs text-amber-900"
                 >
                     <Lock class="size-7 text-amber-700" />
                     <div class="font-bold">Personal Password Required</div>

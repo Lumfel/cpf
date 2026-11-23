@@ -9,6 +9,7 @@ use App\Models\Campus;
 use App\Models\CampusCounselor;
 use App\Models\CampusMembership;
 use App\Models\CampusRoom;
+use App\Models\ClubServiceTenure;
 use App\Models\OfficerGcChannel;
 use App\Models\PeerQuote;
 use App\Models\User;
@@ -282,10 +283,21 @@ class FirstBootAndAdviserHandoverTest extends TestCase
             'Guidance Services / Adviser',
             $counselor->primaryMembership?->course_year_section,
         );
-        $this->assertSame(CpfRole::Member, $adviser->verifiedRole());
+        // Outgoing Adviser keeps their account as Former Club Adviser (Alumni) with zero active control
+        $this->assertNull($adviser->verifiedRole());
+        $this->assertTrue($adviser->isAlumni());
+        $this->assertSame(MembershipStatus::Alumni, $adviser->primaryMembership?->status);
+        $this->assertSame(CpfRole::Adviser, $adviser->primaryMembership?->role);
+        $this->assertSame('adviser_handover', $adviser->primaryMembership?->alumni_reason);
+
+        $adviserTenure = ClubServiceTenure::query()
+            ->where('user_id', $adviser->id)
+            ->where('end_reason', 'adviser_handover')
+            ->firstOrFail();
+        $this->assertTrue($adviserTenure->verifyHash());
         $this->assertSame('Navarro, Elena R.', $campus->fresh()->adviser_name);
 
-        // New Adviser holds Adviser powers; former Adviser no longer does
+        // New Adviser holds Adviser powers; former Adviser loses active control but retains Alumni Archive access
         $this->actingAs($counselor)->postJson('/elections', [
             'title' => 'New AY Election',
             'academic_year' => '2026-2027',
@@ -297,6 +309,13 @@ class FirstBootAndAdviserHandoverTest extends TestCase
             'academic_year' => '2026-2027',
             'status' => 'open',
         ])->assertForbidden();
+
+        $this->actingAs($adviser)
+            ->get('/alumni-archive')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('archive/Index')
+                ->where('isAlumni', true));
     }
 
     public function test_adviser_handover_supports_cancellation_and_decline(): void

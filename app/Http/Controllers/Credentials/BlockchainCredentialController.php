@@ -51,14 +51,16 @@ class BlockchainCredentialController extends Controller
                 ->get()
             : collect();
 
-        $membership = $user?->primaryMembership()->with('campus:id,code,name')->first();
+        $membership = $user?->primaryMembership()
+            ->with(['campus:id,code,name', 'tenures:id,campus_membership_id,role'])
+            ->first();
 
         return Inertia::render('credentials/Index', [
             'owner' => $user ? [
                 'id' => $user->id,
                 'name' => $user->name,
                 'email' => $user->email,
-                'roleLabel' => $user->verifiedRole()?->label() ?? 'Peer Member',
+                'roleLabel' => $user->verifiedRole()?->label() ?? $user->formerRoleLabel() ?? 'Peer Member',
                 'campusName' => $membership?->campus?->name ?? 'CHMSU Talisay (Main Campus)',
                 'courseYearSection' => $membership?->course_year_section,
             ] : null,

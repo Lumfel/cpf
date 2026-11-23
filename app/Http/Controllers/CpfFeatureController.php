@@ -72,6 +72,12 @@ class CpfFeatureController extends Controller
 
     public function requestTestingRoom(Request $request, RequestTestingRoom $action): JsonResponse
     {
+        abort_if(
+            $request->user()?->isAlumni(),
+            403,
+            'Former member and officer accounts have read-only archive access.',
+        );
+
         $membership = $request->user()?->primaryMembership;
         $campusId = $membership?->campus_id ?? (int) $request->input('campus_id');
 
@@ -133,6 +139,12 @@ class CpfFeatureController extends Controller
 
     public function submitReferral(Request $request, SubmitGuidanceReferral $action): JsonResponse
     {
+        abort_if(
+            $request->user()?->isAlumni(),
+            403,
+            'Former member and officer accounts have read-only archive access.',
+        );
+
         $membership = $request->user()?->primaryMembership;
 
         $validated = $request->validate([
