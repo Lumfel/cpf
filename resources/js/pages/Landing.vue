@@ -3,6 +3,7 @@ import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
 import { Moon, Sparkles, Sun, Sunrise, Zap } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import FirstBootAdviserModal from '@/components/system/FirstBootAdviserModal.vue';
+import LandingShowcaseSection from '@/components/system/LandingShowcaseSection.vue';
 import { useAppearance } from '@/composables/useAppearance';
 import type { CampusSummary } from '@/types';
 
@@ -461,6 +462,8 @@ function submitApplication() {
                     </article>
                 </TransitionGroup>
             </section>
+
+            <LandingShowcaseSection />
         </main>
 
         <!-- Data Privacy Modal -->

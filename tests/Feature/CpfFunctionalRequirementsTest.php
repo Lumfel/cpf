@@ -1730,4 +1730,14 @@ class CpfFunctionalRequirementsTest extends TestCase
             'passkey_code' => $formattedCode,
         ])->assertSessionHasErrors('passkey_code');
     }
+
+    public function test_landing_page_and_showcase_media_assets_are_published(): void
+    {
+        $this->assertFileExists(public_path('media/cpf-system-showcase.mp4'));
+        $this->assertFileExists(public_path('media/cpf-system-presentation.pptx'));
+
+        $this->get('/')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page->component('Landing'));
+    }
 }
