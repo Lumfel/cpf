@@ -5,7 +5,7 @@ function readXsrfCookie(): string {
 
 export async function apiRequest<T = Record<string, unknown>>(
     url: string,
-    method: 'POST' | 'PATCH' | 'PUT' | 'DELETE',
+    method: 'GET' | 'POST' | 'PATCH' | 'PUT' | 'DELETE',
     body?: Record<string, unknown> | FormData,
 ): Promise<{ ok: boolean; status: number; data: T & { message?: string; errors?: Record<string, string[]> } }> {
     const headers: Record<string, string> = {
@@ -15,11 +15,13 @@ export async function apiRequest<T = Record<string, unknown>>(
     };
 
     let payload: BodyInit | undefined;
-    if (body instanceof FormData) {
-        payload = body;
-    } else if (body !== undefined) {
-        headers['Content-Type'] = 'application/json';
-        payload = JSON.stringify(body);
+    if (method !== 'GET') {
+        if (body instanceof FormData) {
+            payload = body;
+        } else if (body !== undefined) {
+            headers['Content-Type'] = 'application/json';
+            payload = JSON.stringify(body);
+        }
     }
 
     const response = await fetch(url, {

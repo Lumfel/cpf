@@ -12,6 +12,7 @@ import {
     Lock,
     MessageCircle,
     PlusCircle,
+    QrCode,
     RefreshCw,
     Search,
     ShieldCheck,
@@ -22,6 +23,7 @@ import {
 } from '@lucide/vue';
 import { computed, ref } from 'vue';
 import InputError from '@/components/InputError.vue';
+import ProfilePhotoUploader from '@/components/ProfilePhotoUploader.vue';
 import AdviserHandoverPanel from '@/components/membership/AdviserHandoverPanel.vue';
 import OfficerAddMemberForm from '@/components/membership/OfficerAddMemberForm.vue';
 import { Input } from '@/components/ui/input';
@@ -255,6 +257,42 @@ async function copyIssuedPasskey() {
     setTimeout(() => {
         passkeyCopied.value = false;
     }, 2000);
+}
+
+// 2b. Minimal Member Attendance QR Card Modal (Name, Course, Year & Section ONLY)
+interface MemberQrCard {
+    full_name: string;
+    course?: string | null;
+    year_level?: string | null;
+    section?: string | null;
+    course_year_section: string;
+    qr_svg: string;
+}
+
+const qrModalOpen = ref(false);
+const loadingMemberQr = ref(false);
+const memberQrError = ref<string | null>(null);
+const memberQrCard = ref<MemberQrCard | null>(null);
+
+async function openMemberQr(member: CampusMembershipRecord) {
+    qrModalOpen.value = true;
+    loadingMemberQr.value = true;
+    memberQrError.value = null;
+    memberQrCard.value = null;
+
+    const { ok, data } = await apiRequest<MemberQrCard>(
+        `/membership/${member.id}/qr`,
+        'GET',
+    );
+
+    loadingMemberQr.value = false;
+
+    if (!ok) {
+        memberQrError.value = data.message ?? 'Unable to load member QR code.';
+        return;
+    }
+
+    memberQrCard.value = data;
 }
 
 function approveMember(member: CampusMembershipRecord) {
@@ -812,9 +850,12 @@ function formatFieldLabel(key: string): string {
                         "
                     >
                         <div class="flex items-start gap-3.5">
-                            <!-- Alphabetical Index Badge -->
-                            <div
-                                class="flex size-10 shrink-0 flex-col items-center justify-center rounded-xl font-bold"
+                            <!-- Clickable Alphabetical Index Badge -> Minimal Member QR Card -->
+                            <button
+                                type="button"
+                                @click="openMemberQr(member)"
+                                :title="`View ${member.full_name_last_first_mi} Attendance QR Code`"
+                                class="flex size-10 shrink-0 cursor-pointer flex-col items-center justify-center rounded-xl font-bold transition hover:scale-105 hover:ring-2 hover:ring-[#0384C5]/45 focus:ring-2 focus:ring-[#0384C5] focus:outline-none"
                                 :class="
                                     member.is_in_messenger_gc
                                         ? 'bg-[#1A8F26] text-white'
@@ -823,7 +864,7 @@ function formatFieldLabel(key: string): string {
                             >
                                 <span class="text-xs leading-none">{{ member.full_name_last_first_mi.charAt(0).toUpperCase() }}</span>
                                 <span class="text-[10px] opacity-75">#{{ idx + 1 }}</span>
-                            </div>
+                            </button>
 
                             <div>
                                 <div class="flex flex-wrap items-center gap-2">
@@ -1007,6 +1048,8 @@ function formatFieldLabel(key: string): string {
                         Change Request Pending Adviser Approval
                     </span>
                 </div>
+
+                <ProfilePhotoUploader :compact="true" class="mt-5" />
 
                 <!-- Read-Only Current Verified Record -->
                 <dl class="mt-5 grid gap-3 text-xs sm:grid-cols-2">
@@ -1695,6 +1738,68 @@ function formatFieldLabel(key: string): string {
                         </button>
                     </div>
                     <button type="button" class="bento-btn ml-auto" @click="passkeyModalOpen = false">
+                        Close
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Minimal Member Attendance QR Card Modal (QR, Name, Course, Year & Section ONLY) -->
+        <div
+            v-if="qrModalOpen"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-md"
+            @click.self="qrModalOpen = false"
+        >
+            <div class="bento w-full max-w-sm p-6 text-center">
+                <div class="mb-4 flex items-center justify-between border-b border-black/10 pb-3">
+                    <div class="flex items-center gap-2 text-sm font-bold text-[#0384C5]">
+                        <QrCode class="size-4" />
+                        <span>Member Attendance QR</span>
+                    </div>
+                    <button
+                        type="button"
+                        @click="qrModalOpen = false"
+                        class="rounded-lg border border-black/10 bg-white p-1 text-slate-600 hover:bg-slate-50"
+                        aria-label="Close Member QR Modal"
+                    >
+                        <X class="size-4" />
+                    </button>
+                </div>
+
+                <div v-if="loadingMemberQr" class="py-8 text-xs font-semibold text-slate-600">
+                    Loading Attendance QR Code...
+                </div>
+
+                <div
+                    v-else-if="memberQrError"
+                    class="rounded-xl border border-red-200 bg-red-50 p-3 text-xs font-semibold text-red-700"
+                >
+                    {{ memberQrError }}
+                </div>
+
+                <div v-else-if="memberQrCard" class="flex flex-col items-center gap-4">
+                    <div
+                        class="cpf-qr-surface inline-flex rounded-2xl border border-black/10 bg-white p-3.5 shadow-sm"
+                        v-html="memberQrCard.qr_svg"
+                    />
+
+                    <div class="space-y-1">
+                        <h3 class="font-editorial text-lg font-bold text-slate-900">
+                            {{ memberQrCard.full_name }}
+                        </h3>
+                        <p class="text-xs font-semibold text-[#0384C5]">
+                            <template v-if="memberQrCard.course">
+                                {{ memberQrCard.course }} • Year {{ memberQrCard.year_level || '—' }} • Section {{ memberQrCard.section || '—' }}
+                            </template>
+                            <template v-else>
+                                {{ memberQrCard.course_year_section }}
+                            </template>
+                        </p>
+                    </div>
+                </div>
+
+                <div class="mt-5 flex justify-center">
+                    <button type="button" class="bento-btn px-6" @click="qrModalOpen = false">
                         Close
                     </button>
                 </div>

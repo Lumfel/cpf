@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Circle of Peer Facilitators (CPF) — Looping System Showcase</title>
+    <style>
+        :root {
+            color-scheme: dark;
+            --bg: #0b1120;
+            --panel: rgba(15, 23, 42, 0.85);
+            --border: rgba(148, 163, 184, 0.22);
+            --accent: #10b981;
+            --text: #f8fafc;
+            --muted: #94a3b8;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            min-height: 100vh;
+            background: radial-gradient(circle at top right, #1e293b 0%, var(--bg) 60%);
+            color: var(--text);
+            font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            gap: 14px;
+        }
+        .topbar {
+            width: min(1240px, 96vw);
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+            padding: 12px 18px;
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 14px;
+            backdrop-filter: blur(12px);
+        }
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+        .loop-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 10px;
+            border-radius: 999px;
+            background: rgba(16, 185, 129, 0.16);
+            border: 1px solid rgba(16, 185, 129, 0.45);
+            color: #34d399;
+            font-size: 11px;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+        }
+        .dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 50%;
+            background: #10b981;
+            animation: pulse 1.6s infinite ease-in-out;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; transform: scale(1); }
+            50% { opacity: 0.35; transform: scale(0.8); }
+        }
+        .title {
+            font-size: 15px;
+            font-weight: 700;
+        }
+        .subtitle {
+            font-size: 12px;
+            color: var(--muted);
+        }
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        button {
+            appearance: none;
+            border: 1px solid var(--border);
+            background: rgba(30, 41, 59, 0.9);
+            color: var(--text);
+            padding: 7px 13px;
+            border-radius: 9px;
+            font-size: 12px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.15s ease, border-color 0.15s ease;
+        }
+        button:hover {
+            background: rgba(51, 65, 85, 0.95);
+            border-color: rgba(148, 163, 184, 0.45);
+        }
+        .stage {
+            width: min(1240px, 96vw);
+            aspect-ratio: 16 / 9;
+            background: #020617;
+            border-radius: 16px;
+            overflow: hidden;
+            border: 1px solid var(--border);
+            box-shadow: 0 28px 60px rgba(0, 0, 0, 0.55);
+        }
+        video {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: contain;
+            background: #020617;
+        }
+    </style>
+</head>
+<body>
+    <header class="topbar">
+        <div class="brand">
+            <span class="loop-pill"><span class="dot"></span>LOOP ACTIVE</span>
+            <div>
+                <div class="title">Circle of Peer Facilitators (CPF) — Dynamic System Presentation</div>
+                <div class="subtitle">CHMSU Multi-Campus Peer Wellness, QR Attendance, Time Capsules &amp; 5 Signature Themes</div>
+            </div>
+        </div>
+        <div class="controls">
+            <button type="button" id="togglePlay">Pause</button>
+            <button type="button" id="restartBtn">Restart</button>
+            <button type="button" id="speedBtn">Speed: 1x</button>
+            <button type="button" id="muteBtn">Unmute</button>
+            <button type="button" id="fsBtn">Fullscreen</button>
+        </div>
+    </header>
+
+    <main class="stage">
+        <video
+            id="showcase"
+            src="CPF_Dynamic_System_Showcase_Loop.mp4"
+            autoplay
+            loop
+            muted
+            controls
+            playsinline
+        ></video>
+    </main>
+
+    <script>
+        const video = document.getElementById('showcase');
+        const togglePlay = document.getElementById('togglePlay');
+        const restartBtn = document.getElementById('restartBtn');
+        const speedBtn = document.getElementById('speedBtn');
+        const muteBtn = document.getElementById('muteBtn');
+        const fsBtn = document.getElementById('fsBtn');
+
+        video.addEventListener('play', () => { togglePlay.textContent = 'Pause'; });
+        video.addEventListener('pause', () => { togglePlay.textContent = 'Play'; });
+
+        togglePlay.addEventListener('click', () => {
+            if (video.paused) { video.play(); } else { video.pause(); }
+        });
+        restartBtn.addEventListener('click', () => {
+            video.currentTime = 0;
+            video.play();
+        });
+        speedBtn.addEventListener('click', () => {
+            video.playbackRate = video.playbackRate === 1 ? 1.25 : 1;
+            speedBtn.textContent = `Speed: ${video.playbackRate}x`;
+        });
+        muteBtn.addEventListener('click', () => {
+            video.muted = !video.muted;
+            muteBtn.textContent = video.muted ? 'Unmute' : 'Mute';
+        });
+        fsBtn.addEventListener('click', () => {
+            if (document.fullscreenElement) {
+                document.exitFullscreen();
+            } else {
+                video.requestFullscreen?.();
+            }
+        });
+    </script>
+</body>
+</html>

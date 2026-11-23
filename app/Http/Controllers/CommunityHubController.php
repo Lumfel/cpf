@@ -28,6 +28,7 @@ class CommunityHubController extends Controller
         $isClubAdviser = $user->isClubAdviser();
 
         $approvedMembersRaw = CampusMembership::query()
+            ->with('user:id,name,profile_photo_path,updated_at')
             ->where('campus_id', $campusId)
             ->where('status', MembershipStatus::Approved->value)
             ->alphabetical()
@@ -43,16 +44,22 @@ class CommunityHubController extends Controller
 
         $memberByUserId = $approvedMembersRaw->keyBy('user_id');
 
-        $campusMembers = $approvedMembersRaw->map(fn (CampusMembership $m) => [
-            'user_id' => $m->user_id,
-            'full_name_last_first_mi' => $m->full_name_last_first_mi,
-            'course' => $m->course,
-            'year_level' => $m->year_level,
-            'year_digit' => CpfElectionPositions::normalizeYearDigit($m->year_level),
-            'section' => $m->section,
-            'course_year_section' => $m->course_year_section,
-            'role' => $m->role instanceof CpfRole ? $m->role->value : (string) $m->role,
-        ])->values();
+        $campusMembers = $approvedMembersRaw->map(function (CampusMembership $m): array {
+            $roleEnum = $m->role instanceof CpfRole ? $m->role : CpfRole::tryFrom((string) $m->role);
+
+            return [
+                'user_id' => $m->user_id,
+                'full_name_last_first_mi' => $m->full_name_last_first_mi,
+                'course' => $m->course,
+                'year_level' => $m->year_level,
+                'year_digit' => CpfElectionPositions::normalizeYearDigit($m->year_level),
+                'section' => $m->section,
+                'course_year_section' => $m->course_year_section,
+                'role' => $roleEnum?->value ?? (string) $m->role,
+                'role_label' => $roleEnum?->label() ?? 'Verified Peer Member',
+                'avatar_url' => $m->user?->avatar,
+            ];
+        })->values();
 
         $adviserMember = $approvedMembersRaw->first(
             fn (CampusMembership $m) => ($m->role instanceof CpfRole ? $m->role : CpfRole::tryFrom((string) $m->role)) === CpfRole::Adviser,
@@ -63,6 +70,7 @@ class CommunityHubController extends Controller
                 ?? $membership?->campus?->adviser_name
                 ?? 'Campus Club Adviser',
             'title' => 'Club Adviser • Presiding Chair',
+            'avatar_url' => $adviserMember?->user?->avatar,
         ];
 
         $electionsRaw = Election::query()
@@ -128,6 +136,7 @@ class CommunityHubController extends Controller
                     'name' => $m?->full_name_last_first_mi ?? $candidateUsers->get($c->user_id, 'Peer Member'),
                     'course_year_section' => $m?->course_year_section ?? 'Campus Member',
                     'year_level' => CpfElectionPositions::normalizeYearDigit($m?->year_level),
+                    'avatar_url' => $m?->user?->avatar,
                     'position' => $c->position,
                     'platform' => $c->platform,
                     'nominated_by_user_id' => $c->nominated_by_user_id,
@@ -175,6 +184,7 @@ class CommunityHubController extends Controller
                 return [
                     'id' => $capsule->id,
                     'title' => $capsule->title,
+                    'letter_style' => $capsule->letter_style ?: 'classic',
                     'unlock_at' => $capsule->unlock_at?->toIso8601String(),
                     'is_opened' => $capsule->is_opened,
                     'ready_to_open' => $readyToOpen,

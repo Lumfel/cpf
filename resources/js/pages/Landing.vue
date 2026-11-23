@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Head, Link, useForm, usePage } from '@inertiajs/vue3';
-import { Moon, Sun } from '@lucide/vue';
+import { Moon, Sparkles, Sun, Sunrise, Zap } from '@lucide/vue';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 import FirstBootAdviserModal from '@/components/system/FirstBootAdviserModal.vue';
 import { useAppearance } from '@/composables/useAppearance';
@@ -12,9 +12,13 @@ const props = defineProps<{
 
 const { resolvedAppearance, updateAppearance } = useAppearance();
 
-function toggleAppearance() {
-    updateAppearance(resolvedAppearance.value === 'dark' ? 'light' : 'dark');
-}
+const themeChoices = [
+    { value: 'light', label: 'Light', title: 'Soft Cream Light', Icon: Sun, iconClass: 'text-[#FF8D06]' },
+    { value: 'sunrise', label: 'Sunrise', title: 'Letter in Sunrise', Icon: Sunrise, iconClass: 'text-[#E04A7A]' },
+    { value: 'joy', label: 'Joy', title: 'In Little Blobs of Joy', Icon: Sparkles, iconClass: 'text-[#E09F3E]' },
+    { value: 'vice', label: 'Vice', title: 'Somehow, We Got Here Before Anything Worse', Icon: Zap, iconClass: 'text-[#FF5CAA]' },
+    { value: 'dark', label: 'Dark', title: 'Twilight Calm Dark', Icon: Moon, iconClass: 'text-[#56B4E3]' },
+] as const;
 
 const page = usePage<{ flash?: { status?: string } }>();
 const flashStatus = computed(() => page.props.flash?.status);
@@ -314,15 +318,32 @@ function submitApplication() {
                 </div>
 
                 <nav class="flex flex-wrap items-center gap-2">
-                    <button
-                        type="button"
-                        class="inline-flex items-center gap-1.5 rounded-xl border border-slate-900/10 bg-white/90 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-[#0384C5]"
-                        @click="toggleAppearance"
+                    <div
+                        class="inline-flex items-center gap-0.5 rounded-xl border border-slate-900/10 bg-white/90 p-0.5"
+                        role="group"
+                        aria-label="Theme Mode Switcher"
                     >
-                        <Sun v-if="resolvedAppearance === 'dark'" class="size-3.5 text-[#F4A94A]" />
-                        <Moon v-else class="size-3.5 text-[#0384C5]" />
-                        <span>{{ resolvedAppearance === 'dark' ? 'Light' : 'Dark' }}</span>
-                    </button>
+                        <button
+                            v-for="item in themeChoices"
+                            :key="item.value"
+                            type="button"
+                            @click="updateAppearance(item.value)"
+                            :title="item.title"
+                            class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold transition"
+                            :class="
+                                resolvedAppearance === item.value
+                                    ? 'bg-[#0384C5] text-white'
+                                    : 'text-slate-700 hover:text-[#0384C5]'
+                            "
+                        >
+                            <component
+                                :is="item.Icon"
+                                class="size-3.5"
+                                :class="resolvedAppearance === item.value ? '' : item.iconClass"
+                            />
+                            <span class="hidden sm:inline">{{ item.label }}</span>
+                        </button>
+                    </div>
                     <button type="button" class="rounded-xl border border-slate-900/10 bg-white/90 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-[#0384C5]" @click="showPrivacyModal = true">
                         Data Privacy
                     </button>

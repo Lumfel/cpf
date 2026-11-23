@@ -52,6 +52,7 @@ class CpfV4Controller extends Controller
         $validated = $request->validate([
             'campus_id' => ['required', 'integer', 'exists:campuses,id'],
             'title' => ['required', 'string', 'max:160'],
+            'letter_style' => ['nullable', 'string', Rule::in(['classic', 'letter_in_sunrise', 'joy_blobs', 'vice_dusk', 'twilight_calm'])],
             'message' => ['required', 'string', 'max:4000'],
             'unlock_at' => ['required', 'date', 'after:now'],
         ]);
@@ -69,11 +70,16 @@ class CpfV4Controller extends Controller
             'campus_id' => $validated['campus_id'],
             'user_id' => $request->user()->id,
             'title' => $validated['title'],
+            'letter_style' => $validated['letter_style'] ?? 'classic',
             'encrypted_message' => $validated['message'],
             'unlock_at' => $validated['unlock_at'],
         ]);
 
-        return response()->json(['status' => 'sealed', 'capsule_id' => $capsule->id], 201);
+        return response()->json([
+            'status' => 'sealed',
+            'capsule_id' => $capsule->id,
+            'letter_style' => $capsule->letter_style,
+        ], 201);
     }
 
     public function openTimeCapsule(Request $request, TimeCapsule $capsule): JsonResponse
@@ -97,6 +103,7 @@ class CpfV4Controller extends Controller
             'capsule' => [
                 'id' => $capsule->id,
                 'title' => $capsule->title,
+                'letter_style' => $capsule->letter_style ?: 'classic',
                 'message' => $capsule->encrypted_message,
                 'opened_at' => $capsule->opened_at?->toIso8601String(),
             ],

@@ -24,6 +24,7 @@ import { computed, ref } from 'vue';
 import EventCalendarGrid from '@/components/events/EventCalendarGrid.vue';
 import type { CampusEventSummary } from '@/components/events/EventCalendarGrid.vue';
 import AdviserHandoverPanel from '@/components/membership/AdviserHandoverPanel.vue';
+import { useInitials } from '@/composables/useInitials';
 import { apiRequest } from '@/lib/csrfFetch';
 import { dashboard } from '@/routes';
 import { index as membershipIndex } from '@/routes/membership';
@@ -121,6 +122,7 @@ defineOptions({
 const page = usePage<{ auth: Auth; flash?: { status?: string } }>();
 const auth = computed(() => page.props.auth);
 const flashStatus = computed(() => page.props.flash?.status);
+const { getInitials } = useInitials();
 
 const duesSearch = ref('');
 const duesFilter = ref<'all' | 'unpaid' | 'paid'>('all');
@@ -342,6 +344,29 @@ function toggleDuesStatus(member: DuesRosterMember) {
                 </div>
 
                 <div class="w-full space-y-2 text-xs">
+                    <div class="mb-2 flex flex-col items-center gap-1.5">
+                        <div class="size-12 overflow-hidden rounded-full border border-[#0384C5]/30 bg-white shadow-2xs dark:border-[#56B4E3]/35 dark:bg-[#18212A]">
+                            <img
+                                v-if="auth.user?.avatar"
+                                :src="auth.user.avatar"
+                                :alt="auth.membership?.full_name_last_first_mi ?? auth.user?.name ?? 'Profile'"
+                                class="size-full object-cover"
+                            />
+                            <div
+                                v-else
+                                class="flex size-full items-center justify-center bg-[#0384C5]/10 text-xs font-bold text-[#0384C5] dark:bg-[#56B4E3]/15 dark:text-[#56B4E3]"
+                            >
+                                {{ getInitials(auth.membership?.full_name_last_first_mi ?? auth.user?.name ?? 'CPF') }}
+                            </div>
+                        </div>
+                        <Link
+                            v-if="auth.role"
+                            href="/settings/profile"
+                            class="text-[11px] font-semibold text-[#0384C5] underline hover:text-[#FF8D06] dark:text-[#56B4E3]"
+                        >
+                            Update Photo
+                        </Link>
+                    </div>
                     <div class="font-bold text-slate-900">
                         {{ auth.membership?.full_name_last_first_mi ?? auth.user?.name ?? 'Pending Member' }}
                     </div>

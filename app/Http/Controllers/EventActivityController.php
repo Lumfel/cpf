@@ -61,6 +61,7 @@ class EventActivityController extends Controller
                     'creator:id,name',
                     'approver:id,name',
                     'canceller:id,name',
+                    'reflectionRequester:id,name',
                     'attendances.loggedInBy:id,name',
                     'attendances.loggedOutBy:id,name',
                     'reflections:id,campus_event_id,user_id,time_capsule_id,submitted_at',
@@ -109,6 +110,10 @@ class EventActivityController extends Controller
                     'end_time' => $event->end_time,
                     'status' => $event->status,
                     'effective_status' => $event->effectiveStatus(),
+                    'reflection_enabled' => (bool) $event->reflection_enabled,
+                    'pending_reflection_enabled' => $event->pending_reflection_enabled !== null ? (bool) $event->pending_reflection_enabled : null,
+                    'reflection_requester_name' => $event->reflectionRequester?->name,
+                    'reflection_requested_at' => $event->reflection_requested_at?->format('M d, Y h:i A'),
                     'can_edit_schedule' => $event->canEditSchedule(),
                     'within_one_day_cutoff' => $event->isWithinOneDayCutoff(),
                     'creator_name' => $event->creator?->name ?? 'Officer',
@@ -188,6 +193,7 @@ class EventActivityController extends Controller
             'event_date' => ['required', 'date_format:Y-m-d'],
             'start_time' => ['required', 'date_format:H:i'],
             'end_time' => ['required', 'date_format:H:i', 'after:start_time'],
+            'allow_reflection' => ['nullable', 'boolean'],
         ]);
 
         abort_if(
@@ -197,6 +203,7 @@ class EventActivityController extends Controller
         );
 
         $isAdviser = $user->isClubAdviser();
+        $wantsReflection = (bool) ($validated['allow_reflection'] ?? false);
 
         $event = CampusEvent::create([
             'campus_id' => $membership->campus_id,
@@ -207,6 +214,10 @@ class EventActivityController extends Controller
             'start_time' => $validated['start_time'],
             'end_time' => $validated['end_time'],
             'status' => $isAdviser ? 'approved' : 'pending_approval',
+            'reflection_enabled' => $isAdviser ? $wantsReflection : false,
+            'pending_reflection_enabled' => (! $isAdviser && $wantsReflection) ? true : null,
+            'reflection_requested_by_user_id' => (! $isAdviser && $wantsReflection) ? $user->id : null,
+            'reflection_requested_at' => (! $isAdviser && $wantsReflection) ? now() : null,
             'created_by_user_id' => $user->id,
             'approved_by_user_id' => $isAdviser ? $user->id : null,
             'approved_at' => $isAdviser ? now() : null,
@@ -215,18 +226,26 @@ class EventActivityController extends Controller
         $dateLabel = $event->event_date->format('M d, Y');
 
         if ($isAdviser) {
+            $reflectionNote = $wantsReflection
+                ? ' Optional post-event Time Capsule reflection is enabled.'
+                : '';
+
             CampusEvent::notifyCampusMembers(
                 $event,
                 'event_approved',
                 "New Campus Event Scheduled: {$event->title}",
-                "{$event->title} is scheduled on {$dateLabel} ({$event->start_time}–{$event->end_time}). It will automatically activate for attendance QR scanning on its scheduled window.",
+                "{$event->title} is scheduled on {$dateLabel} ({$event->start_time}–{$event->end_time}). It will automatically activate for attendance QR scanning on its scheduled window.{$reflectionNote}",
             );
         } else {
+            $reflectionProposalNote = $wantsReflection
+                ? ' Includes a request to enable post-event Time Capsule reflection.'
+                : '';
+
             CampusEvent::notifyCampusMembers(
                 $event,
                 'event_proposed',
                 "Event Proposal Awaiting Approval: {$event->title}",
-                "{$user->name} proposed \"{$event->title}\" for {$dateLabel} ({$event->start_time}–{$event->end_time}). Club Adviser review is needed before activation.",
+                "{$user->name} proposed \"{$event->title}\" for {$dateLabel} ({$event->start_time}–{$event->end_time}).{$reflectionProposalNote} Club Adviser review is needed before activation.",
                 advisersOnly: true,
             );
         }
@@ -260,17 +279,33 @@ class EventActivityController extends Controller
             'Events can only be approved at least 1 day before the scheduled date. Please reschedule first.',
         );
 
+        $validated = $request->validate([
+            'allow_reflection' => ['nullable', 'boolean'],
+        ]);
+
+        $finalReflectionEnabled = array_key_exists('allow_reflection', $validated) && $validated['allow_reflection'] !== null
+            ? (bool) $validated['allow_reflection']
+            : (bool) ($event->pending_reflection_enabled ?? $event->reflection_enabled);
+
         $event->update([
             'status' => 'approved',
             'approved_by_user_id' => $user->id,
             'approved_at' => now(),
+            'reflection_enabled' => $finalReflectionEnabled,
+            'pending_reflection_enabled' => null,
+            'reflection_requested_by_user_id' => null,
+            'reflection_requested_at' => null,
         ]);
+
+        $reflectionApprovedNote = $finalReflectionEnabled
+            ? ' Optional post-event Time Capsule reflection is enabled.'
+            : '';
 
         CampusEvent::notifyCampusMembers(
             $event,
             'event_approved',
             "Event Approved: {$event->title}",
-            "{$event->title} has been approved for {$event->event_date->format('M d, Y')} ({$event->start_time}–{$event->end_time}).",
+            "{$event->title} has been approved for {$event->event_date->format('M d, Y')} ({$event->start_time}–{$event->end_time}).{$reflectionApprovedNote}",
         );
 
         return response()->json([
@@ -377,6 +412,9 @@ class EventActivityController extends Controller
 
         $event->update([
             'status' => 'cancelled',
+            'pending_reflection_enabled' => null,
+            'reflection_requested_by_user_id' => null,
+            'reflection_requested_at' => null,
             'cancelled_by_user_id' => $user->id,
             'cancelled_at' => now(),
             'cancellation_reason' => $reason,
@@ -391,6 +429,180 @@ class EventActivityController extends Controller
 
         return response()->json([
             'status' => 'cancelled',
+            'event' => $event->fresh(),
+        ]);
+    }
+
+    public function updateReflectionSetting(Request $request, CampusEvent $event): JsonResponse
+    {
+        $user = $request->user();
+        $membership = $user?->primaryMembership;
+
+        abort_unless(
+            $user?->canProposeEvents() && $membership?->campus_id === $event->campus_id,
+            403,
+            'Only the Club Adviser, President, or Vice President can change reflection settings.',
+        );
+
+        abort_if(
+            $event->effectiveStatus() === 'cancelled',
+            422,
+            'Cancelled events can no longer update reflection settings.',
+        );
+
+        $validated = $request->validate([
+            'allow_reflection' => ['required', 'boolean'],
+        ]);
+
+        $desired = (bool) $validated['allow_reflection'];
+
+        if ($user->isClubAdviser()) {
+            $wasEnabled = (bool) $event->reflection_enabled;
+
+            $event->update([
+                'reflection_enabled' => $desired,
+                'pending_reflection_enabled' => null,
+                'reflection_requested_by_user_id' => null,
+                'reflection_requested_at' => null,
+            ]);
+
+            if ($event->status === 'approved' && $desired && ! $wasEnabled) {
+                CampusEvent::notifyCampusMembers(
+                    $event,
+                    'reflection_enabled',
+                    "Post-Event Reflection Enabled: {$event->title}",
+                    "The Club Adviser enabled optional Time Capsule reflection for {$event->title}.",
+                );
+            }
+
+            return response()->json([
+                'status' => 'updated',
+                'reflection_enabled' => $desired,
+                'pending_reflection_enabled' => null,
+                'event' => $event->fresh(),
+            ]);
+        }
+
+        if ($event->status === 'pending_approval') {
+            $event->update([
+                'pending_reflection_enabled' => $desired ? true : null,
+                'reflection_requested_by_user_id' => $desired ? $user->id : null,
+                'reflection_requested_at' => $desired ? now() : null,
+            ]);
+
+            return response()->json([
+                'status' => 'pending_adviser_approval',
+                'reflection_enabled' => false,
+                'pending_reflection_enabled' => $event->pending_reflection_enabled !== null
+                    ? (bool) $event->pending_reflection_enabled
+                    : null,
+                'event' => $event->fresh(),
+            ]);
+        }
+
+        if ($desired === (bool) $event->reflection_enabled) {
+            $event->update([
+                'pending_reflection_enabled' => null,
+                'reflection_requested_by_user_id' => null,
+                'reflection_requested_at' => null,
+            ]);
+
+            return response()->json([
+                'status' => 'no_change',
+                'reflection_enabled' => (bool) $event->reflection_enabled,
+                'pending_reflection_enabled' => null,
+                'event' => $event->fresh(),
+            ]);
+        }
+
+        $event->update([
+            'pending_reflection_enabled' => $desired,
+            'reflection_requested_by_user_id' => $user->id,
+            'reflection_requested_at' => now(),
+        ]);
+
+        $actionLabel = $desired ? 'enable' : 'disable';
+        CampusEvent::notifyCampusMembers(
+            $event,
+            'reflection_setting_proposed',
+            "Reflection Setting Change Awaiting Adviser Confirmation: {$event->title}",
+            "{$user->name} requested to {$actionLabel} optional post-event Time Capsule reflection for {$event->title}. Club Adviser confirmation is required before this change takes effect.",
+            advisersOnly: true,
+        );
+
+        return response()->json([
+            'status' => 'pending_adviser_approval',
+            'reflection_enabled' => (bool) $event->reflection_enabled,
+            'pending_reflection_enabled' => $desired,
+            'event' => $event->fresh(),
+        ]);
+    }
+
+    public function reviewReflectionSetting(Request $request, CampusEvent $event): JsonResponse
+    {
+        $user = $request->user();
+        $membership = $user?->primaryMembership;
+
+        abort_unless(
+            $user?->isClubAdviser() && $membership?->campus_id === $event->campus_id,
+            403,
+            'Only the campus Club Adviser can confirm or decline reflection setting changes.',
+        );
+
+        abort_if(
+            $event->effectiveStatus() === 'cancelled',
+            422,
+            'Cancelled events cannot confirm reflection changes.',
+        );
+
+        abort_if(
+            $event->pending_reflection_enabled === null,
+            422,
+            'There is no pending reflection setting request for this event.',
+        );
+
+        $validated = $request->validate([
+            'decision' => ['required', Rule::in(['approved', 'declined'])],
+        ]);
+
+        if ($validated['decision'] === 'approved') {
+            $newSetting = (bool) $event->pending_reflection_enabled;
+
+            $event->update([
+                'reflection_enabled' => $newSetting,
+                'pending_reflection_enabled' => null,
+                'reflection_requested_by_user_id' => null,
+                'reflection_requested_at' => null,
+            ]);
+
+            if ($event->status === 'approved' && $newSetting) {
+                CampusEvent::notifyCampusMembers(
+                    $event,
+                    'reflection_enabled',
+                    "Post-Event Reflection Enabled: {$event->title}",
+                    "The Club Adviser confirmed enabling optional Time Capsule reflection for {$event->title}.",
+                );
+            }
+
+            return response()->json([
+                'status' => 'approved',
+                'reflection_enabled' => $newSetting,
+                'pending_reflection_enabled' => null,
+                'event' => $event->fresh(),
+            ]);
+        }
+
+        $currentSetting = (bool) $event->reflection_enabled;
+        $event->update([
+            'pending_reflection_enabled' => null,
+            'reflection_requested_by_user_id' => null,
+            'reflection_requested_at' => null,
+        ]);
+
+        return response()->json([
+            'status' => 'declined',
+            'reflection_enabled' => $currentSetting,
+            'pending_reflection_enabled' => null,
             'event' => $event->fresh(),
         ]);
     }
@@ -494,6 +706,12 @@ class EventActivityController extends Controller
             'Reflections open after the event has ended.',
         );
 
+        abort_unless(
+            (bool) $event->reflection_enabled,
+            422,
+            'Post-event reflection is not enabled for this activity.',
+        );
+
         $alreadySubmitted = CampusEventReflection::query()
             ->where('campus_event_id', $event->id)
             ->where('user_id', $user->id)
@@ -507,6 +725,7 @@ class EventActivityController extends Controller
 
         $validated = $request->validate([
             'title' => ['nullable', 'string', 'max:160'],
+            'letter_style' => ['nullable', 'string', Rule::in(['classic', 'letter_in_sunrise', 'joy_blobs', 'vice_dusk', 'twilight_calm'])],
             'reflection_message' => ['required', 'string', 'min:10', 'max:4000'],
             'unlock_at' => ['required', 'date', 'after:now'],
         ]);
@@ -520,6 +739,7 @@ class EventActivityController extends Controller
                 'campus_id' => $event->campus_id,
                 'user_id' => $user->id,
                 'title' => $capsuleTitle,
+                'letter_style' => $validated['letter_style'] ?? 'classic',
                 'encrypted_message' => trim($validated['reflection_message']),
                 'unlock_at' => $validated['unlock_at'],
                 'is_opened' => false,

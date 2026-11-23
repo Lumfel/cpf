@@ -20,6 +20,7 @@ export interface CampusEventSummary {
     end_time: string;
     status: 'pending_approval' | 'approved' | 'cancelled';
     effective_status: CampusEventEffectiveStatus;
+    reflection_enabled?: boolean;
     can_edit_schedule?: boolean;
     within_one_day_cutoff?: boolean;
     cancellation_reason?: string | null;

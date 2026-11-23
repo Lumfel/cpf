@@ -19,7 +19,41 @@ type DocumentWithViewTransition = Document & {
 let themeTransitionTimer: number | null = null;
 let activeTransitionId = 0;
 
-function applyThemeTransition(nextIsDark: boolean): void {
+function isValidAppearance(value: string | null): value is Appearance {
+    return (
+        value === 'light' ||
+        value === 'dark' ||
+        value === 'sunrise' ||
+        value === 'joy' ||
+        value === 'vice' ||
+        value === 'system'
+    );
+}
+
+function getCurrentRootTheme(root: HTMLElement): ResolvedAppearance {
+    if (root.classList.contains('dark')) {
+        return 'dark';
+    }
+    if (root.classList.contains('theme-sunrise')) {
+        return 'sunrise';
+    }
+    if (root.classList.contains('theme-joy')) {
+        return 'joy';
+    }
+    if (root.classList.contains('theme-vice')) {
+        return 'vice';
+    }
+    return 'light';
+}
+
+function applyThemeClasses(root: HTMLElement, nextTheme: ResolvedAppearance): void {
+    root.classList.toggle('dark', nextTheme === 'dark');
+    root.classList.toggle('theme-sunrise', nextTheme === 'sunrise');
+    root.classList.toggle('theme-joy', nextTheme === 'joy');
+    root.classList.toggle('theme-vice', nextTheme === 'vice');
+}
+
+function applyThemeTransition(nextTheme: ResolvedAppearance): void {
     if (typeof window === 'undefined' || typeof document === 'undefined') {
         return;
     }
@@ -30,7 +64,7 @@ function applyThemeTransition(nextIsDark: boolean): void {
     ).matches;
 
     if (prefersReducedMotion) {
-        root.classList.toggle('dark', nextIsDark);
+        applyThemeClasses(root, nextTheme);
         return;
     }
 
@@ -42,7 +76,7 @@ function applyThemeTransition(nextIsDark: boolean): void {
 
         try {
             const transition = doc.startViewTransition(() => {
-                root.classList.toggle('dark', nextIsDark);
+                applyThemeClasses(root, nextTheme);
             });
 
             void transition.finished.finally(() => {
@@ -64,7 +98,7 @@ function applyThemeTransition(nextIsDark: boolean): void {
     }
 
     root.classList.add('cpf-theme-fallback-transition');
-    root.classList.toggle('dark', nextIsDark);
+    applyThemeClasses(root, nextTheme);
 
     themeTransitionTimer = window.setTimeout(() => {
         root.classList.remove('cpf-theme-fallback-transition');
@@ -77,24 +111,25 @@ export function updateTheme(value: Appearance, animate = false): void {
         return;
     }
 
-    const currentlyDark = document.documentElement.classList.contains('dark');
-    let nextIsDark = false;
+    const root = document.documentElement;
+    const currentTheme = getCurrentRootTheme(root);
+    let nextTheme: ResolvedAppearance = 'light';
 
     if (value === 'system') {
         const mediaQueryList = window.matchMedia(
             '(prefers-color-scheme: dark)',
         );
-        nextIsDark = mediaQueryList.matches;
+        nextTheme = mediaQueryList.matches ? 'dark' : 'light';
     } else {
-        nextIsDark = value === 'dark';
+        nextTheme = value;
     }
 
-    if (animate && currentlyDark !== nextIsDark) {
-        applyThemeTransition(nextIsDark);
+    if (animate && currentTheme !== nextTheme) {
+        applyThemeTransition(nextTheme);
         return;
     }
 
-    document.documentElement.classList.toggle('dark', nextIsDark);
+    applyThemeClasses(root, nextTheme);
 }
 
 const setCookie = (name: string, value: string, days = 365) => {
@@ -115,12 +150,13 @@ const mediaQuery = () => {
     return window.matchMedia('(prefers-color-scheme: dark)');
 };
 
-const getStoredAppearance = () => {
+const getStoredAppearance = (): Appearance | null => {
     if (typeof window === 'undefined') {
         return null;
     }
 
-    return localStorage.getItem('appearance') as Appearance | null;
+    const stored = localStorage.getItem('appearance');
+    return isValidAppearance(stored) ? stored : null;
 };
 
 const prefersDark = (): boolean => {
@@ -160,9 +196,7 @@ export function initializeTheme(): void {
 export function useAppearance(): UseAppearanceReturn {
     onMounted(() => {
         systemPrefersDark.value = prefersDark();
-        const savedAppearance = localStorage.getItem(
-            'appearance',
-        ) as Appearance | null;
+        const savedAppearance = getStoredAppearance();
 
         if (savedAppearance) {
             appearance.value = savedAppearance;

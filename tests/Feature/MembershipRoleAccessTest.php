@@ -196,4 +196,79 @@ class MembershipRoleAccessTest extends TestCase
             ])
             ->assertStatus(429);
     }
+
+    public function test_verified_officers_can_view_minimal_member_qr_card_without_extra_pii(): void
+    {
+        $adviser = $this->createMemberWithRole($this->campus, CpfRole::Adviser, 'Montemayor, Elena V.');
+        $president = $this->createMemberWithRole($this->campus, CpfRole::President, 'Mercado, Sofia R.');
+        $memberUser = $this->createMemberWithRole($this->campus, CpfRole::Member, 'Tibo-oc, Paul Felippe G.');
+        $targetMembership = $memberUser->primaryMembership;
+
+        // Pending membership cannot generate a QR card yet
+        $pendingUser = User::factory()->create(['must_change_password' => false]);
+        $pendingMembership = CampusMembership::create([
+            'user_id' => $pendingUser->id,
+            'campus_id' => $this->campus->id,
+            'role' => CpfRole::Member,
+            'status' => MembershipStatus::Pending,
+            'enrollment_source' => 'online_form',
+            'recorded_email' => $pendingUser->email,
+            'first_name' => 'Pending',
+            'last_name' => 'Applicant',
+            'full_name_last_first_mi' => 'Applicant, Pending',
+            'course' => 'BSIT',
+            'year_level' => '2',
+            'section' => 'B',
+            'course_year_section' => 'BSIT 2B',
+            'sex' => 'Male',
+            'birthdate' => '2005-01-01',
+            'active_email' => $pendingUser->email,
+            'active_fb_account' => 'Pending Applicant',
+            'cellphone_number' => '0917-111-1111',
+        ]);
+
+        // Unauthenticated -> 401/redirect
+        $this->getJson("/membership/{$targetMembership->id}/qr")->assertUnauthorized();
+
+        // Ordinary member -> 403 Forbidden
+        $this->actingAs($memberUser)
+            ->getJson("/membership/{$targetMembership->id}/qr")
+            ->assertForbidden();
+
+        // Officer from another campus -> 403 Forbidden
+        $otherCampus = Campus::create([
+            'code' => 'ALIJIS',
+            'name' => 'CHMSU Alijis Campus',
+            'slug' => 'alijis',
+            'adviser_name' => 'Another Adviser',
+            'gc_group_name' => 'CPF Alijis GC',
+            'is_active' => true,
+        ]);
+        $otherPresident = $this->createMemberWithRole($otherCampus, CpfRole::President, 'Cruz, Ana B.');
+        $this->actingAs($otherPresident)
+            ->getJson("/membership/{$targetMembership->id}/qr")
+            ->assertForbidden();
+
+        // Pending member -> 422
+        $this->actingAs($adviser)
+            ->getJson("/membership/{$pendingMembership->id}/qr")
+            ->assertStatus(422);
+
+        // Verified Campus Officer receives ONLY QR SVG + Name + Course + Year + Section
+        $response = $this->actingAs($president)
+            ->getJson("/membership/{$targetMembership->id}/qr")
+            ->assertOk()
+            ->assertJsonPath('full_name', 'Tibo-oc, Paul Felippe G.')
+            ->assertJsonPath('course', 'BSIT')
+            ->assertJsonPath('year_level', '4')
+            ->assertJsonPath('section', 'A')
+            ->assertJsonPath('course_year_section', 'BSIT 4A')
+            ->assertJsonMissingPath('active_email')
+            ->assertJsonMissingPath('cellphone_number')
+            ->assertJsonMissingPath('birthdate')
+            ->assertJsonMissingPath('facebook_profile_url')
+            ->assertJsonMissingPath('role');
+
+        $this->assertStringContainsString('<svg', (string) $response->json('qr_svg'));
+    }
 }

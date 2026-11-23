@@ -367,6 +367,7 @@ class CampusEventsAndActivitiesTest extends TestCase
             'start_time' => '09:00',
             'end_time' => '11:00',
             'status' => 'approved',
+            'reflection_enabled' => true,
             'created_by_user_id' => $adviser->id,
             'approved_by_user_id' => $adviser->id,
             'approved_at' => now(),
@@ -448,6 +449,229 @@ class CampusEventsAndActivitiesTest extends TestCase
                 0,
                 CampusEventNotification::where('user_id', $member->id)->whereNull('read_at')->count(),
             );
+        } finally {
+            $this->travelBack();
+        }
+    }
+
+    public function test_optional_event_reflection_defaults_off_and_pres_vp_changes_require_adviser_confirmation(): void
+    {
+        $adviser = $this->createMember($this->talisay, CpfRole::Adviser, 'Montemayor, Elena V.');
+        $president = $this->createMember($this->talisay, CpfRole::President, 'Mercado, Sofia R.');
+        $vp = $this->createMember($this->talisay, CpfRole::VicePresident, 'Bautista, Miguel A.');
+        $secretary = $this->createMember($this->talisay, CpfRole::Secretary, 'Alvarez, Hannah G.');
+        $member = $this->createMember($this->talisay, CpfRole::Member, 'Reyes, Katrina M.');
+
+        $day2 = now()->addDays(2)->toDateString();
+        $day3 = now()->addDays(3)->toDateString();
+        $day4 = now()->addDays(4)->toDateString();
+
+        // 1. Default event without allow_reflection stays reflection_enabled = false
+        $defaultOffId = $this->actingAs($president)
+            ->postJson('/events-activities', [
+                'title' => 'General Peer Orientation',
+                'event_date' => $day2,
+                'start_time' => '09:00',
+                'end_time' => '11:00',
+            ])
+            ->assertCreated()
+            ->json('event.id');
+
+        $defaultOffEvent = CampusEvent::findOrFail($defaultOffId);
+        $this->assertFalse($defaultOffEvent->reflection_enabled);
+        $this->assertNull($defaultOffEvent->pending_reflection_enabled);
+
+        $this->actingAs($adviser)
+            ->patchJson("/events-activities/{$defaultOffEvent->id}/approve")
+            ->assertOk();
+
+        $this->assertFalse($defaultOffEvent->fresh()->reflection_enabled);
+
+        // 2. Club Adviser enabling reflection during creation takes effect immediately
+        $adviserDirectId = $this->actingAs($adviser)
+            ->postJson('/events-activities', [
+                'title' => 'Adviser Reflection Workshop',
+                'event_date' => $day2,
+                'start_time' => '14:00',
+                'end_time' => '16:00',
+                'allow_reflection' => true,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('status', 'approved')
+            ->json('event.id');
+
+        $adviserDirectEvent = CampusEvent::findOrFail($adviserDirectId);
+        $this->assertTrue($adviserDirectEvent->reflection_enabled);
+        $this->assertNull($adviserDirectEvent->pending_reflection_enabled);
+
+        // 3. President proposing reflection requires Adviser approval to confirm
+        $presProposedId = $this->actingAs($president)
+            ->postJson('/events-activities', [
+                'title' => 'Pres Listening Forum',
+                'event_date' => $day3,
+                'start_time' => '09:00',
+                'end_time' => '11:00',
+                'allow_reflection' => true,
+            ])
+            ->assertCreated()
+            ->assertJsonPath('status', 'pending_approval')
+            ->json('event.id');
+
+        $presProposed = CampusEvent::findOrFail($presProposedId);
+        $this->assertFalse($presProposed->reflection_enabled);
+        $this->assertTrue($presProposed->pending_reflection_enabled);
+        $this->assertSame($president->id, $presProposed->reflection_requested_by_user_id);
+
+        $this->actingAs($adviser)
+            ->patchJson("/events-activities/{$presProposed->id}/approve")
+            ->assertOk();
+
+        $presProposed->refresh();
+        $this->assertTrue($presProposed->reflection_enabled);
+        $this->assertNull($presProposed->pending_reflection_enabled);
+        $this->assertNull($presProposed->reflection_requested_by_user_id);
+
+        // 4. VP proposing reflection can be overridden by Adviser on approval
+        $vpProposedId = $this->actingAs($vp)
+            ->postJson('/events-activities', [
+                'title' => 'VP Outreach Briefing',
+                'event_date' => $day4,
+                'start_time' => '09:00',
+                'end_time' => '11:00',
+                'allow_reflection' => true,
+            ])
+            ->assertCreated()
+            ->json('event.id');
+
+        $this->actingAs($adviser)
+            ->patchJson("/events-activities/{$vpProposedId}/approve", [
+                'allow_reflection' => false,
+            ])
+            ->assertOk();
+
+        $vpProposed = CampusEvent::findOrFail($vpProposedId);
+        $this->assertSame('approved', $vpProposed->status);
+        $this->assertFalse($vpProposed->reflection_enabled);
+        $this->assertNull($vpProposed->pending_reflection_enabled);
+
+        // 5. Secretary & Member blocked (403) from toggling reflection settings
+        $this->actingAs($secretary)
+            ->patchJson("/events-activities/{$defaultOffEvent->id}/reflection-setting", [
+                'allow_reflection' => true,
+            ])
+            ->assertForbidden();
+
+        $this->actingAs($member)
+            ->patchJson("/events-activities/{$defaultOffEvent->id}/reflection-setting", [
+                'allow_reflection' => true,
+            ])
+            ->assertForbidden();
+
+        // 6. Travel past General Peer Orientation end time & verify default-off reflection is blocked
+        $this->travelTo(Carbon::parse($day2.' 12:00:00'));
+
+        try {
+            $this->actingAs($member)
+                ->postJson("/events-activities/{$defaultOffEvent->id}/reflection", [
+                    'title' => 'Attempt While Disabled',
+                    'reflection_message' => 'Trying to submit a reflection when optional reflection is disabled.',
+                    'unlock_at' => now()->addMonths(2)->format('Y-m-d H:i:s'),
+                ])
+                ->assertStatus(422);
+
+            // President toggles reflection on -> pending Adviser confirmation, NOT yet enabled
+            $this->actingAs($president)
+                ->patchJson("/events-activities/{$defaultOffEvent->id}/reflection-setting", [
+                    'allow_reflection' => true,
+                ])
+                ->assertOk()
+                ->assertJsonPath('status', 'pending_adviser_approval')
+                ->assertJsonPath('reflection_enabled', false)
+                ->assertJsonPath('pending_reflection_enabled', true);
+
+            $this->assertDatabaseHas('campus_event_notifications', [
+                'campus_event_id' => $defaultOffEvent->id,
+                'user_id' => $adviser->id,
+                'type' => 'reflection_setting_proposed',
+            ]);
+
+            // Non-adviser cannot confirm reflection requests
+            $this->actingAs($president)
+                ->patchJson("/events-activities/{$defaultOffEvent->id}/reflection-setting/review", [
+                    'decision' => 'approved',
+                ])
+                ->assertForbidden();
+
+            // Member still blocked while pending Adviser confirmation
+            $this->actingAs($member)
+                ->postJson("/events-activities/{$defaultOffEvent->id}/reflection", [
+                    'title' => 'Attempt While Pending',
+                    'reflection_message' => 'Trying to submit while Adviser confirmation is still pending.',
+                    'unlock_at' => now()->addMonths(2)->format('Y-m-d H:i:s'),
+                ])
+                ->assertStatus(422);
+
+            // Adviser declines pending request -> stays false & clears pending
+            $this->actingAs($adviser)
+                ->patchJson("/events-activities/{$defaultOffEvent->id}/reflection-setting/review", [
+                    'decision' => 'declined',
+                ])
+                ->assertOk()
+                ->assertJsonPath('status', 'declined')
+                ->assertJsonPath('reflection_enabled', false)
+                ->assertJsonPath('pending_reflection_enabled', null);
+
+            $this->actingAs($member)
+                ->postJson("/events-activities/{$defaultOffEvent->id}/reflection", [
+                    'title' => 'Attempt After Declined',
+                    'reflection_message' => 'Trying to submit after the Adviser declined reflection.',
+                    'unlock_at' => now()->addMonths(2)->format('Y-m-d H:i:s'),
+                ])
+                ->assertStatus(422);
+
+            // VP requests enabling -> Adviser confirms -> Member can now seal Time Capsule
+            $this->actingAs($vp)
+                ->patchJson("/events-activities/{$defaultOffEvent->id}/reflection-setting", [
+                    'allow_reflection' => true,
+                ])
+                ->assertOk()
+                ->assertJsonPath('pending_reflection_enabled', true);
+
+            $this->actingAs($adviser)
+                ->patchJson("/events-activities/{$defaultOffEvent->id}/reflection-setting/review", [
+                    'decision' => 'approved',
+                ])
+                ->assertOk()
+                ->assertJsonPath('status', 'approved')
+                ->assertJsonPath('reflection_enabled', true)
+                ->assertJsonPath('pending_reflection_enabled', null);
+
+            $this->assertDatabaseHas('campus_event_notifications', [
+                'campus_event_id' => $defaultOffEvent->id,
+                'user_id' => $member->id,
+                'type' => 'reflection_enabled',
+            ]);
+
+            $this->actingAs($member)
+                ->postJson("/events-activities/{$defaultOffEvent->id}/reflection", [
+                    'title' => 'Confirmed Reflection Takeaway',
+                    'reflection_message' => 'Now that the Adviser confirmed optional reflection, my reflection seals cleanly!',
+                    'unlock_at' => now()->addMonths(2)->format('Y-m-d H:i:s'),
+                ])
+                ->assertCreated()
+                ->assertJsonPath('status', 'sealed');
+
+            // Adviser can immediately disable reflection again
+            $this->actingAs($adviser)
+                ->patchJson("/events-activities/{$defaultOffEvent->id}/reflection-setting", [
+                    'allow_reflection' => false,
+                ])
+                ->assertOk()
+                ->assertJsonPath('status', 'updated')
+                ->assertJsonPath('reflection_enabled', false)
+                ->assertJsonPath('pending_reflection_enabled', null);
+
+            $this->assertFalse($defaultOffEvent->fresh()->reflection_enabled);
         } finally {
             $this->travelBack();
         }

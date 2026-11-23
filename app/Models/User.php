@@ -31,16 +31,31 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['name', 'email', 'password', 'must_change_password', 'temporary_password_issued_at'])]
+#[Fillable(['name', 'email', 'profile_photo_path', 'password', 'must_change_password', 'temporary_password_issued_at'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
 {
     /** @use HasFactory<UserFactory> */
     use HasFactory, Notifiable, PasskeyAuthenticatable, TwoFactorAuthenticatable;
 
+    protected $appends = ['avatar'];
+
     protected $attributes = [
         'must_change_password' => false,
     ];
+
+    public function getAvatarAttribute(): ?string
+    {
+        $path = $this->attributes['profile_photo_path'] ?? null;
+        if (! is_string($path) || $path === '') {
+            return null;
+        }
+
+        $updatedAt = $this->attributes['updated_at'] ?? null;
+        $version = $updatedAt ? strtotime((string) $updatedAt) ?: 1 : 1;
+
+        return "/profile-photos/{$this->id}?v={$version}";
+    }
 
     /**
      * Get the attributes that should be cast.

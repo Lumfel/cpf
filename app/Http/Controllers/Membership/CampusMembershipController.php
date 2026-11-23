@@ -14,6 +14,11 @@ use App\Models\Campus;
 use App\Models\CampusMembership;
 use App\Models\MemberInfoChangeRequest;
 use App\Models\User;
+use BaconQrCode\Renderer\Image\SvgImageBackEnd;
+use BaconQrCode\Renderer\ImageRenderer;
+use BaconQrCode\Renderer\RendererStyle\RendererStyle;
+use BaconQrCode\Writer;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -30,6 +35,45 @@ class CampusMembershipController extends Controller
     private function resolveActor(Request $request): ?User
     {
         return $request->user();
+    }
+
+    public function showQr(Request $request, CampusMembership $membership): JsonResponse
+    {
+        $actor = $this->resolveActor($request);
+        abort_if(! $actor, 401);
+
+        abort_unless(
+            $actor->can('viewRoster', CampusMembership::class)
+            && $actor->primaryMembership?->campus_id === $membership->campus_id,
+            403,
+            'Only verified campus officers or the Club Adviser can view member attendance QR cards.',
+        );
+
+        abort_unless(
+            $membership->status === MembershipStatus::Approved,
+            422,
+            'Attendance QR codes are only available for approved campus members.',
+        );
+
+        $membership->loadMissing('campus:id,code');
+        $campusCode = $membership->campus?->code ?? 'CHMSU';
+        $roleValue = $membership->role instanceof CpfRole ? $membership->role->value : (string) $membership->role;
+
+        $rawPayload = "CPF|campus:{$campusCode}|user:{$membership->user_id}|role:{$roleValue}";
+        $signature = substr(hash_hmac('sha256', $rawPayload, (string) config('app.key')), 0, 16);
+        $qrPayload = "{$rawPayload}|sig:{$signature}";
+
+        $writer = new Writer(new ImageRenderer(new RendererStyle(220, 1), new SvgImageBackEnd()));
+        $qrSvg = $writer->writeString($qrPayload);
+
+        return response()->json([
+            'full_name' => $membership->full_name_last_first_mi,
+            'course' => $membership->course,
+            'year_level' => $membership->year_level,
+            'section' => $membership->section,
+            'course_year_section' => $membership->course_year_section,
+            'qr_svg' => $qrSvg,
+        ]);
     }
 
     public function index(Request $request): Response

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { ArrowLeft, Moon, Sun } from '@lucide/vue';
+import { ArrowLeft, Moon, Sparkles, Sun, Sunrise, Zap } from '@lucide/vue';
 import { useAppearance } from '@/composables/useAppearance';
 import { home } from '@/routes';
 
@@ -11,9 +11,13 @@ defineProps<{
 
 const { resolvedAppearance, updateAppearance } = useAppearance();
 
-function toggleTheme() {
-    updateAppearance(resolvedAppearance.value === 'dark' ? 'light' : 'dark');
-}
+const themeChoices = [
+    { value: 'light', label: 'Light', title: 'Soft Cream Light Mode', Icon: Sun, iconClass: 'text-[#FF8D06]' },
+    { value: 'sunrise', label: 'Sunrise', title: 'Letter in Sunrise Mode', Icon: Sunrise, iconClass: 'text-[#E04A7A]' },
+    { value: 'joy', label: 'Joy', title: 'In Little Blobs of Joy Mode', Icon: Sparkles, iconClass: 'text-[#E09F3E]' },
+    { value: 'vice', label: 'Vice', title: 'Somehow, We Got Here Before Anything Worse', Icon: Zap, iconClass: 'text-[#FF5CAA]' },
+    { value: 'dark', label: 'Dark', title: 'Twilight Calm Dark Mode', Icon: Moon, iconClass: 'text-[#56B4E3]' },
+] as const;
 </script>
 
 <template>
@@ -29,7 +33,7 @@ function toggleTheme() {
         />
 
         <!-- Top Navigation & Theme Switcher -->
-        <div class="relative z-10 mb-6 flex w-full max-w-md items-center justify-between">
+        <div class="relative z-10 mb-6 flex w-full max-w-md items-center justify-between gap-2">
             <Link
                 :href="home()"
                 class="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card/80 px-3 py-1.5 text-xs font-semibold text-muted-foreground backdrop-blur-md transition hover:border-primary/40 hover:text-primary"
@@ -38,15 +42,32 @@ function toggleTheme() {
                 Back to CPF Home
             </Link>
 
-            <button
-                type="button"
-                @click="toggleTheme"
-                class="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card/80 px-3 py-1.5 text-xs font-semibold text-foreground backdrop-blur-md transition hover:border-primary/40 hover:text-primary"
+            <div
+                class="inline-flex items-center gap-0.5 rounded-xl border border-border bg-card/85 p-1 backdrop-blur-md"
+                role="group"
+                aria-label="Theme Mode Switcher"
             >
-                <Sun v-if="resolvedAppearance === 'dark'" class="size-3.5 text-[#F2A341]" />
-                <Moon v-else class="size-3.5 text-[#0384C5]" />
-                <span>{{ resolvedAppearance === 'dark' ? 'Light Mode' : 'Dark Mode' }}</span>
-            </button>
+                <button
+                    v-for="item in themeChoices"
+                    :key="item.value"
+                    type="button"
+                    @click="updateAppearance(item.value)"
+                    :title="item.title"
+                    class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold transition"
+                    :class="
+                        resolvedAppearance === item.value
+                            ? 'bg-primary text-primary-foreground shadow-2xs'
+                            : 'text-muted-foreground hover:text-foreground'
+                    "
+                >
+                    <component
+                        :is="item.Icon"
+                        class="size-3.5"
+                        :class="resolvedAppearance === item.value ? '' : item.iconClass"
+                    />
+                    <span class="hidden sm:inline">{{ item.label }}</span>
+                </button>
+            </div>
         </div>
 
         <!-- Centered Frosted CPF Bento Auth Card -->

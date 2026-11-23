@@ -19,6 +19,10 @@ use Illuminate\Support\Carbon;
     'start_time',
     'end_time',
     'status',
+    'reflection_enabled',
+    'pending_reflection_enabled',
+    'reflection_requested_by_user_id',
+    'reflection_requested_at',
     'created_by_user_id',
     'approved_by_user_id',
     'approved_at',
@@ -34,6 +38,9 @@ class CampusEvent extends Model
     {
         return [
             'event_date' => 'date',
+            'reflection_enabled' => 'boolean',
+            'pending_reflection_enabled' => 'boolean',
+            'reflection_requested_at' => 'datetime',
             'approved_at' => 'datetime',
             'cancelled_at' => 'datetime',
             'activated_at' => 'datetime',
@@ -59,6 +66,11 @@ class CampusEvent extends Model
     public function canceller(): BelongsTo
     {
         return $this->belongsTo(User::class, 'cancelled_by_user_id');
+    }
+
+    public function reflectionRequester(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'reflection_requested_by_user_id');
     }
 
     public function attendances(): HasMany
@@ -148,11 +160,15 @@ class CampusEvent extends Model
                 'completed_at' => $now,
             ])->save();
 
+            $completionMessage = $this->reflection_enabled
+                ? "{$this->title} has ended. Post-event reflection is enabled — verified members may now write and seal their reflection in their Time Capsule."
+                : "{$this->title} has ended. No post-event reflection is required for this activity.";
+
             self::notifyCampusMembers(
                 $this,
                 'event_completed',
                 "Activity Completed: {$this->title}",
-                "{$this->title} has ended. Verified members may now write and seal their reflection in their Time Capsule.",
+                $completionMessage,
             );
         }
     }

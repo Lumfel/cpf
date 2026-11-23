@@ -63,7 +63,7 @@ export type User = {
     id: number;
     name: string;
     email: string;
-    avatar?: string;
+    avatar?: string | null;
     email_verified_at: string | null;
     must_change_password?: boolean;
     temporary_password_issued_at?: string | null;

@@ -13,6 +13,7 @@ use App\Http\Controllers\EventActivityController;
 use App\Http\Controllers\FirstBootSetupController;
 use App\Http\Controllers\Membership\CampusMembershipController;
 use App\Http\Controllers\OfficersChatController;
+use App\Http\Controllers\Settings\ProfileController;
 use App\Http\Middleware\EnsureTemporaryPasswordChanged;
 use App\Models\Campus;
 use Illuminate\Support\Facades\Route;
@@ -63,6 +64,8 @@ Route::post('login/passkey-code', [PasskeyCodeLoginController::class, 'store'])
     ->name('login.passkey-code');
 
 Route::middleware(['auth', 'verified'])->group(function () {
+    Route::get('profile-photos/{targetUser}', [ProfileController::class, 'showPhoto'])
+        ->name('profile-photos.show');
     Route::get('force-password-change', [ForcePasswordChangeController::class, 'edit'])
         ->name('password.force-change.edit');
     Route::post('force-password-change', [ForcePasswordChangeController::class, 'update'])
@@ -82,9 +85,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('events-activities/{event}/cancel', [EventActivityController::class, 'cancel'])->name('events.cancel');
         Route::post('events-activities/{event}/scan', [EventActivityController::class, 'scanQr'])->name('events.scan');
         Route::post('events-activities/{event}/reflection', [EventActivityController::class, 'storeReflection'])->name('events.reflection');
+        Route::patch('events-activities/{event}/reflection-setting', [EventActivityController::class, 'updateReflectionSetting'])->name('events.reflection-setting');
+        Route::patch('events-activities/{event}/reflection-setting/review', [EventActivityController::class, 'reviewReflectionSetting'])->name('events.reflection-setting.review');
         Route::patch('events-activities/notifications/{notification}/read', [EventActivityController::class, 'markNotificationRead'])->name('events.notifications.read');
         Route::post('events-activities/notifications/read-all', [EventActivityController::class, 'markAllNotificationsRead'])->name('events.notifications.read-all');
         Route::get('membership', [CampusMembershipController::class, 'index'])->name('membership.index');
+        Route::get('membership/{membership}/qr', [CampusMembershipController::class, 'showQr'])->name('membership.qr');
         Route::post('membership/officer-add', [CampusMembershipController::class, 'storeOfficerMember'])->name('membership.officer-add');
         Route::patch('membership/{membership}/approve', [CampusMembershipController::class, 'approve'])->name('membership.approve');
         Route::patch('membership/{membership}/toggle-gc', [CampusMembershipController::class, 'toggleGc'])->name('membership.toggle-gc');

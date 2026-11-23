@@ -5,6 +5,7 @@ import { computed } from 'vue';
 import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
+import ProfilePhotoUploader from '@/components/ProfilePhotoUploader.vue';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -35,8 +36,10 @@ const user = computed(() => page.props.auth.user);
         <Heading
             variant="small"
             title="Profile"
-            description="Update your name and email address"
+            description="Upload your single profile picture and update your name and email address"
         />
+
+        <ProfilePhotoUploader />
 
         <Form
             v-bind="ProfileController.update.form()"

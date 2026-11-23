@@ -1,5 +1,5 @@
-export type Appearance = 'light' | 'dark' | 'system';
-export type ResolvedAppearance = 'light' | 'dark';
+export type Appearance = 'light' | 'dark' | 'sunrise' | 'joy' | 'vice' | 'system';
+export type ResolvedAppearance = 'light' | 'dark' | 'sunrise' | 'joy' | 'vice';
 
 export type AppVariant = 'header' | 'sidebar';
 

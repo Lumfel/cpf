@@ -175,7 +175,8 @@ watch(
                                         class="flex aspect-square size-full items-center justify-center"
                                         :style="{
                                             filter:
-                                                resolvedAppearance === 'dark'
+                                                resolvedAppearance === 'dark' ||
+                                                resolvedAppearance === 'vice'
                                                     ? 'invert(1) brightness(1.5)'
                                                     : undefined,
                                         }"

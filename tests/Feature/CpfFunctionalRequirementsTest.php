@@ -19,8 +19,10 @@ use App\Models\PeerQuote;
 use App\Models\TimeCapsule;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class CpfFunctionalRequirementsTest extends TestCase
@@ -1427,5 +1429,218 @@ class CpfFunctionalRequirementsTest extends TestCase
             ->assertInertia(fn ($page) => $page
                 ->component('credentials/Index')
                 ->where('owner', null));
+    }
+
+    public function test_officers_members_and_adviser_can_upload_single_profile_picture_visible_on_election_seats(): void
+    {
+        Storage::fake('public');
+
+        $adviser = $this->createMember($this->talisay, CpfRole::Adviser, 'Montemayor, Elena V.');
+        $president = $this->createMember($this->talisay, CpfRole::President, 'Mercado, Sofia R.');
+        $member = $this->createMember($this->talisay, CpfRole::Member, 'Reyes, Katrina M.');
+        $outsider = $this->createMember($this->alijis, CpfRole::Member, 'Cruz, Angelo D.');
+
+        $pendingUser = User::factory()->create(['must_change_password' => false]);
+        CampusMembership::create([
+            'user_id' => $pendingUser->id,
+            'campus_id' => $this->talisay->id,
+            'role' => CpfRole::Member,
+            'status' => MembershipStatus::Pending,
+            'enrollment_source' => 'online_form',
+            'recorded_email' => $pendingUser->email,
+            'first_name' => 'Pending',
+            'last_name' => 'Applicant',
+            'full_name_last_first_mi' => 'Applicant, Pending',
+            'course' => 'BSIT',
+            'year_level' => '1',
+            'section' => 'A',
+            'course_year_section' => 'BSIT 1A',
+            'sex' => 'Female',
+            'gender_identity' => 'Woman',
+            'birthdate' => '2006-01-01',
+            'active_email' => $pendingUser->email,
+            'facebook_profile_url' => 'https://www.facebook.com/pending.applicant',
+            'active_fb_account' => 'Pending Applicant',
+            'cellphone_number' => '0917-123-0000',
+        ]);
+
+        $pngBytes = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
+
+        // 1. Pending/unapproved users receive 403
+        $this->actingAs($pendingUser)
+            ->post('/settings/profile/photo', [
+                'photo' => UploadedFile::fake()->createWithContent('pending.png', $pngBytes),
+            ])
+            ->assertForbidden();
+
+        // 2. Non-image upload rejected
+        $this->actingAs($member)
+            ->from('/settings/profile')
+            ->post('/settings/profile/photo', [
+                'photo' => UploadedFile::fake()->createWithContent('doc.txt', 'not an image'),
+            ])
+            ->assertSessionHasErrors('photo');
+
+        // 3. Adviser, Officer (President), and Member can upload a single profile picture
+        foreach ([$adviser, $president, $member] as $account) {
+            $this->actingAs($account)
+                ->from('/settings/profile')
+                ->post('/settings/profile/photo', [
+                    'photo' => UploadedFile::fake()->createWithContent("photo-{$account->id}.png", $pngBytes),
+                ])
+                ->assertRedirect('/settings/profile');
+
+            $account->refresh();
+            $this->assertNotNull($account->profile_photo_path);
+            $this->assertStringStartsWith("/profile-photos/{$account->id}?", (string) $account->avatar);
+            Storage::disk('public')->assertExists($account->profile_photo_path);
+        }
+
+        // 4. Uploading a second photo replaces profile_photo_path and deletes the previous file
+        $firstMemberPath = $member->fresh()->profile_photo_path;
+        $this->actingAs($member)
+            ->from('/settings/profile')
+            ->post('/settings/profile/photo', [
+                'photo' => UploadedFile::fake()->createWithContent('member-second.png', $pngBytes),
+            ])
+            ->assertRedirect('/settings/profile');
+
+        $secondMemberPath = $member->fresh()->profile_photo_path;
+        $this->assertNotSame($firstMemberPath, $secondMemberPath);
+        Storage::disk('public')->assertMissing($firstMemberPath);
+        Storage::disk('public')->assertExists($secondMemberPath);
+
+        // 5. Same-campus access allowed, cross-campus gets 403, guest redirects to /login
+        $this->actingAs($president)
+            ->get("/profile-photos/{$member->id}")
+            ->assertOk();
+
+        $this->actingAs($outsider)
+            ->get("/profile-photos/{$member->id}")
+            ->assertForbidden();
+
+        auth()->logout();
+        $this->get("/profile-photos/{$member->id}")
+            ->assertRedirect('/login');
+
+        // 6. Community Hub exposes avatar_url and role_label on election seats + adviserDisplay
+        $this->actingAs($president)
+            ->get('/community-hub')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('community/Index')
+                ->where('adviserDisplay.avatar_url', $adviser->fresh()->avatar)
+                ->where('campusMembers', function ($members) use ($member, $president) {
+                    $col = collect($members);
+                    $presRow = $col->firstWhere('user_id', $president->id);
+                    $memRow = $col->firstWhere('user_id', $member->id);
+
+                    return $presRow !== null
+                        && ($presRow['avatar_url'] ?? null) === $president->fresh()->avatar
+                        && ($presRow['role_label'] ?? null) === CpfRole::President->label()
+                        && $memRow !== null
+                        && ($memRow['avatar_url'] ?? null) === $member->fresh()->avatar
+                        && ($memRow['role_label'] ?? null) === CpfRole::Member->label();
+                }));
+
+        // 7. Deleting photo removes file from storage and clears avatar
+        $this->actingAs($member)
+            ->delete('/settings/profile/photo')
+            ->assertRedirect();
+
+        $member->refresh();
+        $this->assertNull($member->profile_photo_path);
+        $this->assertNull($member->avatar);
+        Storage::disk('public')->assertMissing($secondMemberPath);
+    }
+
+    public function test_time_capsule_supports_letter_in_sunrise_variety_style(): void
+    {
+        $member = $this->createMember($this->talisay, CpfRole::Member, 'Reyes, Katrina M.');
+        $unlockAt = now()->addDays(5);
+
+        $this->actingAs($member)
+            ->postJson('/time-capsules', [
+                'campus_id' => $this->talisay->id,
+                'title' => 'Invalid Style Capsule',
+                'letter_style' => 'unknown_style',
+                'message' => 'Should not pass validation.',
+                'unlock_at' => $unlockAt->format('Y-m-d H:i:s'),
+            ])
+            ->assertStatus(422);
+
+        $created = $this->actingAs($member)
+            ->postJson('/time-capsules', [
+                'campus_id' => $this->talisay->id,
+                'title' => 'Morning Hope Letter',
+                'letter_style' => 'letter_in_sunrise',
+                'message' => 'Hold onto the warmth of this sunrise memory.',
+                'unlock_at' => $unlockAt->format('Y-m-d H:i:s'),
+            ])
+            ->assertCreated()
+            ->assertJsonPath('status', 'sealed')
+            ->assertJsonPath('letter_style', 'letter_in_sunrise');
+
+        $capsuleId = (int) $created->json('capsule_id');
+        $this->assertDatabaseHas('time_capsules', [
+            'id' => $capsuleId,
+            'letter_style' => 'letter_in_sunrise',
+        ]);
+
+        // In Little Blobs of Joy variety also validates and persists cleanly
+        $joyCreated = $this->actingAs($member)
+            ->postJson('/time-capsules', [
+                'campus_id' => $this->talisay->id,
+                'title' => 'Calm Blobs Note',
+                'letter_style' => 'joy_blobs',
+                'message' => 'Warm linen paper with gentle pastel blobs.',
+                'unlock_at' => $unlockAt->format('Y-m-d H:i:s'),
+            ])
+            ->assertCreated()
+            ->assertJsonPath('status', 'sealed')
+            ->assertJsonPath('letter_style', 'joy_blobs');
+
+        $this->assertDatabaseHas('time_capsules', [
+            'id' => (int) $joyCreated->json('capsule_id'),
+            'letter_style' => 'joy_blobs',
+        ]);
+
+        // Somehow, We Got Here Before Anything Worse (vice_dusk) also persists cleanly
+        $viceCreated = $this->actingAs($member)
+            ->postJson('/time-capsules', [
+                'campus_id' => $this->talisay->id,
+                'title' => 'Leonida Dusk Note',
+                'letter_style' => 'vice_dusk',
+                'message' => 'Neon pink, palm dusk, and we somehow made it.',
+                'unlock_at' => $unlockAt->format('Y-m-d H:i:s'),
+            ])
+            ->assertCreated()
+            ->assertJsonPath('status', 'sealed')
+            ->assertJsonPath('letter_style', 'vice_dusk');
+
+        $this->assertDatabaseHas('time_capsules', [
+            'id' => (int) $viceCreated->json('capsule_id'),
+            'letter_style' => 'vice_dusk',
+        ]);
+
+        $this->actingAs($member)
+            ->get('/community-hub')
+            ->assertOk()
+            ->assertInertia(fn ($page) => $page
+                ->component('community/Index')
+                ->where('timeCapsules.0.id', $capsuleId)
+                ->where('timeCapsules.0.letter_style', 'letter_in_sunrise'));
+
+        $this->travelTo($unlockAt->copy()->addMinute());
+        try {
+            $this->actingAs($member)
+                ->postJson("/time-capsules/{$capsuleId}/open")
+                ->assertOk()
+                ->assertJsonPath('status', 'opened')
+                ->assertJsonPath('capsule.letter_style', 'letter_in_sunrise')
+                ->assertJsonPath('capsule.message', 'Hold onto the warmth of this sunrise memory.');
+        } finally {
+            $this->travelBack();
+        }
     }
 }

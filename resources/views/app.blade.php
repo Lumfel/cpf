@@ -1,5 +1,10 @@
 <!DOCTYPE html>
-<html lang="{{ str_replace('_', '-', app()->getLocale()) }}"  @class(['dark' => ($appearance ?? 'system') == 'dark'])>
+<html lang="{{ str_replace('_', '-', app()->getLocale()) }}" @class([
+    'dark' => ($appearance ?? 'system') == 'dark',
+    'theme-sunrise' => ($appearance ?? 'system') == 'sunrise',
+    'theme-joy' => ($appearance ?? 'system') == 'joy',
+    'theme-vice' => ($appearance ?? 'system') == 'vice',
+])>
     <head>
         <meta charset="utf-8">
         <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -15,6 +20,12 @@
                     if (prefersDark) {
                         document.documentElement.classList.add('dark');
                     }
+                } else if (appearance === 'sunrise') {
+                    document.documentElement.classList.add('theme-sunrise');
+                } else if (appearance === 'joy') {
+                    document.documentElement.classList.add('theme-joy');
+                } else if (appearance === 'vice') {
+                    document.documentElement.classList.add('theme-vice');
                 }
             })();
         </script>
@@ -27,6 +38,18 @@
 
             html.dark {
                 background-color: #0E141A;
+            }
+
+            html.theme-sunrise {
+                background-color: #FBD8D5;
+            }
+
+            html.theme-joy {
+                background-color: #FBF4E4;
+            }
+
+            html.theme-vice {
+                background-color: #120B1F;
             }
         </style>
 

@@ -34,6 +34,10 @@ interface ChecklistRow {
 }
 
 interface CampusEventFull extends CampusEventSummary {
+    reflection_enabled: boolean;
+    pending_reflection_enabled: boolean | null;
+    reflection_requester_name: string | null;
+    reflection_requested_at: string | null;
     creator_name: string;
     approver_name: string | null;
     approved_at: string | null;
@@ -123,6 +127,7 @@ const newStartTime = ref('09:00');
 const newEndTime = ref('11:00');
 const newLocation = ref('');
 const newDescription = ref('');
+const newAllowReflection = ref(false);
 
 async function createEvent() {
     if (busy.value) return;
@@ -140,6 +145,7 @@ async function createEvent() {
             end_time: newEndTime.value,
             location: newLocation.value || null,
             description: newDescription.value || null,
+            allow_reflection: newAllowReflection.value,
         },
     );
 
@@ -150,13 +156,15 @@ async function createEvent() {
         return;
     }
 
+    const requestedReflection = newAllowReflection.value;
     newTitle.value = '';
     newLocation.value = '';
     newDescription.value = '';
+    newAllowReflection.value = false;
     statusBanner.value =
         data.status === 'approved'
-            ? 'Campus event scheduled & approved! Members have been notified.'
-            : 'Event proposal submitted! Waiting for Club Adviser approval.';
+            ? `Campus event scheduled & approved${requestedReflection ? ' (reflection enabled)' : ''}! Members have been notified.`
+            : `Event proposal submitted${requestedReflection ? ' with optional reflection request' : ''}! Waiting for Club Adviser approval.`;
     router.reload();
 }
 
@@ -168,6 +176,7 @@ const editStartTime = ref('');
 const editEndTime = ref('');
 const editLocation = ref('');
 const editDescription = ref('');
+const approveWithReflection = ref(false);
 
 function openEditSchedule(ev: CampusEventFull) {
     editingSchedule.value = true;
@@ -179,10 +188,15 @@ function openEditSchedule(ev: CampusEventFull) {
     editDescription.value = ev.description ?? '';
 }
 
-watch(selectedEventId, () => {
-    editingSchedule.value = false;
-    cancelPromptOpen.value = false;
-});
+watch(
+    selectedEvent,
+    (ev) => {
+        editingSchedule.value = false;
+        cancelPromptOpen.value = false;
+        approveWithReflection.value = Boolean(ev?.pending_reflection_enabled ?? ev?.reflection_enabled);
+    },
+    { immediate: true },
+);
 
 async function submitEditSchedule() {
     if (!selectedEvent.value || busy.value) return;
@@ -255,7 +269,9 @@ async function approveEvent(ev: CampusEventFull) {
     const { ok, data } = await apiRequest<{ message?: string }>(
         `/events-activities/${ev.id}/approve`,
         'PATCH',
-        {},
+        {
+            allow_reflection: approveWithReflection.value,
+        },
     );
 
     busy.value = false;
@@ -265,7 +281,74 @@ async function approveEvent(ev: CampusEventFull) {
         return;
     }
 
-    statusBanner.value = `"${ev.title}" approved! Members can view it on their Dashboard & receive notifications.`;
+    statusBanner.value = `"${ev.title}" approved${approveWithReflection.value ? ' with optional reflection enabled' : ''}! Members can view it on their Dashboard & receive notifications.`;
+    router.reload();
+}
+
+async function toggleReflectionSetting(ev: CampusEventFull, allowReflection: boolean) {
+    if (busy.value) return;
+    busy.value = true;
+    statusBanner.value = null;
+    errorBanner.value = null;
+
+    const { ok, data } = await apiRequest<{
+        status?: string;
+        reflection_enabled?: boolean;
+        pending_reflection_enabled?: boolean | null;
+        message?: string;
+    }>(`/events-activities/${ev.id}/reflection-setting`, 'PATCH', {
+        allow_reflection: allowReflection,
+    });
+
+    busy.value = false;
+
+    if (!ok) {
+        errorBanner.value = data.message ?? 'Unable to update reflection setting.';
+        return;
+    }
+
+    if (data.status === 'pending_adviser_approval') {
+        statusBanner.value =
+            data.pending_reflection_enabled === null
+                ? 'Pending reflection change request cleared.'
+                : `Reflection ${allowReflection ? 'enable' : 'disable'} request submitted — awaiting Club Adviser confirmation.`;
+    } else if (data.status === 'no_change') {
+        statusBanner.value = 'Pending reflection request withdrawn; setting unchanged.';
+    } else {
+        statusBanner.value = allowReflection
+            ? `Optional post-event Time Capsule reflection enabled for "${ev.title}".`
+            : `Post-event reflection disabled for "${ev.title}" (no reflection required).`;
+    }
+
+    router.reload();
+}
+
+async function reviewReflectionSetting(ev: CampusEventFull, decision: 'approved' | 'declined') {
+    if (busy.value) return;
+    busy.value = true;
+    statusBanner.value = null;
+    errorBanner.value = null;
+
+    const { ok, data } = await apiRequest<{
+        status?: string;
+        reflection_enabled?: boolean;
+        message?: string;
+    }>(`/events-activities/${ev.id}/reflection-setting/review`, 'PATCH', {
+        decision,
+    });
+
+    busy.value = false;
+
+    if (!ok) {
+        errorBanner.value = data.message ?? 'Unable to review reflection setting.';
+        return;
+    }
+
+    statusBanner.value =
+        decision === 'approved'
+            ? `Club Adviser confirmed reflection setting (${data.reflection_enabled ? 'Enabled' : 'Disabled'}) for "${ev.title}".`
+            : `Pending reflection setting request declined for "${ev.title}".`;
+
     router.reload();
 }
 
@@ -329,10 +412,57 @@ const filteredChecklist = computed(() => {
 const completedEvents = computed(() =>
     props.events.filter((e) => e.effective_status === 'completed'),
 );
+const reflectionEnabledCompletedEvents = computed(() =>
+    completedEvents.value.filter((e) => e.reflection_enabled),
+);
+const completedWithoutReflectionEvents = computed(() =>
+    completedEvents.value.filter((e) => !e.reflection_enabled),
+);
+
+type ReflectionLetterStyle = 'classic' | 'letter_in_sunrise' | 'joy_blobs' | 'vice_dusk' | 'twilight_calm';
 
 const reflectionTitles = ref<Record<number, string>>({});
 const reflectionMessages = ref<Record<number, string>>({});
 const reflectionUnlockDates = ref<Record<number, string>>({});
+const reflectionLetterStyles = ref<Record<number, ReflectionLetterStyle>>({});
+
+const letterStyleOptions: Array<{
+    value: ReflectionLetterStyle;
+    label: string;
+    caption: string;
+    swatch: string;
+}> = [
+    {
+        value: 'classic',
+        label: 'Soft Cream Classic',
+        caption: 'Warm ivory stationery',
+        swatch: 'linear-gradient(135deg, #FBF6EE 0%, #F3EBDD 100%)',
+    },
+    {
+        value: 'letter_in_sunrise',
+        label: 'Letter in Sunrise',
+        caption: 'Vibrant sunset coral & rosy pink',
+        swatch: 'linear-gradient(135deg, #FF9E57 0%, #F46B6E 45%, #E0538C 80%, #9E4E9C 100%)',
+    },
+    {
+        value: 'joy_blobs',
+        label: 'In Little Blobs of Joy',
+        caption: 'Warm cream with calm color blobs',
+        swatch: '#FBF4E4',
+    },
+    {
+        value: 'vice_dusk',
+        label: 'Somehow, We Got Here Before Anything Worse',
+        caption: 'Vice neon pink, cyan & palm dusk',
+        swatch: 'linear-gradient(135deg, #1B0E2E 0%, #5B1E66 36%, #FF4FA3 74%, #FFA84C 100%)',
+    },
+    {
+        value: 'twilight_calm',
+        label: 'Twilight Calm',
+        caption: 'Quiet indigo dusk note',
+        swatch: 'linear-gradient(135deg, #141C24 0%, #1F2D3D 60%, #56B4E3 100%)',
+    },
+];
 
 async function submitReflection(ev: CampusEventFull) {
     if (busy.value) return;
@@ -345,6 +475,7 @@ async function submitReflection(ev: CampusEventFull) {
         'POST',
         {
             title: reflectionTitles.value[ev.id] || `Reflection: ${ev.title}`,
+            letter_style: reflectionLetterStyles.value[ev.id] ?? 'classic',
             reflection_message: reflectionMessages.value[ev.id] || '',
             unlock_at: reflectionUnlockDates.value[ev.id] || '',
         },
@@ -360,6 +491,7 @@ async function submitReflection(ev: CampusEventFull) {
     reflectionTitles.value[ev.id] = '';
     reflectionMessages.value[ev.id] = '';
     reflectionUnlockDates.value[ev.id] = '';
+    reflectionLetterStyles.value[ev.id] = 'classic';
     statusBanner.value = `Reflection for "${ev.title}" sealed into your encrypted Time Capsule!`;
     router.reload();
 }
@@ -594,17 +726,35 @@ function statusPillClasses(ev: CampusEventFull): string {
                             class="w-full rounded-xl border border-black/15 bg-white px-3 py-2"
                         />
                     </div>
-                    <div class="md:col-span-5">
+                    <div class="md:col-span-4 flex flex-col justify-center">
                         <input
                             v-model="newDescription"
                             placeholder="Optional activity agenda or notes for members..."
                             class="w-full rounded-xl border border-black/15 bg-white px-3 py-2"
                         />
                     </div>
-                    <div class="flex items-center">
+                    <div class="flex items-center md:col-span-2">
                         <button type="submit" :disabled="busy" class="bento-btn w-full justify-center">
                             {{ isClubAdviser ? 'Schedule Event' : 'Propose Event' }}
                         </button>
+                    </div>
+                    <div class="md:col-span-6 rounded-xl border border-black/10 bg-[#FBF6EE] px-3 py-2.5">
+                        <label class="flex cursor-pointer items-start gap-2.5 text-xs">
+                            <input
+                                v-model="newAllowReflection"
+                                type="checkbox"
+                                class="mt-0.5 size-4 rounded border-black/25 text-[#FF8D06] focus:ring-[#FF8D06]"
+                            />
+                            <span>
+                                <span class="font-bold text-slate-800">
+                                    Optional: Enable Post-Event Reflection (Time Capsule)
+                                </span>
+                                <span class="block text-[11px] text-slate-600">
+                                    No reflection is needed by default.
+                                    {{ isClubAdviser ? 'Checked: activates Time Capsule reflection once completed.' : 'If checked, requires Club Adviser confirmation before taking effect.' }}
+                                </span>
+                            </span>
+                        </label>
                     </div>
                 </form>
             </section>
@@ -658,6 +808,19 @@ function statusPillClasses(ev: CampusEventFull): string {
                                 Approved by: <strong>{{ selectedEvent.approver_name }}</strong>
                                 <span v-if="selectedEvent.approved_at">({{ selectedEvent.approved_at }})</span>
                             </div>
+                            <div class="mt-1 flex flex-wrap items-center gap-1.5">
+                                <span>Post-Event Reflection:</span>
+                                <span
+                                    class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold"
+                                    :class="
+                                        selectedEvent.reflection_enabled
+                                            ? 'bg-[#FF8D06]/15 text-[#FF8D06]'
+                                            : 'bg-slate-200/80 text-slate-600'
+                                    "
+                                >
+                                    {{ selectedEvent.reflection_enabled ? 'Reflection Enabled (Optional Time Capsule)' : 'No Reflection Needed' }}
+                                </span>
+                            </div>
                             <div v-if="selectedEvent.effective_status === 'scheduled'" class="mt-1 font-semibold text-[#0384C5]">
                                 Activates automatically on {{ selectedEvent.event_date }} at {{ selectedEvent.start_time }}.
                             </div>
@@ -667,6 +830,108 @@ function statusPillClasses(ev: CampusEventFull): string {
                             <div v-if="selectedEvent.effective_status === 'cancelled' && selectedEvent.cancellation_reason" class="mt-1 font-semibold text-red-700">
                                 Cancellation reason: {{ selectedEvent.cancellation_reason }}
                             </div>
+                        </div>
+
+                        <!-- Pending Reflection Change Notice (Proposed by President / VP) -->
+                        <div
+                            v-if="selectedEvent.pending_reflection_enabled !== null"
+                            class="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950"
+                        >
+                            <div class="font-bold">
+                                Pending Reflection Change Request ({{ selectedEvent.pending_reflection_enabled ? 'Enable Reflection' : 'Disable Reflection' }})
+                            </div>
+                            <p class="mt-0.5 text-[11px] text-amber-900">
+                                Requested by <strong>{{ selectedEvent.reflection_requester_name ?? selectedEvent.creator_name }}</strong>
+                                <span v-if="selectedEvent.reflection_requested_at"> on {{ selectedEvent.reflection_requested_at }}</span>
+                                — awaiting Club Adviser confirmation before taking effect.
+                            </p>
+                            <div
+                                v-if="isClubAdviser && selectedEvent.effective_status !== 'pending_approval' && selectedEvent.effective_status !== 'cancelled'"
+                                class="mt-2.5 flex flex-wrap gap-2"
+                            >
+                                <button
+                                    type="button"
+                                    :disabled="busy"
+                                    @click="reviewReflectionSetting(selectedEvent, 'approved')"
+                                    class="inline-flex items-center gap-1 rounded-lg bg-[#1A8F26] px-2.5 py-1 text-[11px] font-bold text-white"
+                                >
+                                    <CheckCircle2 class="size-3" />
+                                    Confirm Reflection {{ selectedEvent.pending_reflection_enabled ? 'Enable' : 'Disable' }}
+                                </button>
+                                <button
+                                    type="button"
+                                    :disabled="busy"
+                                    @click="reviewReflectionSetting(selectedEvent, 'declined')"
+                                    class="inline-flex items-center gap-1 rounded-lg border border-amber-400 bg-white px-2.5 py-1 text-[11px] font-bold text-amber-900"
+                                >
+                                    <XCircle class="size-3" />
+                                    Decline Request
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Adviser Reflection Confirmation on Event Approval -->
+                        <div
+                            v-if="isClubAdviser && selectedEvent.effective_status === 'pending_approval'"
+                            class="mt-3 rounded-xl border border-[#1A8F26]/25 bg-[#1A8F26]/5 p-3 text-xs"
+                        >
+                            <label class="flex cursor-pointer items-center gap-2 font-semibold text-slate-800">
+                                <input
+                                    v-model="approveWithReflection"
+                                    type="checkbox"
+                                    class="size-4 rounded border-black/25 text-[#1A8F26] focus:ring-[#1A8F26]"
+                                />
+                                <span>
+                                    Confirm Optional Post-Event Reflection on Approval
+                                    <span v-if="selectedEvent.pending_reflection_enabled" class="text-[11px] font-normal text-amber-800">
+                                        (Requested by proposer)
+                                    </span>
+                                </span>
+                            </label>
+                        </div>
+
+                        <!-- Optional Reflection Controls (Adviser Direct / Pres & VP Request) -->
+                        <div
+                            v-if="canProposeEvents && selectedEvent.effective_status !== 'cancelled'"
+                            class="mt-3 flex flex-wrap items-center gap-2"
+                        >
+                            <button
+                                v-if="isClubAdviser"
+                                type="button"
+                                :disabled="busy"
+                                @click="toggleReflectionSetting(selectedEvent, !selectedEvent.reflection_enabled)"
+                                class="inline-flex items-center gap-1.5 rounded-xl border border-[#FF8D06]/40 bg-[#FF8D06]/10 px-3 py-1.5 text-xs font-bold text-[#B36000]"
+                            >
+                                <Sparkles class="size-3.5" />
+                                {{ selectedEvent.reflection_enabled ? 'Disable Post-Event Reflection' : 'Enable Post-Event Reflection (Optional)' }}
+                            </button>
+
+                            <template v-else>
+                                <button
+                                    v-if="selectedEvent.pending_reflection_enabled !== null"
+                                    type="button"
+                                    :disabled="busy"
+                                    @click="toggleReflectionSetting(selectedEvent, selectedEvent.effective_status === 'pending_approval' ? false : selectedEvent.reflection_enabled)"
+                                    class="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-900"
+                                >
+                                    <XCircle class="size-3.5" />
+                                    Withdraw Pending Reflection Request
+                                </button>
+                                <button
+                                    v-else
+                                    type="button"
+                                    :disabled="busy"
+                                    @click="toggleReflectionSetting(selectedEvent, !selectedEvent.reflection_enabled)"
+                                    class="inline-flex items-center gap-1.5 rounded-xl border border-[#FF8D06]/40 bg-[#FF8D06]/10 px-3 py-1.5 text-xs font-bold text-[#B36000]"
+                                >
+                                    <Sparkles class="size-3.5" />
+                                    {{
+                                        selectedEvent.reflection_enabled
+                                            ? 'Request Disable Reflection (Needs Adviser Confirmation)'
+                                            : 'Request Enable Reflection (Needs Adviser Confirmation)'
+                                    }}
+                                </button>
+                            </template>
                         </div>
 
                         <!-- Adviser Controls -->
@@ -751,7 +1016,7 @@ function statusPillClasses(ev: CampusEventFull): string {
                                 {{ selectedEvent.effective_status === 'active' ? 'Open Officer QR Scanner & Checklist →' : 'View Attendance Checklist →' }}
                             </button>
                             <button
-                                v-if="selectedEvent.effective_status === 'completed'"
+                                v-if="selectedEvent.effective_status === 'completed' && selectedEvent.reflection_enabled"
                                 type="button"
                                 @click="activeTab = 'reflections'"
                                 class="rounded-xl bg-[#FF8D06]/15 px-3 py-1.5 text-xs font-bold text-[#FF8D06]"
@@ -821,8 +1086,17 @@ function statusPillClasses(ev: CampusEventFull): string {
                     <span class="rounded-full bg-[#FF8D06]/15 px-3 py-1 text-[#FF8D06]">
                         Logged Out: {{ selectedEvent.logged_out_count }}
                     </span>
-                    <span class="rounded-full bg-[#0384C5]/12 px-3 py-1 text-[#0384C5]">
+                    <span
+                        v-if="selectedEvent.reflection_enabled"
+                        class="rounded-full bg-[#0384C5]/12 px-3 py-1 text-[#0384C5]"
+                    >
                         Reflections Sealed: {{ selectedEvent.reflection_count }}
+                    </span>
+                    <span
+                        v-else
+                        class="rounded-full bg-slate-100 px-3 py-1 text-slate-600"
+                    >
+                        Reflection: Not Required
                     </span>
                 </div>
             </div>
@@ -852,7 +1126,7 @@ function statusPillClasses(ev: CampusEventFull): string {
                                 Attendance Checklist (List View) — {{ selectedEvent.title }}
                             </h2>
                             <p class="text-xs text-slate-600">
-                                Real-time A–Z attendance roster tracking Log-In (start), Log-Out (end), and reflection completion.
+                                Real-time A–Z attendance roster tracking Log-In (start), Log-Out (end), and reflection completion when enabled.
                             </p>
                         </div>
 
@@ -922,10 +1196,16 @@ function statusPillClasses(ev: CampusEventFull): string {
                                     {{ row.logged_out_at ? `Out: ${row.logged_out_at}` : 'Out: Pending' }}
                                 </span>
                                 <span
-                                    v-if="row.has_reflection"
+                                    v-if="selectedEvent.reflection_enabled && row.has_reflection"
                                     class="rounded-full bg-[#FF8D06]/15 px-2.5 py-1 text-[11px] font-bold text-[#FF8D06]"
                                 >
                                     Reflection Sealed ✓
+                                </span>
+                                <span
+                                    v-else-if="!selectedEvent.reflection_enabled"
+                                    class="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-500"
+                                >
+                                    Reflection: N/A
                                 </span>
                             </div>
                         </div>
@@ -940,7 +1220,7 @@ function statusPillClasses(ev: CampusEventFull): string {
                 <div>
                     <h2 class="text-base font-bold text-slate-900">Post-Event Reflections &rarr; Encrypted Time Capsule</h2>
                     <p class="mt-0.5 text-slate-600">
-                        After any campus activity finishes, write your personal reflection here. It is AES-256 encrypted and sealed straight into your date-locked Time Capsule.
+                        Post-event reflection is optional per activity (configured by the Club Adviser, or proposed by the President/VP and confirmed by the Club Adviser). When enabled for a completed activity, your reflection is AES-256 encrypted and sealed straight into your date-locked Time Capsule.
                     </p>
                 </div>
                 <Link href="/community-hub" class="bento-btn">
@@ -948,12 +1228,17 @@ function statusPillClasses(ev: CampusEventFull): string {
                 </Link>
             </div>
 
-            <div v-if="completedEvents.length === 0" class="bento p-6 text-xs text-slate-500">
-                No completed events yet — reflections unlock automatically once a scheduled event’s end time has passed.
+            <div v-if="reflectionEnabledCompletedEvents.length === 0" class="bento p-6 text-xs text-slate-500">
+                <template v-if="completedWithoutReflectionEvents.length > 0">
+                    No completed activities currently require a post-event reflection (optional Time Capsule reflection is disabled by default unless enabled by the Club Adviser).
+                </template>
+                <template v-else>
+                    No completed reflection-enabled events yet — reflections unlock automatically once a reflection-enabled activity’s end time has passed.
+                </template>
             </div>
 
             <section
-                v-for="ev in completedEvents"
+                v-for="ev in reflectionEnabledCompletedEvents"
                 :key="`refl-${ev.id}`"
                 class="bento p-5"
             >
@@ -1008,6 +1293,45 @@ function statusPillClasses(ev: CampusEventFull): string {
                     </div>
 
                     <div>
+                        <label class="mb-1.5 block font-bold">Time Capsule Letter Variety</label>
+                        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                            <button
+                                v-for="opt in letterStyleOptions"
+                                :key="`${ev.id}-${opt.value}`"
+                                type="button"
+                                @click="reflectionLetterStyles[ev.id] = opt.value"
+                                class="overflow-hidden rounded-xl border text-left transition"
+                                :class="
+                                    (reflectionLetterStyles[ev.id] ?? 'classic') === opt.value
+                                        ? 'border-[#D94B7C] ring-2 ring-[#D94B7C]/35'
+                                        : 'border-black/10 bg-white hover:border-black/25'
+                                "
+                            >
+                                <div class="relative h-10 w-full overflow-hidden" :style="{ background: opt.swatch }">
+                                    <div
+                                        v-if="opt.value === 'letter_in_sunrise'"
+                                        class="pointer-events-none absolute -top-2 left-3 size-10 rounded-full bg-[#FFE28A]/70 blur-md"
+                                    />
+                                    <template v-if="opt.value === 'joy_blobs'">
+                                        <span class="pointer-events-none absolute -top-1 left-2 size-7 rounded-full bg-[#E56C66]/45 blur-[2px]" />
+                                        <span class="pointer-events-none absolute top-2 left-10 size-7 rounded-full bg-[#4A9ED6]/45 blur-[2px]" />
+                                        <span class="pointer-events-none absolute -bottom-1 left-6 size-7 rounded-full bg-[#F2C85C]/55 blur-[2px]" />
+                                        <span class="pointer-events-none absolute top-1 right-4 size-6 rounded-full bg-[#68B886]/45 blur-[2px]" />
+                                    </template>
+                                    <template v-if="opt.value === 'vice_dusk'">
+                                        <span class="pointer-events-none absolute -bottom-2 left-2 size-8 rounded-full bg-[#3CE4E8]/45 blur-xs" />
+                                        <span class="pointer-events-none absolute -top-2 right-4 size-8 rounded-full bg-[#FFB357]/45 blur-xs" />
+                                    </template>
+                                </div>
+                                <div class="p-2">
+                                    <div class="text-[11px] font-bold text-slate-900">{{ opt.label }}</div>
+                                    <div class="text-[10px] text-slate-500">{{ opt.caption }}</div>
+                                </div>
+                            </button>
+                        </div>
+                    </div>
+
+                    <div>
                         <label class="mb-1 block font-bold">Your Post-Event Reflection * (min 10 characters)</label>
                         <textarea
                             v-model="reflectionMessages[ev.id]"
@@ -1027,6 +1351,42 @@ function statusPillClasses(ev: CampusEventFull): string {
 
                 <div v-else class="mt-3 text-xs text-slate-500">
                     Verified campus membership is required to submit post-event reflections.
+                </div>
+            </section>
+
+            <section
+                v-if="completedWithoutReflectionEvents.length > 0"
+                class="bento p-5 text-xs"
+            >
+                <h3 class="text-sm font-bold text-slate-800">
+                    Completed Activities Without Required Reflection ({{ completedWithoutReflectionEvents.length }})
+                </h3>
+                <p class="mt-0.5 text-[11px] text-slate-500">
+                    Reflection is optional per activity and was not enabled for these completed events.
+                </p>
+                <div class="mt-3 flex flex-col gap-2">
+                    <div
+                        v-for="ev in completedWithoutReflectionEvents"
+                        :key="`norefl-${ev.id}`"
+                        class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-black/10 bg-white px-3.5 py-2.5"
+                    >
+                        <div>
+                            <div class="font-bold text-slate-900">{{ ev.title }}</div>
+                            <div class="text-[11px] text-slate-500">
+                                Completed on {{ ev.event_date_label }} • {{ ev.start_time }}–{{ ev.end_time }}
+                            </div>
+                        </div>
+                        <span
+                            class="rounded-full px-2.5 py-0.5 text-[10px] font-bold"
+                            :class="
+                                ev.pending_reflection_enabled === true
+                                    ? 'bg-amber-100 text-amber-900'
+                                    : 'bg-slate-100 text-slate-600'
+                            "
+                        >
+                            {{ ev.pending_reflection_enabled === true ? 'Enable Request Pending Adviser Confirmation' : 'No Reflection Needed' }}
+                        </span>
+                    </div>
                 </div>
             </section>
         </div>

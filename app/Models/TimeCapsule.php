@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 
-#[Fillable(['campus_id', 'user_id', 'title', 'encrypted_message', 'unlock_at', 'is_opened', 'opened_at'])]
+#[Fillable(['campus_id', 'user_id', 'title', 'letter_style', 'encrypted_message', 'unlock_at', 'is_opened', 'opened_at'])]
 class TimeCapsule extends Model
 {
     protected function casts(): array

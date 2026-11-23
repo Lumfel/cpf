@@ -3,14 +3,15 @@
 namespace App\Http\Controllers\Settings;
 
 use App\Http\Controllers\Controller;
-use App\Http\Requests\Settings\ProfileDeleteRequest;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
+use App\Models\User;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class ProfileController extends Controller
 {
@@ -41,6 +42,81 @@ class ProfileController extends Controller
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Profile updated.')]);
 
         return to_route('profile.edit');
+    }
+
+    /**
+     * Upload or replace the authenticated member/officer/adviser's single profile picture.
+     */
+    public function updatePhoto(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        abort_unless(
+            $user && $user->verifiedRole() !== null,
+            403,
+            'Only approved CPF members, officers, and the Club Adviser can upload a profile picture.',
+        );
+
+        $request->validate([
+            'photo' => ['required', 'file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:2048'],
+        ]);
+
+        $oldPath = $user->profile_photo_path;
+        $newPath = $request->file('photo')->store('profile-photos', 'public');
+
+        $user->forceFill(['profile_photo_path' => $newPath])->save();
+
+        if ($oldPath && $oldPath !== $newPath) {
+            Storage::disk('public')->delete($oldPath);
+        }
+
+        return back()->with('status', 'Profile picture updated.');
+    }
+
+    /**
+     * Remove the authenticated user's profile picture.
+     */
+    public function destroyPhoto(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+
+        abort_unless(
+            $user && $user->verifiedRole() !== null,
+            403,
+            'Only approved CPF members, officers, and the Club Adviser can manage a profile picture.',
+        );
+
+        if ($user->profile_photo_path) {
+            Storage::disk('public')->delete($user->profile_photo_path);
+            $user->forceFill(['profile_photo_path' => null])->save();
+        }
+
+        return back()->with('status', 'Profile picture removed.');
+    }
+
+    /**
+     * Stream a campus member's profile picture to authorized same-campus viewers.
+     */
+    public function showPhoto(Request $request, User $targetUser): StreamedResponse
+    {
+        $viewer = $request->user();
+        $path = $targetUser->profile_photo_path;
+
+        abort_unless($path && Storage::disk('public')->exists($path), 404);
+
+        $isSelf = $viewer !== null && $viewer->id === $targetUser->id;
+        $viewerCampusId = $viewer?->primaryMembership?->campus_id;
+        $targetCampusId = $targetUser->primaryMembership?->campus_id;
+
+        abort_unless(
+            $isSelf || ($viewerCampusId !== null && $viewerCampusId === $targetCampusId),
+            403,
+            'You can only view profile pictures of members in your campus chapter.',
+        );
+
+        return Storage::disk('public')->response($path, null, [
+            'Cache-Control' => 'private, max-age=86400',
+        ]);
     }
 
     /**

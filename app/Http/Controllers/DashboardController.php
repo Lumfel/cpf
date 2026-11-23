@@ -153,6 +153,7 @@ class DashboardController extends Controller
                         'end_time' => $ev->end_time,
                         'status' => $ev->status,
                         'effective_status' => $ev->effectiveStatus(),
+                        'reflection_enabled' => (bool) $ev->reflection_enabled,
                         'cancellation_reason' => $ev->cancellation_reason,
                     ];
                 })

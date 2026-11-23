@@ -33,6 +33,7 @@ export interface SenateCandidate {
     name: string;
     course_year_section: string;
     year_level: string | null;
+    avatar_url?: string | null;
     position: string;
     platform?: string | null;
     nominated_by_user_id?: number | null;
@@ -76,6 +77,8 @@ export interface SenateMemberSeat {
     section: string | null;
     course_year_section: string;
     role: string;
+    role_label?: string;
+    avatar_url?: string | null;
 }
 
 const props = defineProps<{
@@ -85,11 +88,28 @@ const props = defineProps<{
     adviserDisplay: {
         name: string;
         title: string;
+        avatar_url?: string | null;
     };
     myUserId: number;
     isClubAdviser: boolean;
     isVerifiedMember: boolean;
 }>();
+
+const avatarByUserId = computed<Record<number, string | null>>(() => {
+    const map: Record<number, string | null> = {};
+    for (const m of props.campusMembers) {
+        map[m.user_id] = m.avatar_url ?? null;
+    }
+    return map;
+});
+
+function getSeatInitials(name: string): string {
+    const clean = name.replace(/,/g, ' ').trim();
+    const parts = clean.split(/\s+/).filter(Boolean);
+    if (parts.length === 0) return 'CP';
+    if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+    return `${parts[0][0] ?? ''}${parts[1][0] ?? ''}`.toUpperCase();
+}
 
 const busy = ref(false);
 const notice = ref<string | null>(null);
@@ -231,13 +251,26 @@ const dynamicRowsReversed = computed<DynamicSeatRow[]>(() => {
 const seatCardLayoutClass = computed(() => {
     switch (floorLayoutMode.value) {
         case 'intimate':
-            return 'w-44 p-3 text-xs';
+            return 'w-48 p-3 text-xs';
         case 'chapter':
-            return 'w-36 p-2.5 text-[11px]';
+            return 'w-40 p-2.5 text-[11px]';
         case 'assembly':
-            return 'w-32 p-2 text-[11px]';
+            return 'w-36 p-2 text-[11px]';
         default:
-            return 'w-[116px] p-2 text-[10px]';
+            return 'w-[132px] p-2 text-[10px]';
+    }
+});
+
+const seatAvatarSizeClass = computed(() => {
+    switch (floorLayoutMode.value) {
+        case 'intimate':
+            return 'size-12 text-xs';
+        case 'chapter':
+            return 'size-10 text-[11px]';
+        case 'assembly':
+            return 'size-9 text-[10px]';
+        default:
+            return 'size-8 text-[10px]';
     }
 });
 
@@ -715,15 +748,39 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                                         : 'border-black/15 bg-white',
                             ]"
                         >
-                            <div>
+                            <div class="text-center">
+                                <div class="mb-2 flex justify-center">
+                                    <img
+                                        v-if="item.seat.avatar_url"
+                                        :src="item.seat.avatar_url"
+                                        :alt="item.seat.full_name_last_first_mi"
+                                        :class="[
+                                            seatAvatarSizeClass,
+                                            candidateByUserIdForActive[item.seat.user_id]?.nomination_status === 'accepted'
+                                                ? 'border-[#1A8F26]'
+                                                : 'border-[#0384C5]/35',
+                                        ]"
+                                        class="rounded-full border-2 bg-white object-cover shadow-2xs"
+                                    />
+                                    <div
+                                        v-else
+                                        :class="seatAvatarSizeClass"
+                                        class="flex items-center justify-center rounded-full border border-[#0384C5]/30 bg-[#0384C5]/10 font-bold text-[#0384C5]"
+                                    >
+                                        {{ getSeatInitials(item.seat.full_name_last_first_mi) }}
+                                    </div>
+                                </div>
                                 <div class="truncate leading-snug font-bold text-slate-900">
                                     {{ item.seat.full_name_last_first_mi }}
                                 </div>
                                 <div class="mt-0.5 truncate text-[10px] font-medium text-[#0384C5]">
                                     {{ item.seat.course_year_section }}
                                 </div>
+                                <div class="mt-0.5 truncate text-[10px] font-semibold text-slate-600">
+                                    {{ item.seat.role_label ?? item.seat.role }}
+                                </div>
 
-                                <div class="mt-1.5 flex flex-wrap gap-1">
+                                <div class="mt-1.5 flex flex-wrap justify-center gap-1">
                                     <span
                                         v-if="isAlreadyElected(item.seat.user_id)"
                                         class="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold text-amber-900"
@@ -818,6 +875,20 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
 
                 <!-- CENTER PRESIDING PODIUM: CLUB ADVISER DAIS -->
                 <div class="mx-auto w-full max-w-xl rounded-t-[48px] rounded-b-2xl border-2 border-[#0384C5]/45 bg-white p-5 text-center shadow-sm">
+                    <div class="mb-2 flex justify-center">
+                        <img
+                            v-if="adviserDisplay.avatar_url"
+                            :src="adviserDisplay.avatar_url"
+                            :alt="adviserDisplay.name"
+                            class="size-14 rounded-full border-2 border-[#0384C5]/40 bg-white object-cover shadow-xs"
+                        />
+                        <div
+                            v-else
+                            class="flex size-14 items-center justify-center rounded-full border-2 border-[#0384C5]/35 bg-[#0384C5]/10 text-base font-bold text-[#0384C5]"
+                        >
+                            {{ getSeatInitials(adviserDisplay.name) }}
+                        </div>
+                    </div>
                     <div class="inline-flex items-center gap-1.5 rounded-full bg-[#0384C5]/10 px-3 py-1 text-[11px] font-bold text-[#0384C5]">
                         <ShieldCheck class="size-3.5" />
                         Presiding Dais • Club Adviser
@@ -1002,13 +1073,27 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
 
                         <div
                             v-if="election.position_results[pos.key]?.status === 'elected'"
-                            class="mt-1.5 flex flex-wrap items-center justify-between gap-1 text-[11px]"
+                            class="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px]"
                         >
-                            <div>
-                                <span class="font-bold text-slate-900">{{ election.position_results[pos.key].winner_name }}</span>
-                                <span class="ml-1 text-slate-600">({{ election.position_results[pos.key].course_year_section }})</span>
+                            <div class="flex min-w-0 items-center gap-2">
+                                <img
+                                    v-if="avatarByUserId[election.position_results[pos.key].winner_user_id ?? 0]"
+                                    :src="avatarByUserId[election.position_results[pos.key].winner_user_id ?? 0]!"
+                                    :alt="election.position_results[pos.key].winner_name ?? 'Winner'"
+                                    class="size-7 shrink-0 rounded-full border border-[#1A8F26]/40 bg-white object-cover"
+                                />
+                                <div
+                                    v-else
+                                    class="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#1A8F26]/30 bg-[#1A8F26]/10 text-[10px] font-bold text-[#1A8F26]"
+                                >
+                                    {{ getSeatInitials(election.position_results[pos.key].winner_name ?? 'CPF') }}
+                                </div>
+                                <div class="min-w-0 truncate">
+                                    <span class="font-bold text-slate-900">{{ election.position_results[pos.key].winner_name }}</span>
+                                    <span class="ml-1 text-slate-600">({{ election.position_results[pos.key].course_year_section }})</span>
+                                </div>
                             </div>
-                            <span class="font-semibold text-[#1A8F26]">
+                            <span class="shrink-0 font-semibold text-[#1A8F26]">
                                 {{ election.position_results[pos.key].votes }} vote(s)
                             </span>
                         </div>
