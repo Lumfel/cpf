@@ -41,6 +41,7 @@ const newFirstName = ref('');
 const newMiddleName = ref('');
 const newLastName = ref('');
 const newEmail = ref('');
+const newSex = ref<'Male' | 'Female' | ''>('');
 const newPhone = ref('');
 const newInitialPassword = ref('');
 const codeCopied = ref(false);
@@ -58,6 +59,7 @@ async function initiateHandover() {
         middle_name: newMiddleName.value || null,
         last_name: newLastName.value,
         email: newEmail.value,
+        sex: newSex.value,
         cellphone_number: newPhone.value || null,
         initial_password: newInitialPassword.value,
     };
@@ -81,6 +83,7 @@ async function initiateHandover() {
     newMiddleName.value = '';
     newLastName.value = '';
     newEmail.value = '';
+    newSex.value = '';
     newPhone.value = '';
     newInitialPassword.value = '';
     notice.value = data.handover
@@ -317,10 +320,18 @@ async function copyCode() {
                             <input v-model="newLastName" required placeholder="e.g. Villanueva" class="w-full rounded-xl border border-black/15 bg-white px-3 py-2" />
                         </div>
                     </div>
-                    <div class="grid gap-3 sm:grid-cols-3">
+                    <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         <div>
                             <label class="mb-1 block font-bold text-slate-800">Counselor Email *</label>
                             <input v-model="newEmail" type="email" required placeholder="counselor@chmsu.edu.ph" class="w-full rounded-xl border border-black/15 bg-white px-3 py-2" />
+                        </div>
+                        <div>
+                            <label class="mb-1 block font-bold text-slate-800">Sex *</label>
+                            <select v-model="newSex" required class="w-full rounded-xl border border-black/15 bg-white px-3 py-2">
+                                <option value="" disabled>Select sex...</option>
+                                <option value="Female">Female</option>
+                                <option value="Male">Male</option>
+                            </select>
                         </div>
                         <div>
                             <label class="mb-1 block font-bold text-slate-800">Cellphone No.</label>

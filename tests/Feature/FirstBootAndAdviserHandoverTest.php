@@ -180,9 +180,24 @@ class FirstBootAndAdviserHandoverTest extends TestCase
                 'middle_name' => 'R',
                 'last_name' => 'Navarro',
                 'email' => 'elena.navarro.adviser@chmsu.edu.ph',
+                'sex' => 'Female',
                 'initial_password' => 'CounselorPass2026!',
             ])
             ->assertStatus(422);
+
+        // Missing or invalid sex selection is rejected
+        $this->actingAs($adviser)
+            ->postJson('/adviser-handover', [
+                'current_password' => 'password',
+                'first_name' => 'Elena',
+                'middle_name' => 'R',
+                'last_name' => 'Navarro',
+                'email' => 'elena.navarro.adviser@chmsu.edu.ph',
+                'sex' => 'Other',
+                'initial_password' => 'CounselorPass2026!',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('sex');
 
         // Adviser initiates transfer to incoming Guidance Counselor with handover verification code
         $initRes = $this->actingAs($adviser)
@@ -192,6 +207,7 @@ class FirstBootAndAdviserHandoverTest extends TestCase
                 'middle_name' => 'R',
                 'last_name' => 'Navarro',
                 'email' => 'elena.navarro.adviser@chmsu.edu.ph',
+                'sex' => 'Female',
                 'cellphone_number' => '0917-555-0199',
                 'initial_password' => 'CounselorPass2026!',
                 'handover_notes' => 'Official turnover for AY 2026-2027.',
@@ -204,6 +220,26 @@ class FirstBootAndAdviserHandoverTest extends TestCase
         $this->assertSame(6, strlen($code));
 
         $counselor = User::query()->where('email', 'elena.navarro.adviser@chmsu.edu.ph')->firstOrFail();
+        $this->assertTrue($counselor->must_change_password);
+        $this->assertNotNull($counselor->temporary_password_issued_at);
+        $this->assertSame('Female', $counselor->primaryMembership?->sex);
+        $this->assertSame('Woman', $counselor->primaryMembership?->gender_identity);
+
+        // Incoming counselor must rotate the initial password before accessing protected pages
+        $this->actingAs($counselor)
+            ->get('/dashboard')
+            ->assertRedirect(route('password.force-change.edit'));
+
+        $this->actingAs($counselor)
+            ->post('/force-password-change', [
+                'password' => 'NewAdviserSecret2026!',
+                'password_confirmation' => 'NewAdviserSecret2026!',
+            ])
+            ->assertRedirect(route('dashboard'));
+
+        $counselor = $counselor->fresh();
+        $this->assertFalse($counselor->must_change_password);
+        $this->assertNull($counselor->temporary_password_issued_at);
 
         // Designated incoming counselor sees handover on Dashboard (without leaking confirmation code)
         $this->actingAs($counselor)
@@ -275,13 +311,17 @@ class FirstBootAndAdviserHandoverTest extends TestCase
                 'middle_name' => 'L.',
                 'last_name' => 'Villanueva',
                 'email' => 'marco.incoming.adviser@chmsu.edu.ph',
+                'sex' => 'Male',
                 'cellphone_number' => '0917-555-0200',
                 'initial_password' => 'CounselorPass2026!',
             ])
             ->assertCreated();
 
         $createdHandoverId = $newRes->json('handover.id');
-        $this->assertDatabaseHas('users', ['email' => 'marco.incoming.adviser@chmsu.edu.ph']);
+        $marco = User::query()->where('email', 'marco.incoming.adviser@chmsu.edu.ph')->firstOrFail();
+        $this->assertTrue($marco->must_change_password);
+        $this->assertSame('Male', $marco->primaryMembership?->sex);
+        $this->assertSame('Man', $marco->primaryMembership?->gender_identity);
 
         $this->actingAs($adviser)
             ->deleteJson("/adviser-handover/{$createdHandoverId}")
@@ -289,6 +329,8 @@ class FirstBootAndAdviserHandoverTest extends TestCase
             ->assertJsonPath('status', 'cancelled');
 
         $this->assertSame('cancelled', AdviserHandover::findOrFail($createdHandoverId)->status);
+        $this->assertSame(MembershipStatus::Rejected, $marco->fresh()->primaryMembership?->status);
+        $this->assertNull($marco->fresh()->verifiedRole());
 
         // 2. Adviser initiates handover to another incoming counselor, who declines -> Adviser remains Adviser
         $declineInit = $this->actingAs($adviser)
@@ -298,6 +340,7 @@ class FirstBootAndAdviserHandoverTest extends TestCase
                 'middle_name' => 'T.',
                 'last_name' => 'Bautista',
                 'email' => 'clarisse.declining.adviser@chmsu.edu.ph',
+                'sex' => 'Female',
                 'cellphone_number' => '0917-555-0201',
                 'initial_password' => 'CounselorPass2026!',
             ])
@@ -305,6 +348,20 @@ class FirstBootAndAdviserHandoverTest extends TestCase
 
         $declineHandoverId = $declineInit->json('handover.id');
         $decliningCounselor = User::query()->where('email', 'clarisse.declining.adviser@chmsu.edu.ph')->firstOrFail();
+        $this->assertTrue($decliningCounselor->must_change_password);
+
+        $this->actingAs($decliningCounselor)
+            ->get('/dashboard')
+            ->assertRedirect(route('password.force-change.edit'));
+
+        $this->actingAs($decliningCounselor)
+            ->post('/force-password-change', [
+                'password' => 'DeclineAdviserPass2026!',
+                'password_confirmation' => 'DeclineAdviserPass2026!',
+            ])
+            ->assertRedirect(route('dashboard'));
+
+        $decliningCounselor = $decliningCounselor->fresh();
 
         $this->actingAs($decliningCounselor)
             ->postJson("/adviser-handover/{$declineHandoverId}/respond", [
@@ -314,6 +371,14 @@ class FirstBootAndAdviserHandoverTest extends TestCase
             ->assertJsonPath('status', 'declined');
 
         $this->assertSame(CpfRole::Adviser, $adviser->fresh()->verifiedRole());
-        $this->assertSame(CpfRole::Member, $decliningCounselor->fresh()->verifiedRole());
+        $this->assertSame(MembershipStatus::Rejected, $decliningCounselor->fresh()->primaryMembership?->status);
+        $this->assertNull($decliningCounselor->fresh()->verifiedRole());
+
+        // Declined handover cannot be responded to a second time
+        $this->actingAs($decliningCounselor)
+            ->postJson("/adviser-handover/{$declineHandoverId}/respond", [
+                'decision' => 'declined',
+            ])
+            ->assertStatus(422);
     }
 }

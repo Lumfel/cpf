@@ -8,6 +8,7 @@ use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\ValidationException;
 
@@ -37,24 +38,27 @@ class PasskeyCodeLoginController extends Controller
             ]);
         }
 
-        $issuance = PasskeyIssuance::query()
-            ->where('target_user_id', $user->id)
-            ->where('status', 'issued')
-            ->where('is_locked', true)
-            ->where('expires_at', '>', now())
-            ->latest('id')
-            ->first();
+        DB::transaction(function () use ($user, $formattedCode): void {
+            $issuance = PasskeyIssuance::query()
+                ->where('target_user_id', $user->id)
+                ->where('status', 'issued')
+                ->where('is_locked', true)
+                ->where('expires_at', '>', now())
+                ->latest('id')
+                ->lockForUpdate()
+                ->first();
 
-        if (! $issuance || ! Hash::check($formattedCode, $issuance->enrollment_code_hash)) {
-            throw ValidationException::withMessages([
-                'passkey_code' => 'Invalid, revoked, or expired passkey code. Ask your officer or generate a new one.',
-            ]);
-        }
+            if (! $issuance || ! Hash::check($formattedCode, $issuance->enrollment_code_hash)) {
+                throw ValidationException::withMessages([
+                    'passkey_code' => 'Invalid, revoked, or expired passkey code. Ask your officer or generate a new one.',
+                ]);
+            }
 
-        $issuance->forceFill([
-            'status' => 'claimed',
-            'claimed_at' => now(),
-        ])->save();
+            $issuance->forceFill([
+                'status' => 'claimed',
+                'claimed_at' => now(),
+            ])->save();
+        });
 
         Auth::login($user, true);
         $request->session()->regenerate();

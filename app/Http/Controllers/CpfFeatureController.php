@@ -234,7 +234,7 @@ class CpfFeatureController extends Controller
             'Only the campus Club Adviser may archive and reset the Officers Private GC.',
         );
 
-        $archiveDir = env('CPF_ARCHIVE_HDD_PATH', storage_path('app/archives'));
+        $archiveDir = (string) config('cpf.archive_path', storage_path('app/archives'));
         $archive = $action->handle($user, $channel, $archiveDir);
 
         return response()->json(['status' => 'archived', 'archive' => $archive]);

@@ -44,16 +44,12 @@ Route::get('/', function () {
 Route::get('my-credentials', [BlockchainCredentialController::class, 'index'])
     ->name('credentials.index');
 Route::get('credentials/verify/{codeOrHash}', [BlockchainCredentialController::class, 'verify'])
+    ->middleware('throttle:30,1')
     ->name('credentials.verify');
 
-Route::post('membership/apply', [CampusMembershipController::class, 'storeApplication'])->name('membership.apply');
-
-Route::middleware(['auth', 'verified'])->group(function () {
-    Route::post('membership/change-requests', [CampusMembershipController::class, 'storeChangeRequest'])
-        ->name('membership.change-requests.store');
-    Route::patch('membership/change-requests/{changeRequest}/review', [CampusMembershipController::class, 'reviewChangeRequest'])
-        ->name('membership.change-requests.review');
-});
+Route::post('membership/apply', [CampusMembershipController::class, 'storeApplication'])
+    ->middleware('throttle:10,1')
+    ->name('membership.apply');
 
 Route::post('first-boot/setup-adviser', [FirstBootSetupController::class, 'store'])
     ->middleware(['guest', 'throttle:10,1'])
@@ -76,7 +72,9 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('policy-and-bylaws', fn () => Inertia::render('PolicyAndBylaws'))
             ->name('policy-and-bylaws');
         Route::post('adviser-handover', [AdviserHandoverController::class, 'store'])->name('adviser-handover.store');
-        Route::post('adviser-handover/{handover}/respond', [AdviserHandoverController::class, 'respond'])->name('adviser-handover.respond');
+        Route::post('adviser-handover/{handover}/respond', [AdviserHandoverController::class, 'respond'])
+            ->middleware('throttle:5,1')
+            ->name('adviser-handover.respond');
         Route::delete('adviser-handover/{handover}', [AdviserHandoverController::class, 'cancel'])->name('adviser-handover.cancel');
         Route::get('events-activities', [EventActivityController::class, 'index'])->name('events.index');
         Route::post('events-activities', [EventActivityController::class, 'store'])->name('events.store');
@@ -96,6 +94,10 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('membership/{membership}/toggle-gc', [CampusMembershipController::class, 'toggleGc'])->name('membership.toggle-gc');
         Route::patch('membership/{membership}/toggle-dues', [CampusMembershipController::class, 'toggleDues'])->name('membership.toggle-dues');
         Route::patch('membership/{membership}/role', [CampusMembershipController::class, 'updateRole'])->name('membership.update-role');
+        Route::post('membership/change-requests', [CampusMembershipController::class, 'storeChangeRequest'])
+            ->name('membership.change-requests.store');
+        Route::patch('membership/change-requests/{changeRequest}/review', [CampusMembershipController::class, 'reviewChangeRequest'])
+            ->name('membership.change-requests.review');
         Route::get('officers-chat', [OfficersChatController::class, 'index'])->name('officers-chat.index');
         Route::get('campus-hub', [CampusOperationsController::class, 'index'])->name('campus.operations');
         Route::get('community-hub', [CommunityHubController::class, 'index'])->name('community.index');

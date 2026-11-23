@@ -2,8 +2,14 @@
 
 namespace Tests\Feature\Settings;
 
+use App\Enums\CpfRole;
+use App\Enums\MembershipStatus;
+use App\Models\Campus;
+use App\Models\CampusMembership;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class ProfileUpdateTest extends TestCase
@@ -134,5 +140,125 @@ class ProfileUpdateTest extends TestCase
         $response->assertForbidden();
 
         $this->assertNotNull($user->fresh());
+    }
+
+    private function approveCampusMember(User $user, Campus $campus, CpfRole $role = CpfRole::Member): CampusMembership
+    {
+        return CampusMembership::create([
+            'user_id' => $user->id,
+            'campus_id' => $campus->id,
+            'role' => $role,
+            'status' => MembershipStatus::Approved,
+            'enrollment_source' => 'officer_added',
+            'recorded_email' => $user->email,
+            'first_name' => 'Sample',
+            'last_name' => 'Member',
+            'full_name_last_first_mi' => $user->name,
+            'course' => 'BSIT',
+            'year_level' => '3',
+            'section' => 'A',
+            'course_year_section' => 'BSIT 3A',
+            'sex' => 'Female',
+            'gender_identity' => 'Woman',
+            'birthdate' => '2005-01-01',
+            'active_email' => $user->email,
+            'facebook_profile_url' => 'https://www.facebook.com/sample.member',
+            'active_fb_account' => $user->name,
+            'cellphone_number' => '0917-000-0001',
+        ]);
+    }
+
+    public function test_profile_photo_is_stored_on_private_local_disk_and_enforces_same_campus_access(): void
+    {
+        Storage::fake('local');
+        Storage::fake('public');
+
+        $alijis = Campus::create(['code' => 'ALIJIS', 'name' => 'CHMSU Alijis Campus', 'slug' => 'alijis']);
+        $talisay = Campus::create(['code' => 'TALISAY', 'name' => 'CHMSU Talisay Campus', 'slug' => 'talisay']);
+
+        $member = User::factory()->create(['must_change_password' => false]);
+        $sameCampusPeer = User::factory()->create(['must_change_password' => false]);
+        $outsider = User::factory()->create(['must_change_password' => false]);
+
+        $this->approveCampusMember($member, $alijis);
+        $this->approveCampusMember($sameCampusPeer, $alijis);
+        $this->approveCampusMember($outsider, $talisay);
+
+        $pngBytes = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
+
+        $this->actingAs($member)
+            ->from(route('profile.edit'))
+            ->post(route('profile.photo.update'), [
+                'photo' => UploadedFile::fake()->createWithContent('avatar1.png', $pngBytes),
+            ])
+            ->assertRedirect(route('profile.edit'));
+
+        $firstPath = $member->fresh()->profile_photo_path;
+        $this->assertNotNull($firstPath);
+        Storage::disk('local')->assertExists($firstPath);
+        Storage::disk('public')->assertMissing($firstPath);
+
+        $this->actingAs($sameCampusPeer)
+            ->get(route('profile-photos.show', $member))
+            ->assertOk();
+
+        $this->actingAs($outsider)
+            ->get(route('profile-photos.show', $member))
+            ->assertForbidden();
+
+        // Replacing photo removes previous private file and stores the new one on 'local'
+        $this->actingAs($member)
+            ->from(route('profile.edit'))
+            ->post(route('profile.photo.update'), [
+                'photo' => UploadedFile::fake()->createWithContent('avatar2.png', $pngBytes),
+            ])
+            ->assertRedirect(route('profile.edit'));
+
+        $secondPath = $member->fresh()->profile_photo_path;
+        $this->assertNotSame($firstPath, $secondPath);
+        Storage::disk('local')->assertMissing($firstPath);
+        Storage::disk('local')->assertExists($secondPath);
+
+        // Removing photo deletes private file and clears profile_photo_path
+        $this->actingAs($member)
+            ->delete(route('profile.photo.destroy'))
+            ->assertRedirect();
+
+        $this->assertNull($member->fresh()->profile_photo_path);
+        Storage::disk('local')->assertMissing($secondPath);
+    }
+
+    public function test_legacy_profile_photo_on_public_disk_is_served_and_cleaned_up(): void
+    {
+        Storage::fake('local');
+        Storage::fake('public');
+
+        $campus = Campus::create(['code' => 'ALIJIS', 'name' => 'CHMSU Alijis Campus', 'slug' => 'alijis']);
+        $member = User::factory()->create(['must_change_password' => false]);
+        $outsiderCampus = Campus::create(['code' => 'TALISAY', 'name' => 'CHMSU Talisay Campus', 'slug' => 'talisay']);
+        $outsider = User::factory()->create(['must_change_password' => false]);
+
+        $this->approveCampusMember($member, $campus);
+        $this->approveCampusMember($outsider, $outsiderCampus);
+
+        $pngBytes = base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==');
+        $legacyPath = 'profile-photos/legacy-member.png';
+        Storage::disk('public')->put($legacyPath, $pngBytes);
+        $member->forceFill(['profile_photo_path' => $legacyPath])->save();
+
+        $this->actingAs($outsider)
+            ->get(route('profile-photos.show', $member))
+            ->assertForbidden();
+
+        $this->actingAs($member)
+            ->get(route('profile-photos.show', $member))
+            ->assertOk();
+
+        $this->actingAs($member)
+            ->delete(route('profile.photo.destroy'))
+            ->assertRedirect();
+
+        $this->assertNull($member->fresh()->profile_photo_path);
+        Storage::disk('public')->assertMissing($legacyPath);
     }
 }

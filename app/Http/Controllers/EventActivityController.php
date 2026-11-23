@@ -712,6 +712,18 @@ class EventActivityController extends Controller
             'Post-event reflection is not enabled for this activity.',
         );
 
+        $attended = CampusEventAttendance::query()
+            ->where('campus_event_id', $event->id)
+            ->where('user_id', $user->id)
+            ->whereNotNull('logged_in_at')
+            ->exists();
+
+        abort_unless(
+            $attended,
+            422,
+            'Only members who checked in to this event can submit a post-event reflection.',
+        );
+
         $alreadySubmitted = CampusEventReflection::query()
             ->where('campus_event_id', $event->id)
             ->where('user_id', $user->id)

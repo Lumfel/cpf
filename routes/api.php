@@ -7,4 +7,5 @@ Route::get('google-forms/health', [GoogleFormsWebhookController::class, 'health'
     ->name('api.google-forms.health');
 
 Route::post('google-forms/membership', [GoogleFormsWebhookController::class, 'store'])
+    ->middleware('throttle:30,1')
     ->name('api.google-forms.membership');

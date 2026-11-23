@@ -46,4 +46,6 @@ return [
         'webhook_secret' => env('GOOGLE_FORMS_WEBHOOK_SECRET', 'cpf-local-forms-secret'),
     ],
 
+    'archive_path' => env('CPF_ARCHIVE_HDD_PATH', storage_path('app/archives')),
+
 ];

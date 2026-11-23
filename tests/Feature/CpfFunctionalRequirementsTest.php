@@ -12,7 +12,9 @@ use App\Models\CampusRoom;
 use App\Models\Election;
 use App\Models\ElectionCandidate;
 use App\Models\GuidanceReferral;
+use App\Models\MemberInfoChangeRequest;
 use App\Models\OfficerGcChannel;
+use App\Models\PasskeyIssuance;
 use App\Models\PaymentDestination;
 use App\Models\PaymentSubmission;
 use App\Models\PeerQuote;
@@ -22,6 +24,8 @@ use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
@@ -1433,6 +1437,7 @@ class CpfFunctionalRequirementsTest extends TestCase
 
     public function test_officers_members_and_adviser_can_upload_single_profile_picture_visible_on_election_seats(): void
     {
+        Storage::fake('local');
         Storage::fake('public');
 
         $adviser = $this->createMember($this->talisay, CpfRole::Adviser, 'Montemayor, Elena V.');
@@ -1493,7 +1498,8 @@ class CpfFunctionalRequirementsTest extends TestCase
             $account->refresh();
             $this->assertNotNull($account->profile_photo_path);
             $this->assertStringStartsWith("/profile-photos/{$account->id}?", (string) $account->avatar);
-            Storage::disk('public')->assertExists($account->profile_photo_path);
+            Storage::disk('local')->assertExists($account->profile_photo_path);
+            Storage::disk('public')->assertMissing($account->profile_photo_path);
         }
 
         // 4. Uploading a second photo replaces profile_photo_path and deletes the previous file
@@ -1507,8 +1513,8 @@ class CpfFunctionalRequirementsTest extends TestCase
 
         $secondMemberPath = $member->fresh()->profile_photo_path;
         $this->assertNotSame($firstMemberPath, $secondMemberPath);
-        Storage::disk('public')->assertMissing($firstMemberPath);
-        Storage::disk('public')->assertExists($secondMemberPath);
+        Storage::disk('local')->assertMissing($firstMemberPath);
+        Storage::disk('local')->assertExists($secondMemberPath);
 
         // 5. Same-campus access allowed, cross-campus gets 403, guest redirects to /login
         $this->actingAs($president)
@@ -1551,7 +1557,7 @@ class CpfFunctionalRequirementsTest extends TestCase
         $member->refresh();
         $this->assertNull($member->profile_photo_path);
         $this->assertNull($member->avatar);
-        Storage::disk('public')->assertMissing($secondMemberPath);
+        Storage::disk('local')->assertMissing($secondMemberPath);
     }
 
     public function test_time_capsule_supports_letter_in_sunrise_variety_style(): void
@@ -1642,5 +1648,86 @@ class CpfFunctionalRequirementsTest extends TestCase
         } finally {
             $this->travelBack();
         }
+    }
+
+    public function test_security_route_throttles_and_change_request_temp_password_guard_are_enforced(): void
+    {
+        $routes = Route::getRoutes();
+
+        $this->assertContains('throttle:10,1', $routes->getByName('membership.apply')->gatherMiddleware());
+        $this->assertContains('throttle:5,1', $routes->getByName('adviser-handover.respond')->gatherMiddleware());
+        $this->assertContains('throttle:30,1', $routes->getByName('credentials.verify')->gatherMiddleware());
+        $this->assertContains('throttle:30,1', $routes->getByName('api.google-forms.membership')->gatherMiddleware());
+
+        $this->assertSame(storage_path('app/archives'), config('cpf.archive_path'));
+
+        // Change-request submission & review must redirect users with temporary passwords
+        $adviser = $this->createMember($this->talisay, CpfRole::Adviser, 'Montemayor, Elena V.');
+        $adviser->forceFill(['must_change_password' => true])->save();
+
+        $member = $this->createMember($this->talisay, CpfRole::Member, 'Reyes, Katrina M.');
+        $member->forceFill(['must_change_password' => true])->save();
+        $membership = $member->primaryMembership;
+
+        $changeRequest = MemberInfoChangeRequest::create([
+            'campus_membership_id' => $membership->id,
+            'campus_id' => $this->talisay->id,
+            'user_id' => $member->id,
+            'requested_changes' => ['cellphone_number' => ['old' => '0917-000-0000', 'new' => '0917-555-9999']],
+            'reason' => 'Updated phone number.',
+            'status' => 'pending',
+        ]);
+
+        $this->actingAs($member)
+            ->post('/membership/change-requests', [
+                'first_name' => $membership->first_name,
+                'last_name' => $membership->last_name,
+                'course' => $membership->course,
+                'year_level' => $membership->year_level,
+                'section' => $membership->section,
+                'sex' => $membership->sex,
+                'birthdate' => $membership->birthdate->format('Y-m-d'),
+                'active_email' => $membership->active_email,
+                'facebook_profile_url' => $membership->facebook_profile_url,
+                'active_fb_account' => $membership->active_fb_account,
+                'cellphone_number' => '0917-555-8888',
+                'reason' => 'Should be blocked until temp password changed.',
+            ])
+            ->assertRedirect(route('password.force-change.edit'));
+
+        $this->actingAs($adviser)
+            ->patch("/membership/change-requests/{$changeRequest->id}/review", ['decision' => 'approved'])
+            ->assertRedirect(route('password.force-change.edit'));
+
+        // Single-use 12-char passkey code cannot be claimed twice
+        $passkeyUser = $this->createMember($this->talisay, CpfRole::Member, 'Santos, Paolo C.');
+        $formattedCode = 'AB23-CD45-EF67';
+
+        $issuance = PasskeyIssuance::create([
+            'campus_id' => $this->talisay->id,
+            'target_user_id' => $passkeyUser->id,
+            'issued_by_user_id' => $adviser->id,
+            'enrollment_code_hash' => Hash::make($formattedCode),
+            'is_locked' => true,
+            'status' => 'issued',
+            'expires_at' => now()->addDays(3),
+        ]);
+
+        auth()->logout();
+
+        $this->post('/login/passkey-code', [
+            'email' => $passkeyUser->email,
+            'passkey_code' => $formattedCode,
+        ])->assertRedirect(route('dashboard'));
+
+        $this->assertAuthenticatedAs($passkeyUser);
+        $this->assertSame('claimed', $issuance->fresh()->status);
+
+        auth()->logout();
+
+        $this->post('/login/passkey-code', [
+            'email' => $passkeyUser->email,
+            'passkey_code' => $formattedCode,
+        ])->assertSessionHasErrors('passkey_code');
     }
 }

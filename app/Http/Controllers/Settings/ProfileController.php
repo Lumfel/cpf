@@ -62,12 +62,16 @@ class ProfileController extends Controller
         ]);
 
         $oldPath = $user->profile_photo_path;
-        $newPath = $request->file('photo')->store('profile-photos', 'public');
+        $newPath = $request->file('photo')->store('profile-photos', 'local');
 
         $user->forceFill(['profile_photo_path' => $newPath])->save();
 
         if ($oldPath && $oldPath !== $newPath) {
-            Storage::disk('public')->delete($oldPath);
+            Storage::disk('local')->delete($oldPath);
+
+            if (Storage::disk('public')->exists($oldPath)) {
+                Storage::disk('public')->delete($oldPath);
+            }
         }
 
         return back()->with('status', 'Profile picture updated.');
@@ -87,7 +91,12 @@ class ProfileController extends Controller
         );
 
         if ($user->profile_photo_path) {
-            Storage::disk('public')->delete($user->profile_photo_path);
+            Storage::disk('local')->delete($user->profile_photo_path);
+
+            if (Storage::disk('public')->exists($user->profile_photo_path)) {
+                Storage::disk('public')->delete($user->profile_photo_path);
+            }
+
             $user->forceFill(['profile_photo_path' => null])->save();
         }
 
@@ -100,10 +109,6 @@ class ProfileController extends Controller
     public function showPhoto(Request $request, User $targetUser): StreamedResponse
     {
         $viewer = $request->user();
-        $path = $targetUser->profile_photo_path;
-
-        abort_unless($path && Storage::disk('public')->exists($path), 404);
-
         $isSelf = $viewer !== null && $viewer->id === $targetUser->id;
         $viewerCampusId = $viewer?->primaryMembership?->campus_id;
         $targetCampusId = $targetUser->primaryMembership?->campus_id;
@@ -114,7 +119,18 @@ class ProfileController extends Controller
             'You can only view profile pictures of members in your campus chapter.',
         );
 
-        return Storage::disk('public')->response($path, null, [
+        $path = $targetUser->profile_photo_path;
+        $disk = null;
+
+        if ($path && Storage::disk('local')->exists($path)) {
+            $disk = 'local';
+        } elseif ($path && Storage::disk('public')->exists($path)) {
+            $disk = 'public';
+        }
+
+        abort_unless($disk !== null, 404);
+
+        return Storage::disk($disk)->response($path, null, [
             'Cache-Control' => 'private, max-age=86400',
         ]);
     }

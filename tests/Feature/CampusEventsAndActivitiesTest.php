@@ -358,6 +358,7 @@ class CampusEventsAndActivitiesTest extends TestCase
     {
         $adviser = $this->createMember($this->talisay, CpfRole::Adviser, 'Montemayor, Elena V.');
         $member = $this->createMember($this->talisay, CpfRole::Member, 'Reyes, Katrina M.');
+        $nonAttendee = $this->createMember($this->talisay, CpfRole::Member, 'Cruz, Angelo D.');
 
         $eventDate = now()->addDays(2)->toDateString();
         $event = CampusEvent::create([
@@ -373,11 +374,28 @@ class CampusEventsAndActivitiesTest extends TestCase
             'approved_at' => now(),
         ]);
 
+        CampusEventAttendance::create([
+            'campus_event_id' => $event->id,
+            'user_id' => $member->id,
+            'logged_in_at' => Carbon::parse($eventDate.' 09:05:00'),
+            'logged_in_by_user_id' => $adviser->id,
+        ]);
+
         // Travel past end time -> event auto-completes and sends completion notification
         $this->travelTo(Carbon::parse($eventDate.' 12:00:00'));
 
         try {
             $plaintext = 'Today I learned how to listen with patience and care during our circle.';
+
+            // Non-attendees cannot submit post-event reflections (422)
+            $this->actingAs($nonAttendee)
+                ->postJson("/events-activities/{$event->id}/reflection", [
+                    'title' => 'Non-Attendee Attempt',
+                    'reflection_message' => $plaintext,
+                    'unlock_at' => now()->addMonths(6)->format('Y-m-d H:i:s'),
+                ])
+                ->assertStatus(422)
+                ->assertJsonPath('message', 'Only members who checked in to this event can submit a post-event reflection.');
 
             $res = $this->actingAs($member)
                 ->postJson("/events-activities/{$event->id}/reflection", [
@@ -486,6 +504,13 @@ class CampusEventsAndActivitiesTest extends TestCase
             ->assertOk();
 
         $this->assertFalse($defaultOffEvent->fresh()->reflection_enabled);
+
+        CampusEventAttendance::create([
+            'campus_event_id' => $defaultOffEvent->id,
+            'user_id' => $member->id,
+            'logged_in_at' => Carbon::parse($day2.' 09:05:00'),
+            'logged_in_by_user_id' => $adviser->id,
+        ]);
 
         // 2. Club Adviser enabling reflection during creation takes effect immediately
         $adviserDirectId = $this->actingAs($adviser)

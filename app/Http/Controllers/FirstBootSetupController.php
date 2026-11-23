@@ -54,19 +54,19 @@ class FirstBootSetupController extends Controller
         ]);
 
         [$adviser, $campus, $fullName] = DB::transaction(function () use ($validated): array {
+            $campus = isset($validated['campus_id']) && $validated['campus_id']
+                ? Campus::query()->whereKey($validated['campus_id'])->lockForUpdate()->first()
+                : Campus::query()->where('is_active', true)->orderBy('id')->lockForUpdate()->first();
+
+            if (! $campus) {
+                $campus = Campus::query()->orderBy('id')->lockForUpdate()->first();
+            }
+
             abort_unless(
                 self::needsAdviserSetup(),
                 403,
                 'First-boot setup is locked because a Club Adviser already exists.',
             );
-
-            $campus = isset($validated['campus_id']) && $validated['campus_id']
-                ? Campus::query()->find($validated['campus_id'])
-                : Campus::query()->where('is_active', true)->orderBy('id')->first();
-
-            if (! $campus) {
-                $campus = Campus::query()->orderBy('id')->first();
-            }
 
             $customCampusName = trim((string) ($validated['campus_name'] ?? ''));
 

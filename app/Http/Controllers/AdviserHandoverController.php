@@ -34,6 +34,7 @@ class AdviserHandoverController extends Controller
             'middle_name' => ['nullable', 'string', 'max:50'],
             'last_name' => ['required', 'string', 'max:100'],
             'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+            'sex' => ['required', Rule::in(['Male', 'Female'])],
             'cellphone_number' => ['nullable', 'string', 'max:30'],
             'initial_password' => ['required', 'string', 'min:8'],
         ]);
@@ -57,7 +58,8 @@ class AdviserHandoverController extends Controller
                 'name' => $fullName,
                 'email' => $email,
                 'password' => Hash::make((string) $validated['initial_password']),
-                'must_change_password' => false,
+                'must_change_password' => true,
+                'temporary_password_issued_at' => now(),
             ]);
             $incomingUser->email_verified_at = now();
             $incomingUser->save();
@@ -77,8 +79,8 @@ class AdviserHandoverController extends Controller
                 'year_level' => 'Faculty',
                 'section' => 'Incoming Adviser',
                 'course_year_section' => 'Guidance Services / Incoming Adviser',
-                'sex' => 'Female',
-                'gender_identity' => 'Woman',
+                'sex' => $validated['sex'],
+                'gender_identity' => $validated['sex'] === 'Male' ? 'Man' : 'Woman',
                 'birthdate' => '1985-01-01',
                 'active_email' => $email,
                 'facebook_profile_url' => 'https://www.facebook.com/chmsu.cpf.adviser',
@@ -98,13 +100,19 @@ class AdviserHandoverController extends Controller
         $confirmationCode = $this->generateVerificationCode();
 
         $handover = DB::transaction(function () use ($membership, $user, $targetMembership, $confirmationCode, $validated): AdviserHandover {
-            AdviserHandover::query()
+            $pendingHandovers = AdviserHandover::query()
                 ->where('campus_id', $membership->campus_id)
                 ->where('status', 'pending')
-                ->update([
+                ->lockForUpdate()
+                ->get();
+
+            foreach ($pendingHandovers as $superseded) {
+                $superseded->update([
                     'status' => 'cancelled',
                     'responded_at' => now(),
                 ]);
+                $this->revokePendingIncomingAdviserMembership($superseded);
+            }
 
             return AdviserHandover::create([
                 'campus_id' => $membership->campus_id,
@@ -144,36 +152,43 @@ class AdviserHandoverController extends Controller
             'Only the designated incoming Club Adviser can accept or decline this handover.',
         );
 
-        abort_unless(
-            $handover->isPendingAndActive(),
-            422,
-            'This Adviser handover is no longer active or has expired.',
-        );
-
         $validated = $request->validate([
             'decision' => ['required', Rule::in(['accepted', 'declined'])],
             'confirmation_code' => ['required_if:decision,accepted', 'nullable', 'string'],
         ]);
 
-        if ($validated['decision'] === 'declined') {
-            $handover->update([
-                'status' => 'declined',
-                'responded_at' => now(),
-            ]);
-
-            return response()->json(['status' => 'declined']);
-        }
-
         $enteredCode = strtoupper(trim((string) ($validated['confirmation_code'] ?? '')));
 
-        abort_unless(
-            hash_equals(strtoupper($handover->confirmation_code), $enteredCode),
-            422,
-            'Invalid 6-character handover verification code.',
-        );
+        $resultStatus = DB::transaction(function () use ($handover, $validated, $enteredCode): string {
+            $lockedHandover = AdviserHandover::query()
+                ->whereKey($handover->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        DB::transaction(function () use ($handover): void {
-            $incomingMembership = $handover->toMembership()->firstOrFail();
+            abort_unless(
+                $lockedHandover->isPendingAndActive(),
+                422,
+                'This Adviser handover is no longer active or has expired.',
+            );
+
+            if ($validated['decision'] === 'declined') {
+                $lockedHandover->update([
+                    'status' => 'declined',
+                    'responded_at' => now(),
+                ]);
+
+                $this->revokePendingIncomingAdviserMembership($lockedHandover);
+
+                return 'declined';
+            }
+
+            abort_unless(
+                hash_equals(strtoupper($lockedHandover->confirmation_code), $enteredCode),
+                422,
+                'Invalid 6-character handover verification code.',
+            );
+
+            $incomingMembership = $lockedHandover->toMembership()->lockForUpdate()->firstOrFail();
             $incomingMembership->update([
                 'role' => CpfRole::Adviser,
                 'status' => MembershipStatus::Approved,
@@ -182,26 +197,29 @@ class AdviserHandoverController extends Controller
             ]);
 
             $outgoingMembership = CampusMembership::query()
-                ->where('campus_id', $handover->campus_id)
-                ->where('user_id', $handover->from_user_id)
+                ->where('campus_id', $lockedHandover->campus_id)
+                ->where('user_id', $lockedHandover->from_user_id)
+                ->lockForUpdate()
                 ->first();
 
             if ($outgoingMembership) {
-                $outgoingRole = CpfRole::tryFrom((string) $handover->outgoing_role) ?? CpfRole::Member;
+                $outgoingRole = CpfRole::tryFrom((string) $lockedHandover->outgoing_role) ?? CpfRole::Member;
                 $outgoingMembership->update(['role' => $outgoingRole]);
             }
 
             Campus::query()
-                ->where('id', $handover->campus_id)
+                ->where('id', $lockedHandover->campus_id)
                 ->update(['adviser_name' => $incomingMembership->full_name_last_first_mi]);
 
-            $handover->update([
+            $lockedHandover->update([
                 'status' => 'accepted',
                 'responded_at' => now(),
             ]);
+
+            return 'accepted';
         });
 
-        return response()->json(['status' => 'accepted']);
+        return response()->json(['status' => $resultStatus]);
     }
 
     public function cancel(Request $request, AdviserHandover $handover): JsonResponse
@@ -214,18 +232,42 @@ class AdviserHandoverController extends Controller
             'Only the initiating Club Adviser can cancel this handover.',
         );
 
-        abort_unless(
-            $handover->status === 'pending',
-            422,
-            'Only pending Adviser handovers can be cancelled.',
-        );
+        DB::transaction(function () use ($handover): void {
+            $lockedHandover = AdviserHandover::query()
+                ->whereKey($handover->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $handover->update([
-            'status' => 'cancelled',
-            'responded_at' => now(),
-        ]);
+            abort_unless(
+                $lockedHandover->status === 'pending',
+                422,
+                'Only pending Adviser handovers can be cancelled.',
+            );
+
+            $lockedHandover->update([
+                'status' => 'cancelled',
+                'responded_at' => now(),
+            ]);
+
+            $this->revokePendingIncomingAdviserMembership($lockedHandover);
+        });
 
         return response()->json(['status' => 'cancelled']);
+    }
+
+    private function revokePendingIncomingAdviserMembership(AdviserHandover $handover): void
+    {
+        $incomingMembership = $handover->toMembership()->lockForUpdate()->first();
+
+        if (
+            $incomingMembership !== null
+            && $incomingMembership->section === 'Incoming Adviser'
+            && $incomingMembership->role === CpfRole::Member
+        ) {
+            $incomingMembership->update([
+                'status' => MembershipStatus::Rejected,
+            ]);
+        }
     }
 
     private function generateVerificationCode(): string

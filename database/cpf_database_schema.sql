@@ -1,14 +1,8 @@
 -- =============================================================================
--- CIRCLE OF PEER FACILITATORS (CPF) — UPGRADED LARAGON MYSQL / MARIADB SCHEMA v3
--- Includes:
---   1. Atomic Name Fields (first_name, middle_name, last_name) on Memberships
---   2. Role-Based Governance (Adviser in Charge, President, Vice President,
---      Secretary, Treasurer, Member — NO Admin role)
---   3. Passkey Issuance Audit & 2FA / 60-Day Remember Cookie Auth Support
---   4. Single-Room Utilization (Strict 1-Room Rule: Testing Room Only)
---   5. Confidential Guidance Referrals with Clinical Triage (UK MHTS / NHS)
---   6. Private Officers & Adviser WebSocket GC + End-of-School-Year ZIP Archive
--- Target DB: MySQL 8.0+ (Laragon Windows 11) & MariaDB 10.6+ (Debian 4GB Server)
+-- CIRCLE OF PEER FACILITATORS (CPF) — CONSOLIDATED MYSQL / MARIADB SCHEMA
+-- Matches all 23 Laravel migrations (0001_01_01_000000 through 2026_11_22_000018)
+-- Target DB: MySQL 8.0+ (Laragon Windows) & MariaDB 10.6+
+-- Tables: 41 application, auth, governance, event, handover, and ledger tables
 -- =============================================================================
 
 CREATE DATABASE IF NOT EXISTS `cpf`
@@ -20,13 +14,36 @@ USE `cpf`;
 SET NAMES utf8mb4;
 SET FOREIGN_KEY_CHECKS = 0;
 
+-- Reverse dependency order cleanup
+DROP TABLE IF EXISTS `adviser_handovers`;
+DROP TABLE IF EXISTS `campus_event_notifications`;
+DROP TABLE IF EXISTS `campus_event_reflections`;
+DROP TABLE IF EXISTS `campus_event_attendances`;
+DROP TABLE IF EXISTS `campus_events`;
+DROP TABLE IF EXISTS `peer_quotes`;
+DROP TABLE IF EXISTS `payment_submissions`;
+DROP TABLE IF EXISTS `payment_destinations`;
+DROP TABLE IF EXISTS `election_opt_outs`;
+DROP TABLE IF EXISTS `election_votes`;
+DROP TABLE IF EXISTS `election_candidates`;
+DROP TABLE IF EXISTS `elections`;
+DROP TABLE IF EXISTS `school_year_archives`;
+DROP TABLE IF EXISTS `time_capsules`;
+DROP TABLE IF EXISTS `blockchain_verification_logs`;
+DROP TABLE IF EXISTS `member_awards`;
+DROP TABLE IF EXISTS `digital_certificates`;
+DROP TABLE IF EXISTS `member_achievements`;
+DROP TABLE IF EXISTS `blockchain_credential_ledgers`;
+DROP TABLE IF EXISTS `counselor_gc_messages`;
 DROP TABLE IF EXISTS `officer_gc_archives`;
 DROP TABLE IF EXISTS `officer_gc_messages`;
 DROP TABLE IF EXISTS `officer_gc_channels`;
 DROP TABLE IF EXISTS `referral_audit_logs`;
 DROP TABLE IF EXISTS `guidance_referrals`;
 DROP TABLE IF EXISTS `room_requests`;
+DROP TABLE IF EXISTS `campus_counselors`;
 DROP TABLE IF EXISTS `campus_rooms`;
+DROP TABLE IF EXISTS `member_info_change_requests`;
 DROP TABLE IF EXISTS `passkey_issuances`;
 DROP TABLE IF EXISTS `campus_memberships`;
 DROP TABLE IF EXISTS `campuses`;
@@ -41,18 +58,21 @@ DROP TABLE IF EXISTS `password_reset_tokens`;
 DROP TABLE IF EXISTS `users`;
 
 -- -----------------------------------------------------------------------------
--- 1. CORE LARAVEL 13 + FORTIFY AUTH, 2FA & PASSKEY TABLES
+-- 1. CORE LARAVEL AUTH, FORTIFY 2FA, PASSKEYS, SESSIONS, CACHE & QUEUES
 -- -----------------------------------------------------------------------------
 CREATE TABLE `users` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `name` VARCHAR(255) NOT NULL,
     `email` VARCHAR(255) NOT NULL,
+    `profile_photo_path` VARCHAR(255) NULL DEFAULT NULL,
     `email_verified_at` TIMESTAMP NULL DEFAULT NULL,
     `password` VARCHAR(255) NOT NULL,
+    `must_change_password` TINYINT(1) NOT NULL DEFAULT 0,
+    `temporary_password_issued_at` TIMESTAMP NULL DEFAULT NULL,
     `two_factor_secret` TEXT NULL,
     `two_factor_recovery_codes` TEXT NULL,
     `two_factor_confirmed_at` TIMESTAMP NULL DEFAULT NULL,
-    `remember_token` VARCHAR(100) NULL DEFAULT NULL COMMENT 'Hashed token for 2-month (60-day) persistent login cookie',
+    `remember_token` VARCHAR(100) NULL DEFAULT NULL,
     `created_at` TIMESTAMP NULL DEFAULT NULL,
     `updated_at` TIMESTAMP NULL DEFAULT NULL,
     PRIMARY KEY (`id`),
@@ -81,7 +101,7 @@ CREATE TABLE `sessions` (
 CREATE TABLE `cache` (
     `key` VARCHAR(255) NOT NULL,
     `value` MEDIUMTEXT NOT NULL,
-    `expiration` INT NOT NULL,
+    `expiration` BIGINT NOT NULL,
     PRIMARY KEY (`key`),
     KEY `cache_expiration_index` (`expiration`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -89,7 +109,7 @@ CREATE TABLE `cache` (
 CREATE TABLE `cache_locks` (
     `key` VARCHAR(255) NOT NULL,
     `owner` VARCHAR(255) NOT NULL,
-    `expiration` INT NOT NULL,
+    `expiration` BIGINT NOT NULL,
     PRIMARY KEY (`key`),
     KEY `cache_locks_expiration_index` (`expiration`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -98,7 +118,7 @@ CREATE TABLE `jobs` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `queue` VARCHAR(255) NOT NULL,
     `payload` LONGTEXT NOT NULL,
-    `attempts` TINYINT UNSIGNED NOT NULL,
+    `attempts` SMALLINT UNSIGNED NOT NULL,
     `reserved_at` INT UNSIGNED NULL DEFAULT NULL,
     `available_at` INT UNSIGNED NOT NULL,
     `created_at` INT UNSIGNED NOT NULL,
@@ -123,13 +143,14 @@ CREATE TABLE `job_batches` (
 CREATE TABLE `failed_jobs` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `uuid` VARCHAR(255) NOT NULL,
-    `connection` TEXT NOT NULL,
-    `queue` TEXT NOT NULL,
+    `connection` VARCHAR(255) NOT NULL,
+    `queue` VARCHAR(255) NOT NULL,
     `payload` LONGTEXT NOT NULL,
     `exception` LONGTEXT NOT NULL,
     `failed_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
-    UNIQUE KEY `failed_jobs_uuid_unique` (`uuid`)
+    UNIQUE KEY `failed_jobs_uuid_unique` (`uuid`),
+    KEY `failed_jobs_connection_queue_failed_at_index` (`connection`, `queue`, `failed_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE `passkeys` (
@@ -137,7 +158,7 @@ CREATE TABLE `passkeys` (
     `user_id` BIGINT UNSIGNED NOT NULL,
     `name` VARCHAR(255) NOT NULL,
     `credential_id` VARCHAR(255) NOT NULL,
-    `credential` TEXT NOT NULL,
+    `credential` JSON NOT NULL,
     `last_used_at` TIMESTAMP NULL DEFAULT NULL,
     `created_at` TIMESTAMP NULL DEFAULT NULL,
     `updated_at` TIMESTAMP NULL DEFAULT NULL,
@@ -148,7 +169,7 @@ CREATE TABLE `passkeys` (
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -----------------------------------------------------------------------------
--- 2. CAMPUSES & MEMBERSHIPS (Atomic First, Middle, Last Name Columns)
+-- 2. CAMPUSES, MEMBERSHIPS, PASSKEY ISSUANCES & CHANGE REQUESTS
 -- -----------------------------------------------------------------------------
 CREATE TABLE `campuses` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -170,56 +191,61 @@ CREATE TABLE `campus_memberships` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `user_id` BIGINT UNSIGNED NOT NULL,
     `campus_id` BIGINT UNSIGNED NOT NULL,
-    `role` ENUM('adviser', 'president', 'vice_president', 'secretary', 'treasurer', 'member') NOT NULL DEFAULT 'member',
-    `status` ENUM('pending', 'approved', 'rejected') NOT NULL DEFAULT 'pending',
-    `enrollment_source` ENUM('online_form', 'officer_added') NOT NULL DEFAULT 'online_form',
+    `role` VARCHAR(32) NOT NULL DEFAULT 'member',
+    `status` VARCHAR(32) NOT NULL DEFAULT 'pending',
+    `enrollment_source` VARCHAR(32) NOT NULL DEFAULT 'online_form',
     `recorded_email` VARCHAR(255) NOT NULL,
-
-    -- Atomic Name Fields (Separate First, Middle, and Last Name)
     `first_name` VARCHAR(80) NOT NULL,
     `middle_name` VARCHAR(80) NULL DEFAULT NULL,
     `last_name` VARCHAR(80) NOT NULL,
-    `full_name_last_first_mi` VARCHAR(180) NOT NULL COMMENT 'Formatted "Last, First M." for strict A-Z index sorting',
-
+    `full_name_last_first_mi` VARCHAR(180) NOT NULL,
+    `course` VARCHAR(60) NULL DEFAULT NULL,
+    `year_level` VARCHAR(20) NULL DEFAULT NULL,
+    `section` VARCHAR(20) NULL DEFAULT NULL,
     `course_year_section` VARCHAR(80) NOT NULL,
-    `sex` ENUM('Male', 'Female') NOT NULL,
+    `sex` VARCHAR(20) NOT NULL,
     `gender_identity` VARCHAR(40) NULL DEFAULT NULL,
     `gender_identity_other` VARCHAR(100) NULL DEFAULT NULL,
     `birthdate` DATE NOT NULL,
     `active_email` VARCHAR(255) NOT NULL,
     `active_fb_account` VARCHAR(255) NOT NULL,
+    `facebook_profile_url` VARCHAR(500) NULL DEFAULT NULL,
     `cellphone_number` VARCHAR(40) NOT NULL,
     `added_or_approved_by` BIGINT UNSIGNED NULL DEFAULT NULL,
     `approved_at` TIMESTAMP NULL DEFAULT NULL,
     `is_in_messenger_gc` TINYINT(1) NOT NULL DEFAULT 0,
     `gc_confirmed_by` BIGINT UNSIGNED NULL DEFAULT NULL,
     `gc_confirmed_at` TIMESTAMP NULL DEFAULT NULL,
-    `remarks` TEXT NULL DEFAULT NULL,
+    `has_paid_dues` TINYINT(1) NOT NULL DEFAULT 0,
+    `dues_confirmed_by` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `dues_confirmed_at` TIMESTAMP NULL DEFAULT NULL,
+    `remarks` TEXT NULL,
     `created_at` TIMESTAMP NULL DEFAULT NULL,
     `updated_at` TIMESTAMP NULL DEFAULT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `campus_memberships_user_campus_unique` (`user_id`, `campus_id`),
     KEY `campus_memberships_campus_status_az_idx` (`campus_id`, `status`, `last_name`, `first_name`),
     KEY `campus_memberships_campus_role_idx` (`campus_id`, `role`),
-    CONSTRAINT `campus_memberships_user_id_fk` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `campus_memberships_campus_id_fk` FOREIGN KEY (`campus_id`) REFERENCES `campuses` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `campus_memberships_user_fk` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `campus_memberships_campus_fk` FOREIGN KEY (`campus_id`) REFERENCES `campuses` (`id`) ON DELETE CASCADE,
     CONSTRAINT `campus_memberships_approved_by_fk` FOREIGN KEY (`added_or_approved_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
-    CONSTRAINT `campus_memberships_gc_confirmed_by_fk` FOREIGN KEY (`gc_confirmed_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+    CONSTRAINT `campus_memberships_gc_confirmed_by_fk` FOREIGN KEY (`gc_confirmed_by`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `campus_memberships_dues_confirmed_by_fk` FOREIGN KEY (`dues_confirmed_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- -----------------------------------------------------------------------------
--- 3. PASSKEY ISSUANCES (Adviser, President, Vice President, Secretary)
--- -----------------------------------------------------------------------------
 CREATE TABLE `passkey_issuances` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `campus_id` BIGINT UNSIGNED NOT NULL,
     `target_user_id` BIGINT UNSIGNED NOT NULL,
     `issued_by_user_id` BIGINT UNSIGNED NOT NULL,
     `enrollment_code_hash` VARCHAR(128) NOT NULL,
+    `encrypted_enrollment_code` TEXT NULL,
     `require_2fa` TINYINT(1) NOT NULL DEFAULT 1,
-    `status` ENUM('issued', 'claimed', 'revoked', 'expired') NOT NULL DEFAULT 'issued',
+    `status` VARCHAR(24) NOT NULL DEFAULT 'issued',
+    `is_locked` TINYINT(1) NOT NULL DEFAULT 1,
     `expires_at` TIMESTAMP NOT NULL,
     `claimed_at` TIMESTAMP NULL DEFAULT NULL,
+    `emailed_at` TIMESTAMP NULL DEFAULT NULL,
     `created_at` TIMESTAMP NULL DEFAULT NULL,
     `updated_at` TIMESTAMP NULL DEFAULT NULL,
     PRIMARY KEY (`id`),
@@ -229,8 +255,30 @@ CREATE TABLE `passkey_issuances` (
     CONSTRAINT `passkey_issuances_issuer_fk` FOREIGN KEY (`issued_by_user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `member_info_change_requests` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `campus_membership_id` BIGINT UNSIGNED NOT NULL,
+    `campus_id` BIGINT UNSIGNED NOT NULL,
+    `user_id` BIGINT UNSIGNED NOT NULL,
+    `requested_changes` JSON NOT NULL,
+    `reason` TEXT NOT NULL,
+    `status` VARCHAR(20) NOT NULL DEFAULT 'pending',
+    `reviewed_by` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `reviewed_at` TIMESTAMP NULL DEFAULT NULL,
+    `adviser_notes` TEXT NULL,
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY `micr_campus_status_idx` (`campus_id`, `status`),
+    KEY `micr_membership_status_idx` (`campus_membership_id`, `status`),
+    CONSTRAINT `micr_membership_fk` FOREIGN KEY (`campus_membership_id`) REFERENCES `campus_memberships` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `micr_campus_fk` FOREIGN KEY (`campus_id`) REFERENCES `campuses` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `micr_user_fk` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `micr_reviewer_fk` FOREIGN KEY (`reviewed_by`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- -----------------------------------------------------------------------------
--- 4. SINGLE-ROOM UTILIZATION (STRICT 1-ROOM RULE: TESTING ROOM ONLY)
+-- 3. CAMPUS TESTING ROOM, COUNSELORS, REFERRALS & PRIVATE GROUP CHANNELS
 -- -----------------------------------------------------------------------------
 CREATE TABLE `campus_rooms` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
@@ -246,16 +294,32 @@ CREATE TABLE `campus_rooms` (
     CONSTRAINT `campus_rooms_campus_fk` FOREIGN KEY (`campus_id`) REFERENCES `campuses` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+CREATE TABLE `campus_counselors` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `campus_id` BIGINT UNSIGNED NOT NULL,
+    `name` VARCHAR(120) NOT NULL,
+    `title` VARCHAR(120) NOT NULL,
+    `specialty` VARCHAR(140) NULL DEFAULT NULL,
+    `weekly_vacant_slots` JSON NOT NULL,
+    `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY `campus_counselors_campus_active_idx` (`campus_id`, `is_active`),
+    CONSTRAINT `campus_counselors_campus_fk` FOREIGN KEY (`campus_id`) REFERENCES `campuses` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 CREATE TABLE `room_requests` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `campus_id` BIGINT UNSIGNED NOT NULL,
     `room_id` BIGINT UNSIGNED NOT NULL,
+    `counselor_id` BIGINT UNSIGNED NULL DEFAULT NULL,
     `requested_by_user_id` BIGINT UNSIGNED NOT NULL,
     `purpose` VARCHAR(200) NOT NULL,
     `request_date` DATE NOT NULL,
     `start_time` TIME NOT NULL,
     `end_time` TIME NOT NULL,
-    `status` ENUM('pending', 'approved', 'declined', 'completed', 'cancelled') NOT NULL DEFAULT 'pending',
+    `status` VARCHAR(24) NOT NULL DEFAULT 'pending',
     `reviewed_by_user_id` BIGINT UNSIGNED NULL DEFAULT NULL,
     `review_notes` VARCHAR(255) NULL DEFAULT NULL,
     `created_at` TIMESTAMP NULL DEFAULT NULL,
@@ -264,25 +328,23 @@ CREATE TABLE `room_requests` (
     KEY `room_requests_slot_lookup_idx` (`room_id`, `request_date`, `start_time`, `end_time`, `status`),
     CONSTRAINT `room_requests_campus_fk` FOREIGN KEY (`campus_id`) REFERENCES `campuses` (`id`) ON DELETE CASCADE,
     CONSTRAINT `room_requests_room_fk` FOREIGN KEY (`room_id`) REFERENCES `campus_rooms` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `room_requests_user_fk` FOREIGN KEY (`requested_by_user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `room_requests_counselor_fk` FOREIGN KEY (`counselor_id`) REFERENCES `campus_counselors` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `room_requests_requester_fk` FOREIGN KEY (`requested_by_user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
     CONSTRAINT `room_requests_reviewer_fk` FOREIGN KEY (`reviewed_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- -----------------------------------------------------------------------------
--- 5. CONFIDENTIAL GUIDANCE REFERRALS & AUDIT LOGS (UK MHTS / NHS TRIAGE)
--- -----------------------------------------------------------------------------
 CREATE TABLE `guidance_referrals` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `campus_id` BIGINT UNSIGNED NOT NULL,
     `submitted_by_user_id` BIGINT UNSIGNED NOT NULL,
-    `referral_type` ENUM('self_counseling', 'peer_referral') NOT NULL DEFAULT 'peer_referral',
+    `referral_type` VARCHAR(24) NOT NULL DEFAULT 'peer_referral',
     `student_identifier` VARCHAR(180) NOT NULL,
     `student_course_section` VARCHAR(80) NULL DEFAULT NULL,
-    `suggested_priority` ENUM('emergency', 'very_urgent', 'urgent', 'semi_urgent', 'routine') NOT NULL DEFAULT 'routine',
-    `counselor_confirmed_priority` ENUM('emergency', 'very_urgent', 'urgent', 'semi_urgent', 'routine') NULL DEFAULT NULL,
+    `suggested_priority` VARCHAR(24) NOT NULL DEFAULT 'routine',
+    `counselor_confirmed_priority` VARCHAR(24) NULL DEFAULT NULL,
     `triage_response_target` VARCHAR(60) NOT NULL,
     `encrypted_concern_summary` TEXT NOT NULL,
-    `status` ENUM('submitted', 'triaged', 'in_session', 'referred_external', 'closed') NOT NULL DEFAULT 'submitted',
+    `status` VARCHAR(32) NOT NULL DEFAULT 'submitted',
     `assigned_counselor_id` BIGINT UNSIGNED NULL DEFAULT NULL,
     `created_at` TIMESTAMP NULL DEFAULT NULL,
     `updated_at` TIMESTAMP NULL DEFAULT NULL,
@@ -306,19 +368,11 @@ CREATE TABLE `referral_audit_logs` (
     CONSTRAINT `referral_audit_logs_actor_fk` FOREIGN KEY (`actor_user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- -----------------------------------------------------------------------------
--- 6. OFFICERS & ADVISER PRIVATE WEBSOCKET GC + END-OF-SCHOOL-YEAR ZIP ARCHIVE
---    * Accessible strictly to Adviser, President, Vice President, Secretary, Treasurer.
---    * WebSocket private channel: `private-campus.{campus_id}.officers-gc.{academic_year}`
---    * At End of School Year: Laravel exports messages + media to a `.zip` on the
---      512 GB HDD (`/mnt/hdd/cpf_storage/archives/...`), records SHA-256 checksum
---      in `officer_gc_archives`, and resets `officer_gc_messages` for the new AY.
--- -----------------------------------------------------------------------------
 CREATE TABLE `officer_gc_channels` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `campus_id` BIGINT UNSIGNED NOT NULL,
-    `academic_year` VARCHAR(20) NOT NULL COMMENT 'e.g. 2026-2027',
-    `channel_key` VARCHAR(120) NOT NULL COMMENT 'WebSocket private channel identifier',
+    `academic_year` VARCHAR(20) NOT NULL,
+    `channel_key` VARCHAR(120) NOT NULL,
     `is_active` TINYINT(1) NOT NULL DEFAULT 1,
     `reset_at` TIMESTAMP NULL DEFAULT NULL,
     `created_at` TIMESTAMP NULL DEFAULT NULL,
@@ -332,9 +386,9 @@ CREATE TABLE `officer_gc_messages` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `channel_id` BIGINT UNSIGNED NOT NULL,
     `sender_user_id` BIGINT UNSIGNED NOT NULL,
-    `sender_role` ENUM('adviser', 'president', 'vice_president', 'secretary', 'treasurer') NOT NULL,
+    `sender_role` VARCHAR(32) NOT NULL,
     `message_body` TEXT NOT NULL,
-    `attachment_hdd_path` VARCHAR(255) NULL DEFAULT NULL COMMENT 'Optional file stored on 512 GB HDD',
+    `attachment_hdd_path` VARCHAR(255) NULL DEFAULT NULL,
     `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `officer_gc_messages_channel_time_idx` (`channel_id`, `created_at`),
@@ -346,76 +400,41 @@ CREATE TABLE `officer_gc_archives` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `campus_id` BIGINT UNSIGNED NOT NULL,
     `academic_year` VARCHAR(20) NOT NULL,
-    `zip_file_name` VARCHAR(160) NOT NULL COMMENT 'e.g. cpf_talisay_officers_gc_2026-2027.zip',
-    `hdd_storage_path` VARCHAR(255) NOT NULL COMMENT 'Stored on 512 GB HDD: /mnt/hdd/cpf_storage/archives/...',
-    `sha256_checksum` CHAR(64) NOT NULL COMMENT 'Integrity hash of archived ZIP bundle',
+    `zip_file_name` VARCHAR(160) NOT NULL,
+    `hdd_storage_path` VARCHAR(255) NOT NULL,
+    `sha256_checksum` CHAR(64) NOT NULL,
     `total_messages` INT UNSIGNED NOT NULL DEFAULT 0,
     `archived_by_user_id` BIGINT UNSIGNED NULL DEFAULT NULL,
     `archived_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `officer_gc_archives_campus_ay_idx` (`campus_id`, `academic_year`),
     CONSTRAINT `officer_gc_archives_campus_fk` FOREIGN KEY (`campus_id`) REFERENCES `campuses` (`id`) ON DELETE CASCADE,
-    CONSTRAINT `officer_gc_archives_actor_fk` FOREIGN KEY (`archived_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+    CONSTRAINT `officer_gc_archives_user_fk` FOREIGN KEY (`archived_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `counselor_gc_messages` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `campus_id` BIGINT UNSIGNED NOT NULL,
+    `sender_user_id` BIGINT UNSIGNED NOT NULL,
+    `sender_role` VARCHAR(40) NOT NULL,
+    `message_body` TEXT NOT NULL,
+    `created_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `counselor_gc_messages_campus_time_idx` (`campus_id`, `created_at`),
+    CONSTRAINT `counselor_gc_messages_campus_fk` FOREIGN KEY (`campus_id`) REFERENCES `campuses` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `counselor_gc_messages_sender_fk` FOREIGN KEY (`sender_user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- -----------------------------------------------------------------------------
--- 7. SEED DATA (Campuses, 1 Testing Room, Officers GC Channel, 7 Sample Users)
+-- 4. BLOCKCHAIN CREDENTIALS LEDGER, ACHIEVEMENTS, CERTIFICATES & AWARDS
 -- -----------------------------------------------------------------------------
-INSERT INTO `campuses` (`id`, `code`, `name`, `slug`, `current_academic_year`, `adviser_name`, `gc_group_name`, `is_active`, `created_at`, `updated_at`) VALUES
-(1, 'TALISAY', 'CHMSU Talisay (Main Campus)', 'talisay', '2026-2027', 'Dr. Elena V. Montemayor, RGC', 'CPF Talisay Official Peer GC (AY 2026–2027)', 1, NOW(), NOW()),
-(2, 'FORTUNE_TOWNE', 'CHMSU Fortune Towne Campus', 'fortune-towne', '2026-2027', 'Prof. Marco L. Villanueva, RGC', 'CPF Fortune Towne Official Peer GC', 1, NOW(), NOW()),
-(3, 'ALIJIS', 'CHMSU Alijis Campus', 'alijis', '2026-2027', 'Prof. Clarissa D. Soriano, RGC', 'CPF Alijis Official Peer GC', 1, NOW(), NOW()),
-(4, 'BINALBAGAN', 'CHMSU Binalbagan Campus', 'binalbagan', '2026-2027', 'Prof. Nathaniel P. Mendoza, RGC', 'CPF Binalbagan Official Peer GC', 1, NOW(), NOW());
-
-INSERT INTO `campus_rooms` (`id`, `campus_id`, `room_code`, `room_name`, `capacity`, `is_single_allowed_room`, `created_at`, `updated_at`) VALUES
-(1, 1, 'TESTING_ROOM', 'Testing Room (Guidance Wing)', 6, 1, NOW(), NOW());
-
-INSERT INTO `officer_gc_channels` (`id`, `campus_id`, `academic_year`, `channel_key`, `is_active`, `created_at`, `updated_at`) VALUES
-(1, 1, '2026-2027', 'private-campus.1.officers-gc.2026-2027', 1, NOW(), NOW());
-
-INSERT INTO `users` (`id`, `name`, `email`, `email_verified_at`, `password`, `created_at`, `updated_at`) VALUES
-(1, 'Montemayor, Elena V.', 'adviser@cpf.chmsu.edu.ph', NOW(), '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', NOW(), NOW()),
-(2, 'Mercado, Sofia R.', 'president@cpf.chmsu.edu.ph', NOW(), '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', NOW(), NOW()),
-(3, 'Bautista, Miguel A.', 'vp@cpf.chmsu.edu.ph', NOW(), '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', NOW(), NOW()),
-(4, 'Alvarez, Hannah G.', 'secretary@cpf.chmsu.edu.ph', NOW(), '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', NOW(), NOW()),
-(5, 'Delgado, Liam C.', 'treasurer@cpf.chmsu.edu.ph', NOW(), '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', NOW(), NOW()),
-(6, 'Reyes, Katrina M.', 'katrina@cpf.chmsu.edu.ph', NOW(), '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', NOW(), NOW()),
-(7, 'Tibo-oc, Paul Felippe G.', 'paulfelippegtibooc@gmail.com', NOW(), '$2y$10$92IXUNpkjO0rOQ5byMi.Ye4oKoEa3Ro9llC/.og/at2.uheWG/igi', NOW(), NOW());
-
-INSERT INTO `campus_memberships` (
-    `id`, `user_id`, `campus_id`, `role`, `status`, `enrollment_source`, `recorded_email`,
-    `first_name`, `middle_name`, `last_name`, `full_name_last_first_mi`,
-    `course_year_section`, `sex`, `gender_identity`, `gender_identity_other`,
-    `birthdate`, `active_email`, `active_fb_account`, `cellphone_number`,
-    `added_or_approved_by`, `approved_at`, `is_in_messenger_gc`, `gc_confirmed_by`, `gc_confirmed_at`,
-    `remarks`, `created_at`, `updated_at`
-) VALUES
-(1, 1, 1, 'adviser', 'approved', 'officer_added', 'adviser@cpf.chmsu.edu.ph', 'Elena', 'Villanueva', 'Montemayor', 'Montemayor, Elena V.', 'Guidance Services / Adviser', 'Female', 'Woman', NULL, '1984-05-14', 'adviser@cpf.chmsu.edu.ph', 'Elena Montemayor RGC (Blue blazer at Guidance Office)', '0917-555-0101', 1, NOW(), 1, 1, NOW(), NULL, NOW(), NOW()),
-(2, 2, 1, 'president', 'approved', 'officer_added', 'president@cpf.chmsu.edu.ph', 'Sofia', 'Reyes', 'Mercado', 'Mercado, Sofia R.', 'BS Psychology 4A', 'Female', 'Woman', NULL, '2004-09-21', 'president@cpf.chmsu.edu.ph', 'Sofia Mercado (Wearing CPF cream lanyard)', '0917-555-0102', 1, NOW(), 1, 1, NOW(), NULL, NOW(), NOW()),
-(3, 3, 1, 'vice_president', 'approved', 'officer_added', 'vp@cpf.chmsu.edu.ph', 'Miguel', 'Alvarez', 'Bautista', 'Bautista, Miguel A.', 'BSIT 4B', 'Male', 'Man', NULL, '2004-08-19', 'vp@cpf.chmsu.edu.ph', 'Miguel Bautista (Navy polo at campus courtyard)', '0917-555-0106', 1, NOW(), 1, 2, NOW(), NULL, NOW(), NOW()),
-(4, 4, 1, 'secretary', 'approved', 'officer_added', 'secretary@cpf.chmsu.edu.ph', 'Hannah', 'Gomez', 'Alvarez', 'Alvarez, Hannah G.', 'BSIS 3A', 'Female', 'Woman', NULL, '2005-02-11', 'secretary@cpf.chmsu.edu.ph', 'Hannah Alvarez (White Filipiniana portrait)', '0917-555-0103', 1, NOW(), 1, 2, NOW(), NULL, NOW(), NOW()),
-(5, 5, 1, 'treasurer', 'approved', 'officer_added', 'treasurer@cpf.chmsu.edu.ph', 'Liam', 'Cruz', 'Delgado', 'Delgado, Liam C.', 'BSIT 3B', 'Male', 'Man', NULL, '2005-07-08', 'treasurer@cpf.chmsu.edu.ph', 'Liam Delgado (Holding acoustic guitar outdoors)', '0917-555-0104', 1, NOW(), 1, 2, NOW(), NULL, NOW(), NOW()),
-(6, 6, 1, 'member', 'approved', 'online_form', 'katrina@cpf.chmsu.edu.ph', 'Katrina', 'Mendoza', 'Reyes', 'Reyes, Katrina M.', 'BSIT 4A', 'Female', 'Woman', NULL, '2004-11-03', 'katrina@cpf.chmsu.edu.ph', 'Katrina Reyes (Yellow cardigan in library)', '0917-555-0105', 2, NOW(), 0, NULL, NULL, NULL, NOW(), NOW()),
-(7, 7, 1, 'member', 'pending', 'online_form', 'paulfelippegtibooc@gmail.com', 'Paul Felippe', 'G.', 'Tibo-oc', 'Tibo-oc, Paul Felippe G.', 'BSIT 4A', 'Male', 'Man', NULL, '2004-06-15', 'paulfelippegtibooc@gmail.com', 'Paul Felippe Tibo-oc (CHMSU BSIT uniform portrait)', '0917-555-0199', NULL, NULL, 0, NULL, NULL, NULL, NOW(), NOW());
-
-INSERT INTO `officer_gc_messages` (`channel_id`, `sender_user_id`, `sender_role`, `message_body`, `created_at`) VALUES
-(1, 1, 'adviser', 'Welcome Officers! Please verify the pending A–Z applicants and issue Passkeys once confirmed.', NOW()),
-(1, 2, 'president', 'Noted Dr. Montemayor! Miguel (VP) and I are reviewing the new BSIT/BSIS forms now.', NOW());
-
-SET FOREIGN_KEY_CHECKS = 1;
-
-
--- ============================================================================
--- v5 UPGRADE: BLOCKCHAIN-VERIFIED ACHIEVEMENTS, CERTIFICATES, AND AWARDS
--- ============================================================================
-
-CREATE TABLE IF NOT EXISTS `blockchain_credential_ledgers` (
+CREATE TABLE `blockchain_credential_ledgers` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `block_index` BIGINT UNSIGNED NOT NULL,
     `campus_id` BIGINT UNSIGNED NOT NULL,
     `recipient_user_id` BIGINT UNSIGNED NOT NULL,
-    `issuer_user_id` BIGINT UNSIGNED NULL,
-    `credential_type` VARCHAR(32) NOT NULL COMMENT 'achievement, certificate, award',
+    `issuer_user_id` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `credential_type` VARCHAR(32) NOT NULL,
     `credential_id` BIGINT UNSIGNED NOT NULL,
     `credential_code` VARCHAR(64) NOT NULL,
     `canonical_payload` JSON NOT NULL,
@@ -424,19 +443,20 @@ CREATE TABLE IF NOT EXISTS `blockchain_credential_ledgers` (
     `block_hash` CHAR(64) NOT NULL,
     `driver` VARCHAR(32) NOT NULL DEFAULT 'local_ledger',
     `network` VARCHAR(64) NOT NULL DEFAULT 'cpf-local-chain',
-    `transaction_hash` VARCHAR(128) NULL,
-    `contract_address` VARCHAR(128) NULL,
+    `transaction_hash` VARCHAR(128) NULL DEFAULT NULL,
+    `contract_address` VARCHAR(128) NULL DEFAULT NULL,
     `status` VARCHAR(24) NOT NULL DEFAULT 'anchored',
     `anchored_at` TIMESTAMP NOT NULL,
-    `revoked_at` TIMESTAMP NULL,
-    `revocation_reason` VARCHAR(255) NULL,
-    `created_at` TIMESTAMP NULL,
-    `updated_at` TIMESTAMP NULL,
+    `revoked_at` TIMESTAMP NULL DEFAULT NULL,
+    `revocation_reason` VARCHAR(255) NULL DEFAULT NULL,
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `bcl_block_index_unique` (`block_index`),
     UNIQUE KEY `bcl_payload_hash_unique` (`payload_hash`),
     UNIQUE KEY `bcl_block_hash_unique` (`block_hash`),
     KEY `bcl_credential_code_idx` (`credential_code`),
+    KEY `bcl_transaction_hash_idx` (`transaction_hash`),
     KEY `bcl_credential_lookup_idx` (`credential_type`, `credential_id`),
     KEY `bcl_campus_recipient_idx` (`campus_id`, `recipient_user_id`),
     KEY `bcl_status_network_idx` (`status`, `network`),
@@ -445,7 +465,57 @@ CREATE TABLE IF NOT EXISTS `blockchain_credential_ledgers` (
     CONSTRAINT `bcl_issuer_fk` FOREIGN KEY (`issuer_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-CREATE TABLE IF NOT EXISTS `member_awards` (
+CREATE TABLE `member_achievements` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `campus_id` BIGINT UNSIGNED NOT NULL,
+    `user_id` BIGINT UNSIGNED NOT NULL,
+    `achievement_code` VARCHAR(64) NULL DEFAULT NULL,
+    `title` VARCHAR(160) NOT NULL,
+    `category` VARCHAR(60) NOT NULL DEFAULT 'Peer Facilitation',
+    `achieved_on` DATE NOT NULL,
+    `description` TEXT NULL,
+    `verified_by_user_id` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `blockchain_status` VARCHAR(24) NOT NULL DEFAULT 'unanchored',
+    `credential_hash` CHAR(64) NULL DEFAULT NULL,
+    `blockchain_ledger_id` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `member_achievements_code_unique` (`achievement_code`),
+    KEY `member_achievements_campus_user_idx` (`campus_id`, `user_id`),
+    KEY `member_achievements_hash_idx` (`credential_hash`),
+    CONSTRAINT `member_achievements_campus_fk` FOREIGN KEY (`campus_id`) REFERENCES `campuses` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `member_achievements_user_fk` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `member_achievements_verifier_fk` FOREIGN KEY (`verified_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `member_achievements_ledger_fk` FOREIGN KEY (`blockchain_ledger_id`) REFERENCES `blockchain_credential_ledgers` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `digital_certificates` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `campus_id` BIGINT UNSIGNED NOT NULL,
+    `user_id` BIGINT UNSIGNED NOT NULL,
+    `certificate_code` VARCHAR(64) NOT NULL,
+    `title` VARCHAR(180) NOT NULL,
+    `event_name` VARCHAR(180) NOT NULL,
+    `issued_on` DATE NOT NULL,
+    `file_hdd_path` VARCHAR(255) NULL DEFAULT NULL,
+    `issued_by_user_id` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `blockchain_status` VARCHAR(24) NOT NULL DEFAULT 'unanchored',
+    `credential_hash` CHAR(64) NULL DEFAULT NULL,
+    `blockchain_ledger_id` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `digital_certificates_code_unique` (`certificate_code`),
+    KEY `digital_certificates_campus_user_idx` (`campus_id`, `user_id`),
+    KEY `digital_certificates_hash_idx` (`credential_hash`),
+    CONSTRAINT `digital_certificates_campus_fk` FOREIGN KEY (`campus_id`) REFERENCES `campuses` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `digital_certificates_user_fk` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `digital_certificates_issuer_fk` FOREIGN KEY (`issued_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `digital_certificates_ledger_fk` FOREIGN KEY (`blockchain_ledger_id`) REFERENCES `blockchain_credential_ledgers` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `member_awards` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
     `campus_id` BIGINT UNSIGNED NOT NULL,
     `user_id` BIGINT UNSIGNED NOT NULL,
@@ -455,12 +525,12 @@ CREATE TABLE IF NOT EXISTS `member_awards` (
     `academic_year` VARCHAR(20) NOT NULL DEFAULT '2026-2027',
     `awarded_on` DATE NOT NULL,
     `citation` TEXT NULL,
-    `issued_by_user_id` BIGINT UNSIGNED NULL,
+    `issued_by_user_id` BIGINT UNSIGNED NULL DEFAULT NULL,
     `blockchain_status` VARCHAR(24) NOT NULL DEFAULT 'unanchored',
-    `credential_hash` CHAR(64) NULL,
-    `blockchain_ledger_id` BIGINT UNSIGNED NULL,
-    `created_at` TIMESTAMP NULL,
-    `updated_at` TIMESTAMP NULL,
+    `credential_hash` CHAR(64) NULL DEFAULT NULL,
+    `blockchain_ledger_id` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
     PRIMARY KEY (`id`),
     UNIQUE KEY `member_awards_code_unique` (`award_code`),
     KEY `member_awards_campus_user_idx` (`campus_id`, `user_id`),
@@ -471,31 +541,284 @@ CREATE TABLE IF NOT EXISTS `member_awards` (
     CONSTRAINT `member_awards_ledger_fk` FOREIGN KEY (`blockchain_ledger_id`) REFERENCES `blockchain_credential_ledgers` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-ALTER TABLE `member_achievements`
-    ADD COLUMN `achievement_code` VARCHAR(64) NULL UNIQUE AFTER `user_id`,
-    ADD COLUMN `blockchain_status` VARCHAR(24) NOT NULL DEFAULT 'unanchored' AFTER `verified_by_user_id`,
-    ADD COLUMN `credential_hash` CHAR(64) NULL AFTER `blockchain_status`,
-    ADD COLUMN `blockchain_ledger_id` BIGINT UNSIGNED NULL AFTER `credential_hash`,
-    ADD KEY `member_achievements_hash_idx` (`credential_hash`),
-    ADD CONSTRAINT `member_achievements_ledger_fk` FOREIGN KEY (`blockchain_ledger_id`) REFERENCES `blockchain_credential_ledgers` (`id`) ON DELETE SET NULL;
-
-ALTER TABLE `digital_certificates`
-    ADD COLUMN `blockchain_status` VARCHAR(24) NOT NULL DEFAULT 'unanchored' AFTER `issued_by_user_id`,
-    ADD COLUMN `credential_hash` CHAR(64) NULL AFTER `blockchain_status`,
-    ADD COLUMN `blockchain_ledger_id` BIGINT UNSIGNED NULL AFTER `credential_hash`,
-    ADD KEY `digital_certificates_hash_idx` (`credential_hash`),
-    ADD CONSTRAINT `digital_certificates_ledger_fk` FOREIGN KEY (`blockchain_ledger_id`) REFERENCES `blockchain_credential_ledgers` (`id`) ON DELETE SET NULL;
-
-CREATE TABLE IF NOT EXISTS `blockchain_verification_logs` (
+CREATE TABLE `blockchain_verification_logs` (
     `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
-    `ledger_id` BIGINT UNSIGNED NULL,
+    `ledger_id` BIGINT UNSIGNED NULL DEFAULT NULL,
     `queried_identifier` VARCHAR(128) NOT NULL,
-    `verified_by_user_id` BIGINT UNSIGNED NULL,
-    `verifier_ip` VARCHAR(45) NULL,
-    `verification_result` VARCHAR(24) NOT NULL COMMENT 'valid, tampered, revoked, not_found',
+    `verified_by_user_id` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `verifier_ip` VARCHAR(45) NULL DEFAULT NULL,
+    `verification_result` VARCHAR(24) NOT NULL,
     `checked_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
     KEY `bvl_queried_identifier_idx` (`queried_identifier`),
     CONSTRAINT `bvl_ledger_fk` FOREIGN KEY (`ledger_id`) REFERENCES `blockchain_credential_ledgers` (`id`) ON DELETE CASCADE,
     CONSTRAINT `bvl_verifier_fk` FOREIGN KEY (`verified_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- -----------------------------------------------------------------------------
+-- 5. COMMUNITY HUB, ELECTIONS, PAYMENTS, QUOTES, EVENTS & ADVISER HANDOVER
+-- -----------------------------------------------------------------------------
+CREATE TABLE `time_capsules` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `campus_id` BIGINT UNSIGNED NOT NULL,
+    `user_id` BIGINT UNSIGNED NOT NULL,
+    `title` VARCHAR(160) NOT NULL,
+    `letter_style` VARCHAR(40) NOT NULL DEFAULT 'classic',
+    `encrypted_message` TEXT NOT NULL,
+    `unlock_at` TIMESTAMP NOT NULL,
+    `is_opened` TINYINT(1) NOT NULL DEFAULT 0,
+    `opened_at` TIMESTAMP NULL DEFAULT NULL,
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY `time_capsules_user_unlock_idx` (`user_id`, `unlock_at`),
+    CONSTRAINT `time_capsules_campus_fk` FOREIGN KEY (`campus_id`) REFERENCES `campuses` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `time_capsules_user_fk` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `school_year_archives` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `campus_id` BIGINT UNSIGNED NOT NULL,
+    `academic_year` VARCHAR(20) NOT NULL,
+    `archive_type` VARCHAR(40) NOT NULL,
+    `title` VARCHAR(180) NOT NULL,
+    `zip_file_name` VARCHAR(180) NOT NULL,
+    `hdd_storage_path` VARCHAR(255) NOT NULL,
+    `sha256_checksum` CHAR(64) NOT NULL,
+    `archived_by_user_id` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `archived_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `sy_archives_lookup_idx` (`campus_id`, `academic_year`, `archive_type`),
+    CONSTRAINT `sy_archives_campus_fk` FOREIGN KEY (`campus_id`) REFERENCES `campuses` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `sy_archives_user_fk` FOREIGN KEY (`archived_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `elections` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `campus_id` BIGINT UNSIGNED NOT NULL,
+    `academic_year` VARCHAR(20) NOT NULL,
+    `title` VARCHAR(180) NOT NULL,
+    `status` VARCHAR(24) NOT NULL DEFAULT 'draft',
+    `current_position` VARCHAR(60) NULL DEFAULT 'president',
+    `current_phase` VARCHAR(24) NOT NULL DEFAULT 'voting',
+    `round_number` TINYINT UNSIGNED NOT NULL DEFAULT 1,
+    `position_results` JSON NULL,
+    `opens_at` TIMESTAMP NULL DEFAULT NULL,
+    `closes_at` TIMESTAMP NULL DEFAULT NULL,
+    `created_by_user_id` BIGINT UNSIGNED NOT NULL,
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    CONSTRAINT `elections_campus_fk` FOREIGN KEY (`campus_id`) REFERENCES `campuses` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `elections_creator_fk` FOREIGN KEY (`created_by_user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `election_candidates` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `election_id` BIGINT UNSIGNED NOT NULL,
+    `user_id` BIGINT UNSIGNED NOT NULL,
+    `position` VARCHAR(60) NOT NULL,
+    `platform` TEXT NULL,
+    `nominated_by_user_id` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `nomination_status` VARCHAR(20) NOT NULL DEFAULT 'accepted',
+    `is_tie_contender` TINYINT(1) NOT NULL DEFAULT 0,
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `election_candidates_unique` (`election_id`, `user_id`, `position`),
+    CONSTRAINT `election_candidates_election_fk` FOREIGN KEY (`election_id`) REFERENCES `elections` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `election_candidates_user_fk` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `election_candidates_nominator_fk` FOREIGN KEY (`nominated_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `election_votes` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `election_id` BIGINT UNSIGNED NOT NULL,
+    `candidate_id` BIGINT UNSIGNED NOT NULL,
+    `voter_user_id` BIGINT UNSIGNED NOT NULL,
+    `position` VARCHAR(60) NOT NULL,
+    `round_number` TINYINT UNSIGNED NOT NULL DEFAULT 1,
+    `cast_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `election_votes_one_per_position_round` (`election_id`, `voter_user_id`, `position`, `round_number`),
+    KEY `election_votes_election_id_idx` (`election_id`),
+    CONSTRAINT `election_votes_election_fk` FOREIGN KEY (`election_id`) REFERENCES `elections` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `election_votes_candidate_fk` FOREIGN KEY (`candidate_id`) REFERENCES `election_candidates` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `election_votes_voter_fk` FOREIGN KEY (`voter_user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `election_opt_outs` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `election_id` BIGINT UNSIGNED NOT NULL,
+    `user_id` BIGINT UNSIGNED NOT NULL,
+    `opted_out_at` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `election_opt_outs_unique` (`election_id`, `user_id`),
+    CONSTRAINT `election_opt_outs_election_fk` FOREIGN KEY (`election_id`) REFERENCES `elections` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `election_opt_outs_user_fk` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `payment_destinations` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `campus_id` BIGINT UNSIGNED NOT NULL,
+    `channel` VARCHAR(40) NOT NULL,
+    `account_name` VARCHAR(140) NOT NULL,
+    `account_number` VARCHAR(80) NOT NULL,
+    `is_active` TINYINT(1) NOT NULL DEFAULT 1,
+    `approved_by_adviser_id` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    CONSTRAINT `payment_destinations_campus_fk` FOREIGN KEY (`campus_id`) REFERENCES `campuses` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `payment_destinations_adviser_fk` FOREIGN KEY (`approved_by_adviser_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `payment_submissions` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `campus_id` BIGINT UNSIGNED NOT NULL,
+    `user_id` BIGINT UNSIGNED NOT NULL,
+    `destination_id` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `purpose` VARCHAR(140) NOT NULL,
+    `amount` DECIMAL(10, 2) NOT NULL,
+    `reference_number` VARCHAR(100) NOT NULL,
+    `receipt_hdd_path` VARCHAR(255) NULL DEFAULT NULL,
+    `status` VARCHAR(24) NOT NULL DEFAULT 'pending',
+    `validated_by_treasurer_id` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `validated_at` TIMESTAMP NULL DEFAULT NULL,
+    `treasurer_notes` VARCHAR(255) NULL DEFAULT NULL,
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY `payment_submissions_campus_status_idx` (`campus_id`, `status`),
+    CONSTRAINT `payment_submissions_campus_fk` FOREIGN KEY (`campus_id`) REFERENCES `campuses` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `payment_submissions_user_fk` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `payment_submissions_dest_fk` FOREIGN KEY (`destination_id`) REFERENCES `payment_destinations` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `payment_submissions_treasurer_fk` FOREIGN KEY (`validated_by_treasurer_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `peer_quotes` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `campus_id` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `submitted_by_user_id` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `quote_text` TEXT NOT NULL,
+    `author_name` VARCHAR(120) NOT NULL DEFAULT 'CPF Peer Circle',
+    `mood_tag` VARCHAR(40) NOT NULL DEFAULT 'Calm',
+    `is_approved` TINYINT(1) NOT NULL DEFAULT 1,
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    CONSTRAINT `peer_quotes_campus_fk` FOREIGN KEY (`campus_id`) REFERENCES `campuses` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `peer_quotes_submitter_fk` FOREIGN KEY (`submitted_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `campus_events` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `campus_id` BIGINT UNSIGNED NOT NULL,
+    `title` VARCHAR(160) NOT NULL,
+    `description` TEXT NULL,
+    `location` VARCHAR(160) NULL DEFAULT NULL,
+    `event_date` DATE NOT NULL,
+    `start_time` VARCHAR(5) NOT NULL,
+    `end_time` VARCHAR(5) NOT NULL,
+    `status` VARCHAR(24) NOT NULL DEFAULT 'pending_approval',
+    `reflection_enabled` TINYINT(1) NOT NULL DEFAULT 0,
+    `pending_reflection_enabled` TINYINT(1) NULL DEFAULT NULL,
+    `reflection_requested_by_user_id` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `reflection_requested_at` TIMESTAMP NULL DEFAULT NULL,
+    `created_by_user_id` BIGINT UNSIGNED NOT NULL,
+    `approved_by_user_id` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `approved_at` TIMESTAMP NULL DEFAULT NULL,
+    `cancelled_by_user_id` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `cancelled_at` TIMESTAMP NULL DEFAULT NULL,
+    `cancellation_reason` VARCHAR(500) NULL DEFAULT NULL,
+    `activated_at` TIMESTAMP NULL DEFAULT NULL,
+    `completed_at` TIMESTAMP NULL DEFAULT NULL,
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY `campus_events_campus_date_idx` (`campus_id`, `event_date`),
+    CONSTRAINT `campus_events_campus_fk` FOREIGN KEY (`campus_id`) REFERENCES `campuses` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `campus_events_reflection_req_fk` FOREIGN KEY (`reflection_requested_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `campus_events_creator_fk` FOREIGN KEY (`created_by_user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `campus_events_approver_fk` FOREIGN KEY (`approved_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `campus_events_canceller_fk` FOREIGN KEY (`cancelled_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `campus_event_attendances` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `campus_event_id` BIGINT UNSIGNED NOT NULL,
+    `user_id` BIGINT UNSIGNED NOT NULL,
+    `logged_in_at` TIMESTAMP NULL DEFAULT NULL,
+    `logged_in_by_user_id` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `logged_out_at` TIMESTAMP NULL DEFAULT NULL,
+    `logged_out_by_user_id` BIGINT UNSIGNED NULL DEFAULT NULL,
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `campus_event_attendances_unique` (`campus_event_id`, `user_id`),
+    CONSTRAINT `cea_event_fk` FOREIGN KEY (`campus_event_id`) REFERENCES `campus_events` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `cea_user_fk` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `cea_in_by_fk` FOREIGN KEY (`logged_in_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL,
+    CONSTRAINT `cea_out_by_fk` FOREIGN KEY (`logged_out_by_user_id`) REFERENCES `users` (`id`) ON DELETE SET NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `campus_event_reflections` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `campus_event_id` BIGINT UNSIGNED NOT NULL,
+    `user_id` BIGINT UNSIGNED NOT NULL,
+    `time_capsule_id` BIGINT UNSIGNED NOT NULL,
+    `submitted_at` TIMESTAMP NOT NULL,
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    UNIQUE KEY `campus_event_reflections_unique` (`campus_event_id`, `user_id`),
+    CONSTRAINT `cer_event_fk` FOREIGN KEY (`campus_event_id`) REFERENCES `campus_events` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `cer_user_fk` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `cer_capsule_fk` FOREIGN KEY (`time_capsule_id`) REFERENCES `time_capsules` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `campus_event_notifications` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `campus_id` BIGINT UNSIGNED NOT NULL,
+    `campus_event_id` BIGINT UNSIGNED NOT NULL,
+    `user_id` BIGINT UNSIGNED NOT NULL,
+    `type` VARCHAR(40) NOT NULL,
+    `title` VARCHAR(180) NOT NULL,
+    `message` TEXT NOT NULL,
+    `read_at` TIMESTAMP NULL DEFAULT NULL,
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY `campus_event_notifications_user_read_idx` (`user_id`, `read_at`),
+    CONSTRAINT `cen_campus_fk` FOREIGN KEY (`campus_id`) REFERENCES `campuses` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `cen_event_fk` FOREIGN KEY (`campus_event_id`) REFERENCES `campus_events` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `cen_user_fk` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE `adviser_handovers` (
+    `id` BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
+    `campus_id` BIGINT UNSIGNED NOT NULL,
+    `from_user_id` BIGINT UNSIGNED NOT NULL,
+    `to_user_id` BIGINT UNSIGNED NOT NULL,
+    `to_membership_id` BIGINT UNSIGNED NOT NULL,
+    `status` VARCHAR(24) NOT NULL DEFAULT 'pending',
+    `outgoing_role` VARCHAR(32) NOT NULL DEFAULT 'member',
+    `confirmation_code` VARCHAR(12) NOT NULL,
+    `handover_notes` TEXT NULL,
+    `initiated_at` TIMESTAMP NOT NULL,
+    `expires_at` TIMESTAMP NOT NULL,
+    `responded_at` TIMESTAMP NULL DEFAULT NULL,
+    `created_at` TIMESTAMP NULL DEFAULT NULL,
+    `updated_at` TIMESTAMP NULL DEFAULT NULL,
+    PRIMARY KEY (`id`),
+    KEY `adviser_handovers_campus_status_idx` (`campus_id`, `status`),
+    KEY `adviser_handovers_to_user_status_idx` (`to_user_id`, `status`),
+    CONSTRAINT `ah_campus_fk` FOREIGN KEY (`campus_id`) REFERENCES `campuses` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `ah_from_user_fk` FOREIGN KEY (`from_user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `ah_to_user_fk` FOREIGN KEY (`to_user_id`) REFERENCES `users` (`id`) ON DELETE CASCADE,
+    CONSTRAINT `ah_to_membership_fk` FOREIGN KEY (`to_membership_id`) REFERENCES `campus_memberships` (`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+SET FOREIGN_KEY_CHECKS = 1;
