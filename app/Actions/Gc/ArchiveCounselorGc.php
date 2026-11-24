@@ -14,14 +14,14 @@ class ArchiveCounselorGc
 {
     /**
      * Export the campus Counselors Private GC thread into a SHA-256 verified ZIP
-     * archive, index it in school_year_archives, and clear the live thread.
+     * archive, index it in school_year_archives, and clear the archived messages.
      *
      * @return array{archive: SchoolYearArchive, total_messages: int}
      */
     public function handle(User $actor, int $campusId, string $archiveDir): array
     {
         return DB::transaction(function () use ($actor, $campusId, $archiveDir): array {
-            $campus = Campus::query()->find($campusId);
+            $campus = Campus::query()->whereKey($campusId)->lockForUpdate()->first();
             $academicYear = $campus?->current_academic_year ?: sprintf('%d-%d', now()->year, now()->year + 1);
 
             $messages = CounselorGcMessage::query()
@@ -31,20 +31,27 @@ class ArchiveCounselorGc
                 ->orderBy('id')
                 ->get();
 
+            abort_if(
+                $messages->isEmpty(),
+                422,
+                'There are no Counselors Private GC messages to archive.',
+            );
+
             if (! is_dir($archiveDir)) {
                 mkdir($archiveDir, 0755, true);
             }
 
             $zipName = sprintf(
-                'cpf_campus_%d_counselors_gc_%s_%s.zip',
+                'cpf_campus_%d_counselors_gc_%s_%s_%s.zip',
                 $campusId,
                 Str::slug($academicYear),
                 now()->format('Ymd_His'),
+                Str::lower(Str::random(6)),
             );
             $zipPath = rtrim($archiveDir, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.$zipName;
 
             $zip = new ZipArchive();
-            if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+            if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::EXCL) !== true) {
                 throw new \RuntimeException("Unable to create Counselors GC archive ZIP at {$zipPath}");
             }
 
@@ -69,6 +76,7 @@ class ArchiveCounselorGc
 
             CounselorGcMessage::query()
                 ->where('campus_id', $campusId)
+                ->whereIn('id', $messages->pluck('id')->all())
                 ->delete();
 
             return [

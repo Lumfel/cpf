@@ -208,6 +208,10 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
 
     public function canAccessAlumniArchive(): bool
     {
+        if ($this->verifiedRole() === CpfRole::GuidanceCounselor) {
+            return false;
+        }
+
         return $this->isAlumni() || $this->verifiedRole() !== null;
     }
 }

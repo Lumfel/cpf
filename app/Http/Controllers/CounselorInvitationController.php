@@ -47,15 +47,11 @@ class CounselorInvitationController extends Controller
             ? trim((string) $validated['counselor_name'])
             : null;
 
-        $existingUser = User::query()->where('email', $email)->first();
-        if ($existingUser) {
-            $existingMembership = $existingUser->primaryMembership;
-            abort_if(
-                $existingMembership !== null && $existingMembership->status === MembershipStatus::Approved,
-                422,
-                'A verified account with this email is already registered in CPF.',
-            );
-        }
+        abort_if(
+            User::query()->where('email', $email)->exists(),
+            422,
+            'An account with this email already exists in CPF and cannot be invited as a new Guidance Counselor.',
+        );
 
         $token = Str::random(48);
         $otpCode = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
@@ -108,7 +104,7 @@ class CounselorInvitationController extends Controller
             $emailStatus = 'failed';
         }
 
-        return response()->json([
+        $payload = [
             'status' => 'invited',
             'email_status' => $emailStatus,
             'invitation' => [
@@ -117,9 +113,14 @@ class CounselorInvitationController extends Controller
                 'counselor_name' => $invitation->counselor_name,
                 'expires_at' => $invitation->expires_at->toDayDateTimeString(),
             ],
-            'invite_url' => $inviteUrl,
-            'otp_code' => $otpCode,
-        ], 201);
+        ];
+
+        if (app()->isLocal()) {
+            $payload['invite_url'] = $inviteUrl;
+            $payload['otp_code'] = $otpCode;
+        }
+
+        return response()->json($payload, 201);
     }
 
     public function show(Request $request, string $token): Response
@@ -191,6 +192,19 @@ class CounselorInvitationController extends Controller
                 'This Guidance Counselor invitation has already been accepted or has expired.',
             );
 
+            $inviterStillAdviser = CampusMembership::query()
+                ->where('user_id', $invitation->invited_by_user_id)
+                ->where('campus_id', $invitation->campus_id)
+                ->where('role', CpfRole::Adviser->value)
+                ->where('status', MembershipStatus::Approved->value)
+                ->exists();
+
+            abort_unless(
+                $inviterStillAdviser,
+                403,
+                'This invitation is no longer valid because the inviting Club Adviser is no longer active on this campus.',
+            );
+
             if (! Hash::check((string) $validated['otp_code'], $invitation->otp_hash)) {
                 throw ValidationException::withMessages([
                     'otp_code' => 'Invalid 6-digit OTP verification code.',
@@ -204,32 +218,21 @@ class CounselorInvitationController extends Controller
             );
             $phone = trim((string) ($validated['cellphone_number'] ?? ''));
 
-            $existingUser = User::query()->where('email', $invitation->email)->lockForUpdate()->first();
-            if ($existingUser && $existingUser->primaryMembership?->status === MembershipStatus::Approved) {
-                abort(422, 'An approved account with this email already exists.');
-            }
+            abort_if(
+                User::query()->where('email', $invitation->email)->lockForUpdate()->exists(),
+                422,
+                'An account with this email already exists and cannot be overwritten via counselor invitation.',
+            );
 
-            if ($existingUser) {
-                $existingUser->fill([
-                    'name' => $fullName,
-                    'password' => Hash::make((string) $validated['password']),
-                    'must_change_password' => false,
-                    'temporary_password_issued_at' => null,
-                ]);
-                $existingUser->email_verified_at = now();
-                $existingUser->save();
-                $user = $existingUser;
-            } else {
-                $user = new User([
-                    'name' => $fullName,
-                    'email' => $invitation->email,
-                    'password' => Hash::make((string) $validated['password']),
-                    'must_change_password' => false,
-                    'temporary_password_issued_at' => null,
-                ]);
-                $user->email_verified_at = now();
-                $user->save();
-            }
+            $user = new User([
+                'name' => $fullName,
+                'email' => $invitation->email,
+                'password' => Hash::make((string) $validated['password']),
+                'must_change_password' => false,
+                'temporary_password_issued_at' => null,
+            ]);
+            $user->email_verified_at = now();
+            $user->save();
 
             $membership = CampusMembership::updateOrCreate(
                 [

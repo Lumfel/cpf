@@ -290,24 +290,33 @@ class GuidanceCounselorReferralAndAnnouncementsTest extends TestCase
             ->postJson('/counselor-invitations', ['email' => 'new.counselor@chmsu.edu.ph'])
             ->assertForbidden();
 
-        // Club Adviser invites counselor by email -> generates signed link + 6-digit OTP expiring in 24h
-        $inviteRes = $this->actingAs($adviser)
+        // Club Adviser invites counselor by email -> sends signed link + 6-digit OTP via email without leaking secrets in non-local JSON
+        $this->actingAs($adviser)
             ->postJson('/counselor-invitations', [
                 'email' => 'ramon.counselor@chmsu.edu.ph',
                 'counselor_name' => 'Ramon P. Velasco, RGC',
             ])
             ->assertCreated()
-            ->assertJsonPath('status', 'invited');
+            ->assertJsonPath('status', 'invited')
+            ->assertJsonMissingPath('invite_url')
+            ->assertJsonMissingPath('otp_code');
 
-        $inviteUrl = (string) $inviteRes->json('invite_url');
-        $otpCode = (string) $inviteRes->json('otp_code');
-        $this->assertMatchesRegularExpression('/^\d{6}$/', $otpCode);
-
+        $inviteUrl = '';
+        $otpCode = '';
         Notification::assertSentOnDemand(
             CounselorInviteOtpNotification::class,
-            fn (CounselorInviteOtpNotification $n, array $channels, object $notifiable) => ($notifiable->routes['mail'] ?? null) === 'ramon.counselor@chmsu.edu.ph'
-                && $n->otpCode === $otpCode,
+            function (CounselorInviteOtpNotification $n, array $channels, object $notifiable) use (&$inviteUrl, &$otpCode): bool {
+                if (($notifiable->routes['mail'] ?? null) !== 'ramon.counselor@chmsu.edu.ph') {
+                    return false;
+                }
+                $inviteUrl = $n->inviteUrl;
+                $otpCode = $n->otpCode;
+
+                return true;
+            },
         );
+        $this->assertMatchesRegularExpression('/^\d{6}$/', $otpCode);
+        $this->assertNotEmpty($inviteUrl);
 
         $invitation = CounselorInvitation::query()->where('email', 'ramon.counselor@chmsu.edu.ph')->firstOrFail();
 
@@ -356,23 +365,36 @@ class GuidanceCounselorReferralAndAnnouncementsTest extends TestCase
         $this->assertNotNull($invitation->fresh()->accepted_at);
 
         // Expired (>24h) invite is rejected
-        $expiredRes = $this->actingAs($adviser)
+        $this->actingAs($adviser)
             ->postJson('/counselor-invitations', ['email' => 'expired.counselor@chmsu.edu.ph'])
             ->assertCreated();
 
+        $expiredUrl = '';
+        Notification::assertSentOnDemand(
+            CounselorInviteOtpNotification::class,
+            function (CounselorInviteOtpNotification $n, array $channels, object $notifiable) use (&$expiredUrl): bool {
+                if (($notifiable->routes['mail'] ?? null) !== 'expired.counselor@chmsu.edu.ph') {
+                    return false;
+                }
+                $expiredUrl = $n->inviteUrl;
+
+                return true;
+            },
+        );
+
         $this->travel(25)->hours();
-        $this->get((string) $expiredRes->json('invite_url'))->assertForbidden();
+        $this->get($expiredUrl)->assertForbidden();
     }
 
     public function test_adviser_handover_supports_selecting_existing_guidance_counselor_without_breaking_first_boot(): void
     {
-        // Verify First-Boot setup remains active when no Club Adviser exists, even if a GuidanceCounselor row exists
+        // Verify First-Boot setup is active on blank system and permanently latches once any user exists
         $this->seed(BlankSystemSeeder::class);
         $this->assertTrue(FirstBootSetupController::needsAdviserSetup());
 
         $alijis = Campus::where('code', 'ALIJIS')->firstOrFail();
         $existingCounselor = $this->createCampusUser(CpfRole::GuidanceCounselor, 'Delos Santos, Clarissa R.', MembershipStatus::Approved, $alijis);
-        $this->assertTrue(FirstBootSetupController::needsAdviserSetup());
+        $this->assertFalse(FirstBootSetupController::needsAdviserSetup());
 
         // Now create Club Adviser and a student President
         $adviser = $this->createCampusUser(CpfRole::Adviser, 'Montemayor, Elena V.', MembershipStatus::Approved, $alijis);

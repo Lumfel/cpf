@@ -15,6 +15,7 @@ use App\Services\ClubTenureService;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
@@ -24,6 +25,10 @@ class FirstBootSetupController extends Controller
     public static function needsAdviserSetup(): bool
     {
         try {
+            if (User::query()->exists()) {
+                return false;
+            }
+
             return CampusMembership::query()
                 ->where('role', CpfRole::Adviser->value)
                 ->where('status', MembershipStatus::Approved->value)
@@ -38,11 +43,11 @@ class FirstBootSetupController extends Controller
         abort_unless(
             self::needsAdviserSetup(),
             403,
-            'First-boot setup is locked because a Club Adviser already exists.',
+            'First-boot setup is permanently locked because the portal has already been initialized.',
         );
 
         $validated = $request->validate([
-            'campus_id' => ['nullable', 'integer', 'exists:campuses,id'],
+            'campus_id' => ['nullable', 'integer', Rule::exists('campuses', 'id')->where('is_active', true)],
             'campus_name' => ['nullable', 'string', 'max:160'],
             'academic_year' => ['required', 'string', 'max:20'],
             'first_name' => ['required', 'string', 'max:100'],
@@ -54,20 +59,21 @@ class FirstBootSetupController extends Controller
             'cellphone_number' => ['nullable', 'string', 'max:30'],
         ]);
 
-        [$adviser, $campus, $fullName] = DB::transaction(function () use ($validated): array {
-            $campus = isset($validated['campus_id']) && $validated['campus_id']
-                ? Campus::query()->whereKey($validated['campus_id'])->lockForUpdate()->first()
-                : Campus::query()->where('is_active', true)->orderBy('id')->lockForUpdate()->first();
+        [$adviser, $campus, $fullName] = Cache::lock('cpf:first-boot', 10)->block(5, function () use ($validated): array {
+            return DB::transaction(function () use ($validated): array {
+                $campus = isset($validated['campus_id']) && $validated['campus_id']
+                    ? Campus::query()->whereKey($validated['campus_id'])->where('is_active', true)->lockForUpdate()->first()
+                    : Campus::query()->where('is_active', true)->orderBy('id')->lockForUpdate()->first();
 
-            if (! $campus) {
-                $campus = Campus::query()->orderBy('id')->lockForUpdate()->first();
-            }
+                if (! $campus) {
+                    $campus = Campus::query()->orderBy('id')->lockForUpdate()->first();
+                }
 
-            abort_unless(
-                self::needsAdviserSetup(),
-                403,
-                'First-boot setup is locked because a Club Adviser already exists.',
-            );
+                abort_unless(
+                    self::needsAdviserSetup(),
+                    403,
+                    'First-boot setup is permanently locked because the portal has already been initialized.',
+                );
 
             $customCampusName = trim((string) ($validated['campus_name'] ?? ''));
 
@@ -178,6 +184,7 @@ class FirstBootSetupController extends Controller
             }
 
             return [$adviser, $campus, $fullName];
+            });
         });
 
         Auth::login($adviser, true);

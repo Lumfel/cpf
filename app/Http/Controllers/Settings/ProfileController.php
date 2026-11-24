@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Settings;
 
+use App\Enums\MembershipStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
 use App\Models\User;
@@ -110,27 +111,36 @@ class ProfileController extends Controller
     {
         $viewer = $request->user();
         $isSelf = $viewer !== null && $viewer->id === $targetUser->id;
-        $viewerCampusId = $viewer?->primaryMembership?->campus_id;
-        $targetCampusId = $targetUser->primaryMembership?->campus_id;
+        $viewerMembership = $viewer?->primaryMembership;
+        $targetMembership = $targetUser->primaryMembership;
 
         abort_unless(
-            $isSelf || ($viewerCampusId !== null && $viewerCampusId === $targetCampusId),
+            $viewer !== null && $viewer->verifiedRole() !== null,
             403,
-            'You can only view profile pictures of members in your campus chapter.',
+            'An approved CPF membership is required to view member profile pictures.',
+        );
+
+        $targetEligible = $isSelf || (
+            $viewerMembership !== null
+            && $targetMembership !== null
+            && $viewerMembership->campus_id === $targetMembership->campus_id
+            && in_array($targetMembership->status, [MembershipStatus::Approved, MembershipStatus::Alumni], true)
+        );
+
+        abort_unless(
+            $targetEligible,
+            403,
+            'You can only view profile pictures of approved or former members in your campus chapter.',
         );
 
         $path = $targetUser->profile_photo_path;
-        $disk = null;
 
-        if ($path && Storage::disk('local')->exists($path)) {
-            $disk = 'local';
-        } elseif ($path && Storage::disk('public')->exists($path)) {
-            $disk = 'public';
-        }
+        abort_unless(
+            is_string($path) && $path !== '' && Storage::disk('local')->exists($path),
+            404,
+        );
 
-        abort_unless($disk !== null, 404);
-
-        return Storage::disk($disk)->response($path, null, [
+        return Storage::disk('local')->response($path, null, [
             'Cache-Control' => 'private, max-age=86400',
         ]);
     }

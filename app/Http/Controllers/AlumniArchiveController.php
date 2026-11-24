@@ -378,9 +378,12 @@ class AlumniArchiveController extends Controller
         $membership = $user?->primaryMembership;
 
         abort_unless(
-            $user && $user->canAccessAlumniArchive() && $membership?->campus_id === $archive->campus_id,
+            $user
+            && $user->verifiedRole() !== CpfRole::GuidanceCounselor
+            && $user->canAccessAlumniArchive()
+            && $membership?->campus_id === $archive->campus_id,
             403,
-            'Only verified active or former members of this campus may view archived GC transcripts.',
+            'Only verified active or former club members and the Club Adviser may view archived Officers GC transcripts.',
         );
 
         $path = $archive->hdd_storage_path;

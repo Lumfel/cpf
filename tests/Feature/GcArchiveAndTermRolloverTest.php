@@ -97,10 +97,12 @@ class GcArchiveAndTermRolloverTest extends TestCase
             ->postJson("/officers-gc/{$channel->id}/archive")
             ->assertOk()
             ->assertJsonPath('status', 'archived')
+            ->assertJsonMissingPath('archive.hdd_storage_path')
             ->assertJsonPath('next_channel.is_active', true)
             ->assertJsonPath('next_channel.academic_year', '2027-2028');
 
-        $zipPath = (string) $res->json('archive.hdd_storage_path');
+        $archive = OfficerGcArchive::findOrFail((int) $res->json('archive.id'));
+        $zipPath = (string) $archive->hdd_storage_path;
         $nextChannelId = (int) $res->json('next_channel.id');
 
         try {
@@ -199,10 +201,12 @@ class GcArchiveAndTermRolloverTest extends TestCase
             ->postJson('/counselors-gc/archive')
             ->assertOk()
             ->assertJsonPath('status', 'archived')
+            ->assertJsonMissingPath('archive.hdd_storage_path')
             ->assertJsonPath('total_messages', 1)
             ->assertJsonPath('archive.archive_type', 'counselor_gc');
 
-        $zipPath = (string) $res->json('archive.hdd_storage_path');
+        $archive = SchoolYearArchive::findOrFail((int) $res->json('archive.id'));
+        $zipPath = (string) $archive->hdd_storage_path;
 
         try {
             $this->assertFileExists($zipPath);

@@ -188,29 +188,24 @@ class CampusMembershipController extends Controller
 
         if (! $actor) {
             $email = strtolower(trim((string) $validated['active_email']));
-            $existing = User::query()->where('email', $email)->first();
 
-            if ($existing && $existing->primaryMembership?->status === MembershipStatus::Approved) {
+            if (User::query()->where('email', $email)->exists()) {
                 throw ValidationException::withMessages([
-                    'active_email' => 'An approved CPF account with this email already exists. Please sign in instead.',
+                    'active_email' => 'An account with this email already exists. Please sign in.',
                 ]);
             }
 
-            if ($existing) {
-                $actor = $existing;
-            } else {
-                $actor = new User([
-                    'name' => CampusMembership::formatLastFirstMi(
-                        (string) $validated['first_name'],
-                        $validated['middle_name'] ?? null,
-                        (string) $validated['last_name'],
-                    ),
-                    'email' => $email,
-                    'password' => Hash::make(Str::password(16)),
-                ]);
-                $actor->email_verified_at = now();
-                $actor->save();
-            }
+            $actor = new User([
+                'name' => CampusMembership::formatLastFirstMi(
+                    (string) $validated['first_name'],
+                    $validated['middle_name'] ?? null,
+                    (string) $validated['last_name'],
+                ),
+                'email' => $email,
+                'password' => Hash::make(Str::password(16)),
+            ]);
+            $actor->email_verified_at = now();
+            $actor->save();
         }
 
         $action->handle($actor, $validated);
@@ -247,7 +242,20 @@ class CampusMembershipController extends Controller
     {
         $actor = $this->resolveActor($request);
         abort_if(! $actor, 401);
-        Gate::forUser($actor)->authorize('addOrApproveMember', $membership);
+
+        Gate::forUser($actor)->authorize('addOrApproveMember', CampusMembership::class);
+        abort_unless(
+            $actor->primaryMembership?->campus_id === $membership->campus_id,
+            403,
+            'You can only approve membership applications for your own campus.',
+        );
+
+        abort_unless(
+            $membership->status === MembershipStatus::Pending,
+            422,
+            'Only pending membership applications can be approved.',
+        );
+
         $result = $action->approveApplication($actor, $membership, $request->input('remarks'));
         $approved = $result['membership'];
 
@@ -304,6 +312,12 @@ class CampusMembershipController extends Controller
         Gate::forUser($actor)->authorize('assignRole', [$membership, $newRole]);
 
         abort_if(
+            $membership->role === CpfRole::GuidanceCounselor && $newRole !== CpfRole::GuidanceCounselor,
+            422,
+            'Guidance Counselors cannot be moved into student club roles. Use the Adviser Handover tab to transfer Club Adviser authority.',
+        );
+
+        abort_if(
             $newRole === CpfRole::Adviser && $membership->role !== CpfRole::Adviser,
             422,
             'Club Adviser authority can only be transferred to an incoming Guidance Counselor via the Adviser Handover tab.',
@@ -315,21 +329,29 @@ class CampusMembershipController extends Controller
             'Guidance Counselors must be registered via the Club Adviser Email + OTP Counselor Invitation flow.',
         );
 
-        if ($membership->role === CpfRole::Adviser && $newRole !== CpfRole::Adviser) {
-            $adviserCount = CampusMembership::query()
-                ->where('campus_id', $membership->campus_id)
-                ->where('status', MembershipStatus::Approved->value)
-                ->where('role', CpfRole::Adviser->value)
-                ->count();
+        DB::transaction(function () use ($membership, $newRole, $actor, $action): void {
+            $lockedMembership = CampusMembership::query()
+                ->whereKey($membership->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-            abort_if(
-                $adviserCount <= 1,
-                422,
-                'Cannot demote the sole Club Adviser for this campus. Use the Adviser Role Handover process to safely transfer authority to a successor.',
-            );
-        }
+            if ($lockedMembership->role === CpfRole::Adviser && $newRole !== CpfRole::Adviser) {
+                $adviserCount = CampusMembership::query()
+                    ->where('campus_id', $lockedMembership->campus_id)
+                    ->where('status', MembershipStatus::Approved->value)
+                    ->where('role', CpfRole::Adviser->value)
+                    ->lockForUpdate()
+                    ->count();
 
-        $action->updateRole($membership, $newRole, $actor);
+                abort_if(
+                    $adviserCount <= 1,
+                    422,
+                    'Cannot demote the sole Club Adviser for this campus. Use the Adviser Role Handover process to safely transfer authority to a successor.',
+                );
+            }
+
+            $action->updateRole($lockedMembership, $newRole, $actor);
+        });
 
         return to_route('membership.index')->with('status', "Updated role to {$newRole->label()}.");
     }
@@ -536,12 +558,23 @@ class CampusMembershipController extends Controller
             'cellphone_number',
         ];
 
-        $membership = $changeRequest->membership()->with('user')->firstOrFail();
+        $membership = DB::transaction(function () use ($validated, $changeRequest, $actor, $allowedFields): CampusMembership {
+            $lockedRequest = MemberInfoChangeRequest::query()
+                ->whereKey($changeRequest->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        DB::transaction(function () use ($validated, $changeRequest, $membership, $actor, $allowedFields): void {
+            abort_if(
+                $lockedRequest->status !== 'pending',
+                422,
+                'This information change request has already been reviewed.',
+            );
+
+            $membership = $lockedRequest->membership()->with('user')->lockForUpdate()->firstOrFail();
+
             if ($validated['decision'] === 'approved') {
                 $updates = [];
-                foreach ($changeRequest->requested_changes as $field => $change) {
+                foreach ($lockedRequest->requested_changes as $field => $change) {
                     if (in_array($field, $allowedFields, true)) {
                         $updates[$field] = $change['new'] ?? null;
                     }
@@ -571,12 +604,14 @@ class CampusMembershipController extends Controller
                 }
             }
 
-            $changeRequest->forceFill([
+            $lockedRequest->forceFill([
                 'status' => $validated['decision'],
                 'reviewed_by' => $actor->id,
                 'reviewed_at' => now(),
                 'adviser_notes' => trim((string) ($validated['adviser_notes'] ?? '')) ?: null,
             ])->save();
+
+            return $membership;
         });
 
         $verb = $validated['decision'] === 'approved' ? 'Approved and applied' : 'Declined';

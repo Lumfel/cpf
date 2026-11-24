@@ -22,12 +22,19 @@ class CampusOperationsController extends Controller
     {
         $user = $request->user();
         $membership = $user->primaryMembership()->with('campus:id,code,name')->first();
+
+        abort_unless(
+            $membership !== null,
+            403,
+            'A campus membership record is required to access the Campus Hub.',
+        );
+
         $campuses = Campus::query()
             ->where('is_active', true)
             ->orderBy('name')
             ->get(['id', 'code', 'name']);
 
-        $campusId = $membership?->campus_id ?? $campuses->first()?->id ?? 1;
+        $campusId = $membership->campus_id;
         $isOfficerOrAdviser = $user->verifiedRole()?->isOfficerOrAdviser() ?? false;
         $isClubAdviser = $user->isClubAdviser();
         $canCoordinateGuidance = $user->canCoordinateGuidance();
@@ -70,6 +77,12 @@ class CampusOperationsController extends Controller
             ])
             ->values();
 
+        $referralLinkedRoomRequestIds = GuidanceReferral::query()
+            ->where('campus_id', $campusId)
+            ->whereNotNull('room_request_id')
+            ->pluck('room_request_id')
+            ->flip();
+
         $roomRequests = RoomRequest::query()
             ->with(['requester:id,name', 'counselor:id,name'])
             ->where('campus_id', $campusId)
@@ -82,22 +95,28 @@ class CampusOperationsController extends Controller
             ->orderByDesc('request_date')
             ->orderBy('start_time')
             ->get()
-            ->map(fn (RoomRequest $req) => [
-                'id' => $req->id,
-                'purpose' => ($canReviewTestingRoom || $req->requested_by_user_id === $user->id)
-                    ? $req->purpose
-                    : 'Booked',
-                'requester_name' => ($canReviewTestingRoom || $req->requested_by_user_id === $user->id)
-                    ? ($req->requester?->name ?? 'CPF Member')
-                    : 'Confidential Booking',
-                'counselor_name' => $req->counselor?->name,
-                'request_date' => $req->request_date?->format('Y-m-d'),
-                'start_time' => substr((string) $req->start_time, 0, 5),
-                'end_time' => substr((string) $req->end_time, 0, 5),
-                'status' => $req->status,
-                'review_notes' => $req->review_notes,
-                'is_mine' => $req->requested_by_user_id === $user->id,
-            ])
+            ->map(function (RoomRequest $req) use ($user, $canReviewTestingRoom, $canCoordinateGuidance, $referralLinkedRoomRequestIds): array {
+                $isMine = $req->requested_by_user_id === $user->id;
+                $isReferralLinked = $referralLinkedRoomRequestIds->has($req->id);
+                $canSeeDetails = $isReferralLinked
+                    ? ($canCoordinateGuidance || $isMine)
+                    : ($canReviewTestingRoom || $isMine);
+
+                return [
+                    'id' => $req->id,
+                    'purpose' => $canSeeDetails ? $req->purpose : 'Booked',
+                    'requester_name' => $canSeeDetails
+                        ? ($req->requester?->name ?? 'CPF Member')
+                        : 'Confidential Booking',
+                    'counselor_name' => $req->counselor?->name,
+                    'request_date' => $req->request_date?->format('Y-m-d'),
+                    'start_time' => substr((string) $req->start_time, 0, 5),
+                    'end_time' => substr((string) $req->end_time, 0, 5),
+                    'status' => $req->status,
+                    'review_notes' => $canSeeDetails ? $req->review_notes : null,
+                    'is_mine' => $isMine,
+                ];
+            })
             ->values();
 
         // Privacy-safe view for the submitting peer: ONLY safe feedback status + scheduled slot + non-clinical scheduling note.

@@ -15,6 +15,7 @@ use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Throwable;
 
 class AddOrApproveCampusMember
@@ -33,6 +34,11 @@ class AddOrApproveCampusMember
         $campusId = $actorMembership ? $actorMembership->campus_id : (int) $validated['campus_id'];
 
         $requestedRole = isset($validated['role']) ? CpfRole::from((string) $validated['role']) : CpfRole::Member;
+        abort_if(
+            in_array($requestedRole, [CpfRole::Adviser, CpfRole::GuidanceCounselor], true),
+            422,
+            'Club Adviser and Guidance Counselor roles cannot be assigned via Officer Add.',
+        );
         $assignedRole = $actor->isClubAdviser() ? $requestedRole : CpfRole::Member;
 
         $first = trim((string) $validated['first_name']);
@@ -65,7 +71,7 @@ class AddOrApproveCampusMember
             $fbDisplay,
         ): array {
             $email = strtolower(trim((string) $validated['active_email']));
-            $targetUser = User::query()->where('email', $email)->first();
+            $targetUser = User::query()->where('email', $email)->lockForUpdate()->first();
 
             if (! $targetUser) {
                 $targetUser = new User([
@@ -78,19 +84,30 @@ class AddOrApproveCampusMember
                 $targetUser->email_verified_at = now();
                 $targetUser->save();
             } else {
-                $hasApprovedMembership = CampusMembership::query()
+                $existingProtected = CampusMembership::query()
                     ->where('user_id', $targetUser->id)
-                    ->where('status', MembershipStatus::Approved->value)
+                    ->where(function ($query): void {
+                        $query->where('status', MembershipStatus::Approved->value)
+                            ->orWhereIn('role', [
+                                CpfRole::Adviser->value,
+                                CpfRole::GuidanceCounselor->value,
+                            ]);
+                    })
+                    ->lockForUpdate()
                     ->exists();
 
-                if (! $hasApprovedMembership) {
-                    $targetUser->forceFill([
-                        'name' => $formatted,
-                        'email_verified_at' => $targetUser->email_verified_at ?? now(),
-                        'must_change_password' => true,
-                        'temporary_password_issued_at' => now(),
-                    ])->save();
+                if ($existingProtected) {
+                    throw ValidationException::withMessages([
+                        'active_email' => 'This email already belongs to a verified member, Club Adviser, or Guidance Counselor and cannot be overwritten.',
+                    ]);
                 }
+
+                $targetUser->forceFill([
+                    'name' => $formatted,
+                    'email_verified_at' => $targetUser->email_verified_at ?? now(),
+                    'must_change_password' => true,
+                    'temporary_password_issued_at' => now(),
+                ])->save();
             }
 
             $membership = CampusMembership::updateOrCreate(
@@ -157,14 +174,25 @@ class AddOrApproveCampusMember
     public function approveApplication(User $actor, CampusMembership $membership, ?string $remarks = null): array
     {
         $tx = DB::transaction(function () use ($actor, $membership, $remarks): array {
-            $membership->update([
+            $lockedMembership = CampusMembership::query()
+                ->whereKey($membership->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            abort_unless(
+                $lockedMembership->status === MembershipStatus::Pending,
+                422,
+                'Only pending membership applications can be approved.',
+            );
+
+            $lockedMembership->update([
                 'status' => MembershipStatus::Approved,
                 'added_or_approved_by' => $actor->id,
                 'approved_at' => now(),
-                'remarks' => $remarks ?? $membership->remarks,
+                'remarks' => $remarks ?? $lockedMembership->remarks,
             ]);
 
-            $memberUser = $membership->user;
+            $memberUser = $lockedMembership->user;
             if ($memberUser) {
                 $memberUser->forceFill([
                     'email_verified_at' => $memberUser->email_verified_at ?? now(),
@@ -173,11 +201,11 @@ class AddOrApproveCampusMember
                 ])->save();
             }
 
-            $passkeyResult = $this->issuePasskey->handle($actor, $membership, true, false);
-            $this->tenureService->openTenure($membership, $actor, $membership->approved_at);
+            $passkeyResult = $this->issuePasskey->handle($actor, $lockedMembership, true, false);
+            $this->tenureService->openTenure($lockedMembership, $actor, $lockedMembership->approved_at);
 
             return [
-                'membership' => $membership->refresh(),
+                'membership' => $lockedMembership->refresh(),
                 'issuance' => $passkeyResult['issuance'],
                 'passkey_code' => $passkeyResult['enrollment_code'],
             ];

@@ -250,9 +250,10 @@ class ProfileUpdateTest extends TestCase
             ->get(route('profile-photos.show', $member))
             ->assertForbidden();
 
+        // Public-disk fallback is removed: files not on local disk return 404, while destroyPhoto still cleans them up
         $this->actingAs($member)
             ->get(route('profile-photos.show', $member))
-            ->assertOk();
+            ->assertNotFound();
 
         $this->actingAs($member)
             ->delete(route('profile.photo.destroy'))

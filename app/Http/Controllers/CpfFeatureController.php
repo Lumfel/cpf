@@ -12,6 +12,7 @@ use App\Enums\ReferralPriority;
 use App\Events\OfficerGcMessageSent;
 use App\Models\CampusCounselor;
 use App\Models\CampusMembership;
+use App\Models\CampusRoom;
 use App\Models\CounselorGcMessage;
 use App\Models\GuidanceReferral;
 use App\Models\OfficerGcChannel;
@@ -80,7 +81,11 @@ class CpfFeatureController extends Controller
         );
 
         $membership = $request->user()?->primaryMembership;
-        $campusId = $membership?->campus_id ?? (int) $request->input('campus_id');
+        abort_unless(
+            $membership !== null,
+            403,
+            'A campus membership record is required for Testing Room requests.',
+        );
 
         $validated = $request->validate([
             'campus_id' => ['nullable', 'integer', 'exists:campuses,id'],
@@ -91,7 +96,15 @@ class CpfFeatureController extends Controller
             'end_time' => ['required', 'date_format:H:i', 'after:start_time'],
         ]);
 
-        abort_unless($campusId > 0, 422, 'A valid campus is required for Testing Room requests.');
+        if (! empty($validated['campus_id'])) {
+            abort_unless(
+                (int) $validated['campus_id'] === $membership->campus_id,
+                403,
+                'Testing Room requests must be submitted to your assigned campus chapter.',
+            );
+        }
+
+        $campusId = $membership->campus_id;
 
         if (! empty($validated['counselor_id'])) {
             abort_unless(
@@ -115,26 +128,76 @@ class CpfFeatureController extends Controller
         $role = $user?->verifiedRole();
         $membership = $user?->primaryMembership;
 
-        abort_unless(
-            $role && ($role->isOfficerOrAdviser() || $role->canCoordinateGuidance()) && $membership && $membership->campus_id === $roomRequest->campus_id,
-            403,
-            'Only verified campus officers, Guidance Counselors, or the Club Adviser can review Testing Room requests.',
-        );
+        $isReferralLinked = GuidanceReferral::query()
+            ->where('room_request_id', $roomRequest->id)
+            ->exists();
+
+        if ($isReferralLinked) {
+            abort_unless(
+                $role && $role->canCoordinateGuidance() && $membership && $membership->campus_id === $roomRequest->campus_id,
+                403,
+                'Only the Club Adviser or a campus Guidance Counselor can review referral-linked Testing Room requests.',
+            );
+        } else {
+            abort_unless(
+                $role && ($role->isOfficerOrAdviser() || $role->canCoordinateGuidance()) && $membership && $membership->campus_id === $roomRequest->campus_id,
+                403,
+                'Only verified campus officers, Guidance Counselors, or the Club Adviser can review Testing Room requests.',
+            );
+        }
 
         $validated = $request->validate([
             'status' => ['required', 'in:approved,rejected'],
             'review_notes' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $roomRequest->update([
-            'status' => $validated['status'],
-            'reviewed_by_user_id' => $user->id,
-            'review_notes' => $validated['review_notes'] ?? null,
-        ]);
+        $updated = DB::transaction(function () use ($roomRequest, $validated, $user): RoomRequest {
+            $lockedRequest = RoomRequest::query()
+                ->whereKey($roomRequest->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            abort_unless(
+                $lockedRequest->status === 'pending',
+                422,
+                'Only pending Testing Room requests can be reviewed.',
+            );
+
+            if ($validated['status'] === 'approved') {
+                if ($lockedRequest->room_id !== null) {
+                    CampusRoom::query()->whereKey($lockedRequest->room_id)->lockForUpdate()->first();
+                }
+
+                $conflict = RoomRequest::query()
+                    ->where('campus_id', $lockedRequest->campus_id)
+                    ->where('room_id', $lockedRequest->room_id)
+                    ->where('id', '!=', $lockedRequest->id)
+                    ->whereDate('request_date', $lockedRequest->request_date)
+                    ->where('status', 'approved')
+                    ->where('start_time', '<', $lockedRequest->end_time)
+                    ->where('end_time', '>', $lockedRequest->start_time)
+                    ->lockForUpdate()
+                    ->exists();
+
+                abort_if(
+                    $conflict,
+                    409,
+                    'This Testing Room slot conflicts with an already-approved reservation.',
+                );
+            }
+
+            $lockedRequest->update([
+                'status' => $validated['status'],
+                'reviewed_by_user_id' => $user->id,
+                'review_notes' => $validated['review_notes'] ?? null,
+            ]);
+
+            return $lockedRequest->fresh();
+        });
 
         return response()->json([
-            'status' => $roomRequest->status,
-            'room_request' => $roomRequest->fresh(),
+            'status' => $updated->status,
+            'room_request' => $updated,
         ]);
     }
 
@@ -147,6 +210,11 @@ class CpfFeatureController extends Controller
         );
 
         $membership = $request->user()?->primaryMembership;
+        abort_unless(
+            $membership !== null,
+            403,
+            'A campus membership record is required to submit a guidance referral.',
+        );
 
         $validated = $request->validate([
             'campus_id' => ['required', 'integer', 'exists:campuses,id'],
@@ -161,15 +229,13 @@ class CpfFeatureController extends Controller
             'preferred_end_time' => ['nullable', 'required_with:preferred_date,preferred_start_time', 'date_format:H:i', 'after:preferred_start_time'],
         ]);
 
-        $campusId = (int) $validated['campus_id'];
+        abort_unless(
+            (int) $validated['campus_id'] === $membership->campus_id,
+            403,
+            'Referrals must be submitted to your assigned campus chapter.',
+        );
 
-        if ($membership !== null) {
-            abort_unless(
-                $campusId === $membership->campus_id,
-                403,
-                'Referrals must be submitted to your assigned campus chapter.',
-            );
-        }
+        $campusId = $membership->campus_id;
 
         if (! empty($validated['counselor_id'])) {
             abort_unless(
@@ -254,13 +320,38 @@ class CpfFeatureController extends Controller
             }
 
             if ($referral->room_request_id !== null && $feedbackStatus === 'ongoing') {
-                RoomRequest::query()
+                $linkedRoomRequest = RoomRequest::query()
                     ->whereKey($referral->room_request_id)
-                    ->where('status', 'pending')
-                    ->update([
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($linkedRoomRequest !== null && $linkedRoomRequest->status === 'pending') {
+                    if ($linkedRoomRequest->room_id !== null) {
+                        CampusRoom::query()->whereKey($linkedRoomRequest->room_id)->lockForUpdate()->first();
+                    }
+
+                    $conflict = RoomRequest::query()
+                        ->where('campus_id', $linkedRoomRequest->campus_id)
+                        ->where('room_id', $linkedRoomRequest->room_id)
+                        ->where('id', '!=', $linkedRoomRequest->id)
+                        ->whereDate('request_date', $linkedRoomRequest->request_date)
+                        ->where('status', 'approved')
+                        ->where('start_time', '<', $linkedRoomRequest->end_time)
+                        ->where('end_time', '>', $linkedRoomRequest->start_time)
+                        ->lockForUpdate()
+                        ->exists();
+
+                    abort_if(
+                        $conflict,
+                        409,
+                        'The suggested Testing Room slot was already taken by another approved booking.',
+                    );
+
+                    $linkedRoomRequest->update([
                         'status' => 'approved',
                         'reviewed_by_user_id' => $user->id,
                     ]);
+                }
             }
 
             $referral->update($payload);
@@ -289,18 +380,32 @@ class CpfFeatureController extends Controller
         $membership = $user?->primaryMembership;
 
         abort_unless(
-            $role && $role->isOfficerOrAdviser() && $membership && $membership->campus_id === $channel->campus_id && $channel->is_active,
+            $role && $role->isOfficerOrAdviser() && $membership && $membership->campus_id === $channel->campus_id,
             403,
             'Only active campus Officers and the Club Adviser may message this Officers Private GC.',
         );
 
         $validated = $request->validate(['message_body' => ['required', 'string', 'max:2000']]);
-        $msg = OfficerGcMessage::create([
-            'channel_id' => $channel->id,
-            'sender_user_id' => $user->id,
-            'sender_role' => $role->value,
-            'message_body' => trim($validated['message_body']),
-        ]);
+
+        $msg = DB::transaction(function () use ($channel, $user, $role, $validated): OfficerGcMessage {
+            $lockedChannel = OfficerGcChannel::query()
+                ->whereKey($channel->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            abort_unless(
+                (bool) $lockedChannel->is_active,
+                403,
+                'This Officers Private GC channel is no longer active for messaging.',
+            );
+
+            return OfficerGcMessage::create([
+                'channel_id' => $lockedChannel->id,
+                'sender_user_id' => $user->id,
+                'sender_role' => $role->value,
+                'message_body' => trim($validated['message_body']),
+            ]);
+        });
 
         $msg->load('sender:id,name');
         OfficerGcMessageSent::dispatch($channel, $msg);

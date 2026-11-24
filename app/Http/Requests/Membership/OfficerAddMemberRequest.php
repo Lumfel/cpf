@@ -18,7 +18,7 @@ class OfficerAddMemberRequest extends FormRequest
     {
         return [
             'campus_id' => ['nullable', 'integer', 'exists:campuses,id'],
-            'role' => ['nullable', Rule::enum(CpfRole::class), Rule::notIn([CpfRole::Adviser->value])],
+            'role' => ['nullable', Rule::enum(CpfRole::class), Rule::notIn([CpfRole::Adviser->value, CpfRole::GuidanceCounselor->value])],
             'first_name' => ['required', 'string', 'max:80'],
             'middle_name' => ['nullable', 'string', 'max:80'],
             'last_name' => ['required', 'string', 'max:80'],

@@ -37,6 +37,9 @@ class SubmitGuidanceReferral
                     ],
                 );
 
+                // Serialize concurrent Testing Room & referral slot checks on the same campus room
+                CampusRoom::query()->whereKey($room->id)->lockForUpdate()->firstOrFail();
+
                 $roomOverlap = RoomRequest::query()
                     ->where('campus_id', $campusId)
                     ->whereDate('request_date', $preferredDate)

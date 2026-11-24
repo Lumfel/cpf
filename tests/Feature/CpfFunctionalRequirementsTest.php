@@ -359,9 +359,11 @@ class CpfFunctionalRequirementsTest extends TestCase
         $archiveRes = $this->actingAs($adviser)
             ->postJson("/officers-gc/{$channel->id}/archive")
             ->assertOk()
-            ->assertJsonPath('status', 'archived');
+            ->assertJsonPath('status', 'archived')
+            ->assertJsonMissingPath('archive.hdd_storage_path');
 
-        $zipPath = $archiveRes->json('archive.hdd_storage_path');
+        $archive = \App\Models\OfficerGcArchive::findOrFail((int) $archiveRes->json('archive.id'));
+        $zipPath = (string) $archive->hdd_storage_path;
         $this->assertFileExists($zipPath);
         $this->assertDatabaseCount('officer_gc_messages', 0);
         $this->assertDatabaseHas('officer_gc_channels', ['id' => $channel->id, 'is_active' => false]);
@@ -665,13 +667,14 @@ class CpfFunctionalRequirementsTest extends TestCase
             ])
             ->assertSessionHasErrors('passkey_code');
 
-        // Active locked code logs member in and marks issuance claimed (one-time use)
+        // Active locked code logs member in, marks issuance claimed (one-time use), and requires password rotation because an officer issued it
         $this->post('/login/passkey-code', [
             'email' => $member->email,
             'passkey_code' => str_replace('-', '', $newCode),
-        ])->assertRedirect('/dashboard');
+        ])->assertRedirect('/force-password-change');
 
         $this->assertAuthenticatedAs($member);
+        $this->assertTrue((bool) $member->fresh()->must_change_password);
 
         $claimedIssuance = \App\Models\PasskeyIssuance::findOrFail($regenerated->json('issuance_id'));
         $this->assertSame('claimed', $claimedIssuance->status);
@@ -687,7 +690,8 @@ class CpfFunctionalRequirementsTest extends TestCase
             ->assertSessionHasErrors('passkey_code');
         $this->assertGuest();
 
-        // Re-authenticate member to test self-regeneration
+        // Complete password change before regenerating own passkey
+        $member->forceFill(['must_change_password' => false, 'temporary_password_issued_at' => null])->save();
         $this->actingAs($member);
 
         // Logged-in member can regenerate their own locked passkey in real time
@@ -931,12 +935,10 @@ class CpfFunctionalRequirementsTest extends TestCase
             1,
         );
 
-        // Calling approve a second time does NOT send another email (strictly one-time-only delivery)
+        // Calling approve a second time on an already-approved membership is rejected with 422 (strictly pending-only & one-time delivery)
         $this->actingAs($adviser)
             ->patch("/membership/{$pending->id}/approve")
-            ->assertRedirect('/membership')
-            ->assertSessionHas('passkey_issued_notice.emailed', false)
-            ->assertSessionHas('passkey_issued_notice.email_status', 'already_sent');
+            ->assertStatus(422);
 
         \Illuminate\Support\Facades\Notification::assertSentOnDemandTimes(
             \App\Notifications\MembershipApprovedPasskeyNotification::class,
@@ -998,12 +1000,46 @@ class CpfFunctionalRequirementsTest extends TestCase
             'emailed_at' => null,
         ]);
 
-        // Once SMTP password is configured, approval delivers the one-time email cleanly
+        // Already-approved membership cannot be re-approved (pending-only security guard)
+        $this->actingAs($adviser)
+            ->patch("/membership/{$pending->id}/approve")
+            ->assertStatus(422);
+
+        // Once SMTP password is configured, approving a pending applicant delivers the one-time email cleanly
         config()->set('mail.mailers.smtp.username', 'test_smtp_user');
         config()->set('mail.mailers.smtp.password', 'real16charapppass');
 
+        $secondApplicant = User::factory()->create([
+            'name' => 'Santos, Mia L.',
+            'email' => 'mia.santos.smtp@chmsu.edu.ph',
+            'email_verified_at' => now(),
+        ]);
+        $secondPending = CampusMembership::create([
+            'user_id' => $secondApplicant->id,
+            'campus_id' => $this->talisay->id,
+            'role' => CpfRole::Member,
+            'status' => MembershipStatus::Pending,
+            'enrollment_source' => 'online_form',
+            'recorded_email' => 'mia.santos.smtp@chmsu.edu.ph',
+            'first_name' => 'Mia',
+            'middle_name' => 'L.',
+            'last_name' => 'Santos',
+            'full_name_last_first_mi' => 'Santos, Mia L.',
+            'course' => 'BSIT',
+            'year_level' => '2',
+            'section' => 'B',
+            'course_year_section' => 'BSIT 2B',
+            'sex' => 'Female',
+            'gender_identity' => 'Woman',
+            'birthdate' => '2006-03-12',
+            'active_email' => 'mia.santos.smtp@chmsu.edu.ph',
+            'facebook_profile_url' => 'https://www.facebook.com/mia.santos.cpf',
+            'active_fb_account' => 'Mia Santos',
+            'cellphone_number' => '0917-555-0399',
+        ]);
+
         $this->actingAs($adviser)
-            ->patch("/membership/{$pending->id}/approve")
+            ->patch("/membership/{$secondPending->id}/approve")
             ->assertRedirect('/membership')
             ->assertSessionHas('passkey_issued_notice.emailed', true)
             ->assertSessionHas('passkey_issued_notice.email_status', 'sent');
@@ -1718,9 +1754,10 @@ class CpfFunctionalRequirementsTest extends TestCase
         $this->post('/login/passkey-code', [
             'email' => $passkeyUser->email,
             'passkey_code' => $formattedCode,
-        ])->assertRedirect(route('dashboard'));
+        ])->assertRedirect(route('password.force-change.edit'));
 
         $this->assertAuthenticatedAs($passkeyUser);
+        $this->assertTrue((bool) $passkeyUser->fresh()->must_change_password);
         $this->assertSame('claimed', $issuance->fresh()->status);
 
         auth()->logout();

@@ -28,6 +28,7 @@ class EventApiController extends Controller
             return response()->json([
                 'campus' => null,
                 'can_scan_events' => false,
+                'can_scan' => false,
                 'events' => [],
             ]);
         }
@@ -69,6 +70,7 @@ class EventApiController extends Controller
                     'cancellation_reason' => $event->cancellation_reason,
                     'logged_in_count' => $event->attendances->whereNotNull('logged_in_at')->count(),
                     'logged_out_count' => $event->attendances->whereNotNull('logged_out_at')->count(),
+                    'can_scan_events' => $isOfficerOrAdviser && $effectiveStatus === 'active',
                     'can_scan' => $isOfficerOrAdviser && $effectiveStatus === 'active',
                     'my_attendance' => [
                         'status' => $attendanceStatus,
@@ -86,6 +88,7 @@ class EventApiController extends Controller
                 'name' => $campus->name,
             ],
             'can_scan_events' => $isOfficerOrAdviser,
+            'can_scan' => $isOfficerOrAdviser,
             'events' => $events,
         ]);
     }

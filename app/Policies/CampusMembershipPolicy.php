@@ -29,15 +29,22 @@ class CampusMembershipPolicy
             return false;
         }
 
-        if ($target !== null && $target->campus_id !== $actorMembership->campus_id) {
-            return false;
+        if ($target !== null) {
+            if ($target->campus_id !== $actorMembership->campus_id) {
+                return false;
+            }
+
+            if ($target->status !== MembershipStatus::Pending) {
+                return false;
+            }
         }
 
         return true;
     }
 
     /**
-     * Adviser, President, Vice President, and Secretary can issue Passkeys + 2FA.
+     * Adviser, President, Vice President, and Secretary can issue Passkeys + 2FA
+     * strictly to lower-ranking student members (never Adviser, Guidance Counselor, or equal/higher officers).
      */
     public function issuePasskey(User $user, ?CampusMembership $target = null): bool
     {
@@ -51,8 +58,18 @@ class CampusMembershipPolicy
             return false;
         }
 
-        if ($target !== null && $target->campus_id !== $actorMembership->campus_id) {
-            return false;
+        if ($target !== null) {
+            if ($target->campus_id !== $actorMembership->campus_id) {
+                return false;
+            }
+
+            if (in_array($target->role, [CpfRole::Adviser, CpfRole::GuidanceCounselor], true)) {
+                return false;
+            }
+
+            if ($target->role->rank() >= $actorMembership->role->rank()) {
+                return false;
+            }
         }
 
         return true;
@@ -113,10 +130,15 @@ class CampusMembershipPolicy
             return $actorMembership->role->isTopAuthority();
         }
 
-        if ($newRole === CpfRole::Member) {
-            return $actorMembership->role->canApproveMembers();
+        if ($actorMembership->role->isTopAuthority()) {
+            return true;
         }
 
-        return $actorMembership->role->isTopAuthority();
+        if ($newRole === CpfRole::Member) {
+            return $actorMembership->role->canApproveMembers()
+                && $actorMembership->role->rank() > $target->role->rank();
+        }
+
+        return false;
     }
 }

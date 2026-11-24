@@ -74,22 +74,26 @@ Route::post('counselor-invitations/{token}/accept', [CounselorInvitationControll
     ->name('counselor-invitations.accept');
 
 Route::middleware(['auth', 'verified'])->group(function () {
-    Route::get('profile-photos/{targetUser}', [ProfileController::class, 'showPhoto'])
-        ->name('profile-photos.show');
     Route::get('force-password-change', [ForcePasswordChangeController::class, 'edit'])
         ->name('password.force-change.edit');
     Route::post('force-password-change', [ForcePasswordChangeController::class, 'update'])
         ->name('password.force-change.update');
 
     Route::middleware(EnsureTemporaryPasswordChanged::class)->group(function () {
+        Route::get('profile-photos/{targetUser}', [ProfileController::class, 'showPhoto'])
+            ->name('profile-photos.show');
         Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
         Route::get('policy-and-bylaws', fn () => Inertia::render('PolicyAndBylaws'))
             ->name('policy-and-bylaws');
-        Route::post('adviser-handover', [AdviserHandoverController::class, 'store'])->name('adviser-handover.store');
+        Route::post('adviser-handover', [AdviserHandoverController::class, 'store'])
+            ->middleware('throttle:5,1')
+            ->name('adviser-handover.store');
         Route::post('adviser-handover/{handover}/respond', [AdviserHandoverController::class, 'respond'])
             ->middleware('throttle:5,1')
             ->name('adviser-handover.respond');
-        Route::delete('adviser-handover/{handover}', [AdviserHandoverController::class, 'cancel'])->name('adviser-handover.cancel');
+        Route::delete('adviser-handover/{handover}', [AdviserHandoverController::class, 'cancel'])
+            ->middleware('throttle:5,1')
+            ->name('adviser-handover.cancel');
         Route::post('counselor-invitations', [CounselorInvitationController::class, 'store'])
             ->middleware('throttle:10,1')
             ->name('counselor-invitations.store');
