@@ -87,7 +87,7 @@ class AuthController extends Controller
         $membership = $user->primaryMembership()
             ->with([
                 'campus:id,code,name,slug,current_academic_year,gc_group_name',
-                'tenures:id,campus_membership_id,role',
+                'tenures:id,campus_membership_id,role,started_at',
             ])
             ->first();
 

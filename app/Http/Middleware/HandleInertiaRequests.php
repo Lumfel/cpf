@@ -6,6 +6,7 @@ use App\Http\Controllers\FirstBootSetupController;
 use App\Models\AdviserHandover;
 use App\Models\Campus;
 use App\Models\CampusMembership;
+use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
 use Inertia\Middleware;
 
@@ -40,9 +41,19 @@ class HandleInertiaRequests extends Middleware
     public function share(Request $request): array
     {
         $user = $request->user();
-        $membership = $user?->primaryMembership()
-            ->with(['campus:id,code,name,slug', 'tenures:id,campus_membership_id,role'])
-            ->first();
+        $membership = null;
+
+        if ($user) {
+            try {
+                $membership = $user->primaryMembership()
+                    ->with(['campus:id,code,name,slug', 'tenures:id,campus_membership_id,role,started_at'])
+                    ->first();
+            } catch (QueryException) {
+                $membership = $user->primaryMembership()
+                    ->with('campus:id,code,name,slug')
+                    ->first();
+            }
+        }
         $needsAdviserSetup = FirstBootSetupController::needsAdviserSetup();
 
         $systemBootstrap = [

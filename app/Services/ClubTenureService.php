@@ -235,9 +235,15 @@ class ClubTenureService
         int $achievementsCount = 0,
         int $certificatesCount = 0,
     ): array {
-        $tenures = $membership->relationLoaded('tenures')
-            ? $membership->tenures->sortBy('started_at')->values()
-            : $membership->tenures()->orderBy('started_at')->orderBy('id')->get();
+        if ($membership->relationLoaded('tenures')) {
+            $tenures = $membership->tenures->sortBy('started_at')->values();
+        } else {
+            try {
+                $tenures = $membership->tenures()->orderBy('started_at')->orderBy('id')->get();
+            } catch (\Throwable) {
+                $tenures = collect();
+            }
+        }
 
         $asOf = $membership->status === MembershipStatus::Alumni
             ? ($membership->alumni_since ?? now())

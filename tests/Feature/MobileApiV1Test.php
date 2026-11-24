@@ -80,6 +80,30 @@ class MobileApiV1Test extends TestCase
         return [$user, $membership];
     }
 
+    public function test_api_v1_health_endpoint_and_cors_headers_work_for_flutter_web(): void
+    {
+        $this->withHeaders([
+            'Origin' => 'http://localhost:51738',
+        ])
+            ->getJson('/api/v1/health')
+            ->assertOk()
+            ->assertExactJson([
+                'ok' => true,
+                'app' => 'CPF',
+                'database' => 'connected',
+            ])
+            ->assertHeader('Access-Control-Allow-Origin', '*');
+
+        $this->withHeaders([
+            'Origin' => 'http://localhost:51738',
+            'Access-Control-Request-Method' => 'POST',
+            'Access-Control-Request-Headers' => 'Authorization, Content-Type',
+        ])
+            ->options('/api/v1/auth/login')
+            ->assertNoContent()
+            ->assertHeader('Access-Control-Allow-Origin', '*');
+    }
+
     public function test_api_v1_login_me_and_logout_lifecycle(): void
     {
         [$officer] = $this->createVerifiedMember($this->alijis, CpfRole::President, 'Mercado, Sofia R.');

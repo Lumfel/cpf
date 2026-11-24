@@ -12,6 +12,36 @@
   ```http
   Authorization: Bearer <plainTextToken>
   ```
+- **CORS (Flutter Web / Chrome & Mobile):** Configured in `config/cors.php` for `api/*` and `sanctum/csrf-cookie` with `allowed_origins: ['*']`, `allowed_methods: ['*']`, `allowed_headers: ['*']`, and `supports_credentials: false` (Bearer token auth only).
+
+---
+
+## Health Check Endpoint
+
+### 0. API & Database Health Check
+
+`GET /api/v1/health`  
+**Auth:** Public
+
+Verifies that the Laravel API and active database connection (`DB::connection()->getPdo()`) are reachable.
+
+#### Response `200 OK`
+```json
+{
+  "ok": true,
+  "app": "CPF",
+  "database": "connected"
+}
+```
+
+#### Response `503 Service Unavailable` (Database Unreachable)
+```json
+{
+  "ok": false,
+  "app": "CPF",
+  "database": "disconnected"
+}
+```
 
 ---
 

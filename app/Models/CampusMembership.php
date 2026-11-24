@@ -136,9 +136,15 @@ class CampusMembership extends Model
             ? $this->role
             : (CpfRole::tryFrom((string) $this->role) ?? CpfRole::Member);
 
-        $tenures = $this->relationLoaded('tenures')
-            ? $this->tenures
-            : $this->tenures()->get(['role']);
+        if ($this->relationLoaded('tenures')) {
+            $tenures = $this->tenures;
+        } else {
+            try {
+                $tenures = $this->tenures()->get(['role']);
+            } catch (\Throwable) {
+                $tenures = collect();
+            }
+        }
 
         foreach ($tenures as $tenure) {
             $tRole = $tenure->role instanceof CpfRole

@@ -52,7 +52,7 @@ class BlockchainCredentialController extends Controller
             : collect();
 
         $membership = $user?->primaryMembership()
-            ->with(['campus:id,code,name', 'tenures:id,campus_membership_id,role'])
+            ->with(['campus:id,code,name', 'tenures:id,campus_membership_id,role,started_at'])
             ->first();
 
         return Inertia::render('credentials/Index', [
