@@ -12,12 +12,15 @@ import {
     ExternalLink,
     KeyRound,
     Lock,
+    Megaphone,
     MessageCircle,
+    Pin,
     QrCode,
     RefreshCw,
     Search,
     ShieldAlert,
     Sparkles,
+    Trash2,
     UserPlus,
     Users,
     Wallet,
@@ -68,9 +71,38 @@ interface EventNotificationItem {
     created_at: string | null;
 }
 
+interface AnnouncementTemplateItem {
+    key: string;
+    label: string;
+    default_title: string;
+    default_body: string;
+    default_schedule_label: string;
+    default_location: string;
+}
+
+interface CampusAnnouncementItem {
+    id: number;
+    template_key: string;
+    template_label: string;
+    title: string;
+    body: string;
+    schedule_label: string | null;
+    location: string | null;
+    is_pinned: boolean;
+    publisher_name: string;
+    publisher_role: string;
+    publisher_role_label: string;
+    published_at: string | null;
+    published_diff: string | null;
+}
+
 const props = withDefaults(
     defineProps<{
         isAlumni?: boolean;
+        isGuidanceCounselor?: boolean;
+        canPublishAnnouncements?: boolean;
+        announcementTemplates?: AnnouncementTemplateItem[];
+        campusAnnouncements?: CampusAnnouncementItem[];
         myTenureSummary?: {
             first_joined_at: string;
             served_until: string;
@@ -114,6 +146,10 @@ const props = withDefaults(
     }>(),
     {
         isAlumni: false,
+        isGuidanceCounselor: false,
+        canPublishAnnouncements: false,
+        announcementTemplates: () => [],
+        campusAnnouncements: () => [],
         myTenureSummary: null,
         qrPayload: null,
         campusEvents: () => [],
@@ -215,6 +251,59 @@ async function copyMyPasskey() {
 const paidDuesCount = computed(
     () => props.duesRoster.filter((member) => member.has_paid_dues).length,
 );
+
+// PIO + Secretary (+ Adviser) Templated Announcements Composer State
+const showAnnouncementComposer = ref(false);
+const selectedTemplateKey = ref(props.announcementTemplates[0]?.key ?? 'general_assembly');
+const annTitle = ref(props.announcementTemplates[0]?.default_title ?? '');
+const annBody = ref(props.announcementTemplates[0]?.default_body ?? '');
+const annSchedule = ref(props.announcementTemplates[0]?.default_schedule_label ?? '');
+const annLocation = ref(props.announcementTemplates[0]?.default_location ?? '');
+const annPinned = ref(false);
+const publishingAnnouncement = ref(false);
+const announcementNotice = ref<string | null>(null);
+
+function applyAnnouncementTemplate(tpl: AnnouncementTemplateItem) {
+    selectedTemplateKey.value = tpl.key;
+    annTitle.value = tpl.default_title;
+    annBody.value = tpl.default_body;
+    annSchedule.value = tpl.default_schedule_label;
+    annLocation.value = tpl.default_location;
+}
+
+async function publishCampusAnnouncement() {
+    if (publishingAnnouncement.value) return;
+    publishingAnnouncement.value = true;
+    announcementNotice.value = null;
+
+    const { ok, data } = await apiRequest<{ message?: string }>('/announcements', 'POST', {
+        template_key: selectedTemplateKey.value,
+        title: annTitle.value,
+        body: annBody.value,
+        schedule_label: annSchedule.value || null,
+        location: annLocation.value || null,
+        is_pinned: annPinned.value,
+    });
+
+    publishingAnnouncement.value = false;
+
+    if (!ok) {
+        announcementNotice.value = data.message ?? 'Unable to publish announcement.';
+        return;
+    }
+
+    showAnnouncementComposer.value = false;
+    annPinned.value = false;
+    announcementNotice.value = 'Official campus announcement published!';
+    router.reload({ only: ['campusAnnouncements'] });
+}
+
+async function removeCampusAnnouncement(id: number) {
+    const { ok } = await apiRequest(`/announcements/${id}`, 'DELETE');
+    if (ok) {
+        router.reload({ only: ['campusAnnouncements'] });
+    }
+}
 
 const filteredDuesRoster = computed(() => {
     return props.duesRoster.filter((member) => {
@@ -378,6 +467,25 @@ function toggleDuesStatus(member: DuesRosterMember) {
                 >
                     <Archive class="size-4" />
                     Open Former Members &amp; Legacy Archive
+                </Link>
+            </div>
+
+            <!-- Guidance Counselor Coordination Card -->
+            <div v-else-if="isGuidanceCounselor" class="bento mx-auto flex w-full flex-col justify-between p-6">
+                <div>
+                    <span class="inline-flex items-center gap-1.5 rounded-full bg-[#0384C5]/10 px-3 py-1 text-xs font-bold text-[#0384C5]">
+                        <BadgeCheck class="size-4" />
+                        Guidance Counselor • Coordination Only
+                    </span>
+                    <h2 class="font-editorial mt-3 text-lg font-bold text-slate-900">
+                        {{ auth.membership?.full_name_last_first_mi ?? auth.user?.name }}
+                    </h2>
+                    <p class="mt-1 text-xs leading-relaxed text-slate-600">
+                        Access Counselors Private GC, Testing Room schedules, and confidential Peer Referrals from the Campus Hub. Student club elections, dues, and officer channels remain separated.
+                    </p>
+                </div>
+                <Link href="/campus-hub" class="bento-btn mt-4 w-full justify-center">
+                    Open Campus Guidance Hub
                 </Link>
             </div>
 
@@ -792,8 +900,146 @@ function toggleDuesStatus(member: DuesRosterMember) {
             </div>
         </section>
 
-        <!-- Campus Events Calendar & Notifications (Visible Across Members) -->
-        <section class="grid gap-5 lg:grid-cols-[1.35fr_1fr]">
+        <!-- Campus Announcements Section (PIO, Secretary & Adviser Templated Publishing) -->
+        <section v-if="!isAlumni" class="bento p-6">
+            <div class="flex flex-wrap items-center justify-between gap-3 border-b border-black/10 pb-4">
+                <div>
+                    <div class="flex items-center gap-2 text-base font-bold text-slate-900">
+                        <Megaphone class="size-5 text-[#0384C5]" />
+                        Official Campus Announcements
+                    </div>
+                    <p class="mt-0.5 text-xs text-slate-600">
+                        Chapter notices published by your Public Information Officer (PIO), Secretary, and Club Adviser.
+                    </p>
+                </div>
+                <button
+                    v-if="canPublishAnnouncements"
+                    type="button"
+                    @click="showAnnouncementComposer = !showAnnouncementComposer"
+                    class="bento-btn"
+                >
+                    <Megaphone class="size-3.5" />
+                    {{ showAnnouncementComposer ? 'Close Composer' : '+ Publish Templated Announcement' }}
+                </button>
+            </div>
+
+            <div
+                v-if="announcementNotice"
+                class="mt-3 rounded-2xl border border-[#1A8F26]/30 bg-[#1A8F26]/10 px-4 py-2.5 text-xs font-semibold text-[#1A8F26]"
+            >
+                {{ announcementNotice }}
+            </div>
+
+            <form
+                v-if="canPublishAnnouncements && showAnnouncementComposer"
+                class="mt-4 grid gap-3 rounded-2xl border border-[#0384C5]/25 bg-[#FBF6EE] p-4 text-xs"
+                @submit.prevent="publishCampusAnnouncement"
+            >
+                <div>
+                    <span class="mb-1.5 block font-bold text-slate-800">1. Choose Reusable Template:</span>
+                    <div class="flex flex-wrap gap-2">
+                        <button
+                            v-for="tpl in announcementTemplates"
+                            :key="tpl.key"
+                            type="button"
+                            @click="applyAnnouncementTemplate(tpl)"
+                            class="rounded-xl px-3 py-1.5 text-xs font-semibold transition"
+                            :class="
+                                selectedTemplateKey === tpl.key
+                                    ? 'bg-[#0384C5] text-white'
+                                    : 'border border-black/15 bg-white text-slate-700 hover:border-[#0384C5]'
+                            "
+                        >
+                            {{ tpl.label }}
+                        </button>
+                    </div>
+                </div>
+
+                <div class="grid gap-3 sm:grid-cols-3">
+                    <div class="sm:col-span-1">
+                        <label class="mb-1 block font-bold text-slate-800">Headline *</label>
+                        <input v-model="annTitle" required class="w-full rounded-xl border border-black/15 bg-white px-3 py-2" />
+                    </div>
+                    <div>
+                        <label class="mb-1 block font-bold text-slate-800">Date / Time Label</label>
+                        <input v-model="annSchedule" placeholder="e.g. Friday • 3:00 PM" class="w-full rounded-xl border border-black/15 bg-white px-3 py-2" />
+                    </div>
+                    <div>
+                        <label class="mb-1 block font-bold text-slate-800">Venue / Channel</label>
+                        <input v-model="annLocation" placeholder="e.g. Guidance Hall" class="w-full rounded-xl border border-black/15 bg-white px-3 py-2" />
+                    </div>
+                </div>
+
+                <div>
+                    <label class="mb-1 block font-bold text-slate-800">Announcement Details *</label>
+                    <textarea v-model="annBody" rows="3" required class="w-full rounded-xl border border-black/15 bg-white px-3 py-2" />
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between gap-3">
+                    <label class="inline-flex cursor-pointer items-center gap-2 font-semibold text-slate-700">
+                        <input v-model="annPinned" type="checkbox" class="rounded border-black/20" />
+                        Pin to top of campus feed
+                    </label>
+                    <button type="submit" :disabled="publishingAnnouncement" class="bento-btn">
+                        {{ publishingAnnouncement ? 'Publishing...' : 'Publish to Campus Members' }}
+                    </button>
+                </div>
+            </form>
+
+            <div v-if="campusAnnouncements.length === 0" class="mt-4 text-xs text-slate-500">
+                No campus announcements posted yet.
+            </div>
+            <div v-else class="mt-4 grid gap-3 md:grid-cols-2">
+                <article
+                    v-for="ann in campusAnnouncements"
+                    :key="ann.id"
+                    class="flex flex-col justify-between gap-2.5 rounded-2xl border p-4 text-xs"
+                    :class="ann.is_pinned ? 'border-[#0384C5]/40 bg-[#FFF9EF]' : 'border-black/10 bg-white'"
+                >
+                    <div>
+                        <div class="flex flex-wrap items-center justify-between gap-2">
+                            <div class="flex items-center gap-1.5">
+                                <span class="rounded-full bg-[#0384C5]/12 px-2.5 py-0.5 text-[11px] font-bold text-[#0384C5]">
+                                    {{ ann.template_label }}
+                                </span>
+                                <span
+                                    v-if="ann.is_pinned"
+                                    class="inline-flex items-center gap-1 rounded-full bg-[#FF8D06]/15 px-2 py-0.5 text-[10px] font-bold text-[#B85E00]"
+                                >
+                                    <Pin class="size-3" />
+                                    Pinned
+                                </span>
+                            </div>
+                            <button
+                                v-if="canPublishAnnouncements"
+                                type="button"
+                                @click="removeCampusAnnouncement(ann.id)"
+                                class="rounded-lg p-1 text-slate-400 hover:bg-red-50 hover:text-red-600"
+                                title="Remove announcement"
+                            >
+                                <Trash2 class="size-3.5" />
+                            </button>
+                        </div>
+                        <h3 class="mt-2 text-sm font-bold text-slate-900">{{ ann.title }}</h3>
+                        <p class="mt-1 whitespace-pre-wrap leading-relaxed text-slate-700">{{ ann.body }}</p>
+                    </div>
+
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-t border-black/10 pt-2.5 text-[11px] text-slate-500">
+                        <div>
+                            <span v-if="ann.schedule_label" class="font-semibold text-slate-700">{{ ann.schedule_label }}</span>
+                            <span v-if="ann.location"> • {{ ann.location }}</span>
+                        </div>
+                        <div>
+                            {{ ann.publisher_name }} ({{ ann.publisher_role_label }})
+                            <span v-if="ann.published_diff"> • {{ ann.published_diff }}</span>
+                        </div>
+                    </div>
+                </article>
+            </div>
+        </section>
+
+        <!-- Campus Events Calendar & Notifications (Visible Across Student Members & Officers) -->
+        <section v-if="!isGuidanceCounselor" class="grid gap-5 lg:grid-cols-[1.35fr_1fr]">
             <div class="bento p-5">
                 <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
                     <div>

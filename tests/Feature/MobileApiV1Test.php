@@ -5,16 +5,24 @@ namespace Tests\Feature;
 use App\Actions\Security\IssueMemberPasskey;
 use App\Enums\CpfRole;
 use App\Enums\MembershipStatus;
+use App\Enums\ReferralPriority;
 use App\Models\Campus;
+use App\Models\CampusCounselor;
 use App\Models\CampusEvent;
 use App\Models\CampusEventAttendance;
 use App\Models\CampusMembership;
+use App\Models\Election;
+use App\Models\ElectionCandidate;
+use App\Models\PaymentDestination;
 use App\Models\PeerQuote;
 use App\Models\User;
 use App\Services\ClubTenureService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class MobileApiV1Test extends TestCase
@@ -44,6 +52,10 @@ class MobileApiV1Test extends TestCase
         string $name,
         bool $mustChangePassword = false,
     ): array {
+        $parts = array_map('trim', explode(',', $name, 2));
+        $lastName = $parts[0] !== '' ? $parts[0] : 'User';
+        $firstName = $parts[1] ?? 'Sample';
+
         $user = User::factory()->create([
             'name' => $name,
             'password' => Hash::make('SecretPass2026!'),
@@ -57,9 +69,9 @@ class MobileApiV1Test extends TestCase
             'status' => MembershipStatus::Approved,
             'enrollment_source' => 'officer_added',
             'recorded_email' => $user->email,
-            'first_name' => 'Sample',
+            'first_name' => $firstName,
             'middle_name' => 'A.',
-            'last_name' => 'User',
+            'last_name' => $lastName,
             'full_name_last_first_mi' => $name,
             'course' => 'BSIT',
             'year_level' => '4',
@@ -117,10 +129,8 @@ class MobileApiV1Test extends TestCase
             'is_approved' => true,
         ]);
 
-        // Unauthenticated requests return 401 JSON
         $this->getJson('/api/v1/auth/me')->assertUnauthorized();
 
-        // Wrong password returns 422
         $this->postJson('/api/v1/auth/login', [
             'email' => $officer->email,
             'password' => 'WrongPassword!',
@@ -129,7 +139,6 @@ class MobileApiV1Test extends TestCase
             ->assertStatus(422)
             ->assertJsonValidationErrors('email');
 
-        // Valid login issues Sanctum Bearer token + full profile payload
         $loginRes = $this->postJson('/api/v1/auth/login', [
             'email' => $officer->email,
             'password' => 'SecretPass2026!',
@@ -151,7 +160,6 @@ class MobileApiV1Test extends TestCase
         $sig = substr(hash_hmac('sha256', $raw, (string) config('app.key')), 0, 16);
         $this->assertSame("{$raw}|sig:{$sig}", $loginRes->json('qr_payload'));
 
-        // GET /api/v1/auth/me authenticates via Bearer token
         $this->withToken($token)
             ->getJson('/api/v1/auth/me')
             ->assertOk()
@@ -159,7 +167,6 @@ class MobileApiV1Test extends TestCase
             ->assertJsonPath('verified_role', 'president')
             ->assertJsonPath('qr_payload', "{$raw}|sig:{$sig}");
 
-        // Logout revokes the current token
         $this->withToken($token)
             ->postJson('/api/v1/auth/logout')
             ->assertOk()
@@ -192,7 +199,6 @@ class MobileApiV1Test extends TestCase
         $issued = app(IssueMemberPasskey::class)->handle($adviser, $membership, true, false);
         $plainCode = $issued['enrollment_code'];
 
-        // Passkey login succeeds atomically and issues Sanctum Bearer token
         $passkeyRes = $this->postJson('/api/v1/auth/passkey-code', [
             'email' => $member->email,
             'passkey_code' => str_replace('-', '', $plainCode),
@@ -206,7 +212,6 @@ class MobileApiV1Test extends TestCase
             ->assertJsonPath('qr_unlocked', false)
             ->assertJsonPath('qr_payload', null);
 
-        // Replaying same passkey fails because it was atomically claimed
         $this->postJson('/api/v1/auth/passkey-code', [
             'email' => $member->email,
             'passkey_code' => $plainCode,
@@ -215,7 +220,6 @@ class MobileApiV1Test extends TestCase
             ->assertStatus(422)
             ->assertJsonValidationErrors('passkey_code');
 
-        // Transition member to Former/Alumni -> /api/v1/auth/me exposes former role with qr_payload locked
         app(ClubTenureService::class)->transitionToAlumni($membership, $adviser, 'graduated');
 
         $this->bearer((string) $passkeyRes->json('token'))
@@ -257,7 +261,6 @@ class MobileApiV1Test extends TestCase
             'approved_at' => now(),
         ]);
 
-        // Unauthenticated blocked
         $this->getJson('/api/v1/events')->assertUnauthorized();
 
         $saaToken = $saa->createToken('Officer Phone')->plainTextToken;
@@ -271,7 +274,6 @@ class MobileApiV1Test extends TestCase
             $sig = substr(hash_hmac('sha256', $raw, (string) config('app.key')), 0, 16);
             $signedQr = "{$raw}|sig:{$sig}";
 
-            // Regular member cannot operate QR scanner (403)
             $this->bearer($memberToken)
                 ->postJson("/api/v1/events/{$event->id}/scan", [
                     'qr_payload' => $signedQr,
@@ -279,7 +281,6 @@ class MobileApiV1Test extends TestCase
                 ])
                 ->assertForbidden();
 
-            // Other campus officer cannot scan this campus's event (403)
             $this->bearer($otherOfficerToken)
                 ->postJson("/api/v1/events/{$event->id}/scan", [
                     'qr_payload' => $signedQr,
@@ -287,7 +288,6 @@ class MobileApiV1Test extends TestCase
                 ])
                 ->assertForbidden();
 
-            // Officer cannot Log-Out before Log-In (422)
             $this->bearer($saaToken)
                 ->postJson("/api/v1/events/{$event->id}/scan", [
                     'qr_payload' => $signedQr,
@@ -295,7 +295,6 @@ class MobileApiV1Test extends TestCase
                 ])
                 ->assertStatus(422);
 
-            // Officer scans member IN (201)
             $this->bearer($saaToken)
                 ->postJson("/api/v1/events/{$event->id}/scan", [
                     'qr_payload' => $signedQr,
@@ -304,7 +303,6 @@ class MobileApiV1Test extends TestCase
                 ->assertCreated()
                 ->assertJsonPath('status', 'logged_in');
 
-            // Member sees event + logged_in status in GET /api/v1/events
             $this->bearer($memberToken)
                 ->getJson('/api/v1/events')
                 ->assertOk()
@@ -314,7 +312,6 @@ class MobileApiV1Test extends TestCase
                 ->assertJsonPath('events.0.can_scan', false)
                 ->assertJsonPath('events.0.my_attendance.status', 'logged_in');
 
-            // Officer sees can_scan = true and scans member OUT (200)
             $this->bearer($saaToken)
                 ->getJson('/api/v1/events')
                 ->assertOk()
@@ -357,7 +354,6 @@ class MobileApiV1Test extends TestCase
                 @unlink($apkPath);
             }
 
-            // Missing APK returns clean 404 coming-soon HTML & JSON responses
             $this->get('/download/android')
                 ->assertNotFound()
                 ->assertSee('CPF Mobile APK Coming Soon');
@@ -367,7 +363,6 @@ class MobileApiV1Test extends TestCase
                 ->assertJsonPath('status', 'coming_soon')
                 ->assertJsonPath('platform', 'android');
 
-            // Present APK serves downloadable Android package MIME type
             @mkdir($apkDir, 0755, true);
             file_put_contents($apkPath, "PK\x03\x04dummy-apk-payload");
 
@@ -383,5 +378,319 @@ class MobileApiV1Test extends TestCase
                 @unlink($apkPath);
             }
         }
+    }
+
+    public function test_api_v1_membership_roster_gc_dues_toggles_and_payments_workflow(): void
+    {
+        Storage::fake('local');
+
+        [$adviser] = $this->createVerifiedMember($this->alijis, CpfRole::Adviser, 'Montemayor, Elena V.');
+        [$secretary] = $this->createVerifiedMember($this->alijis, CpfRole::Secretary, 'Alvarez, Hannah G.');
+        [$treasurer] = $this->createVerifiedMember($this->alijis, CpfRole::Treasurer, 'Villanueva, Marco T.');
+        [$member, $memberMembership] = $this->createVerifiedMember($this->alijis, CpfRole::Member, 'Zamora, Katrina M.');
+
+        $adviserToken = $adviser->createToken('Adviser')->plainTextToken;
+        $secretaryToken = $secretary->createToken('Secretary')->plainTextToken;
+        $treasurerToken = $treasurer->createToken('Treasurer')->plainTextToken;
+        $memberToken = $member->createToken('Member')->plainTextToken;
+
+        // Regular member cannot view roster (403)
+        $this->bearer($memberToken)
+            ->getJson('/api/v1/membership/roster')
+            ->assertForbidden();
+
+        // Officer sees A-Z sorted approved roster (Alvarez -> Montemayor -> Villanueva -> Zamora)
+        $rosterRes = $this->bearer($secretaryToken)
+            ->getJson('/api/v1/membership/roster')
+            ->assertOk()
+            ->assertJsonPath('permissions.can_confirm_messenger_gc', true)
+            ->assertJsonPath('permissions.can_validate_payments', false);
+
+        $names = array_column($rosterRes->json('roster'), 'full_name_last_first_mi');
+        $this->assertSame([
+            'Alvarez, Hannah G.',
+            'Montemayor, Elena V.',
+            'Villanueva, Marco T.',
+            'Zamora, Katrina M.',
+        ], $names);
+
+        // Secretary can toggle Messenger GC, but Treasurer cannot
+        $this->bearer($treasurerToken)
+            ->patchJson("/api/v1/membership/{$memberMembership->id}/toggle-gc")
+            ->assertForbidden();
+
+        $this->bearer($secretaryToken)
+            ->patchJson("/api/v1/membership/{$memberMembership->id}/toggle-gc")
+            ->assertOk()
+            ->assertJsonPath('is_in_messenger_gc', true);
+
+        // Treasurer can toggle dues, but Secretary cannot
+        $this->bearer($secretaryToken)
+            ->patchJson("/api/v1/membership/{$memberMembership->id}/toggle-dues")
+            ->assertForbidden();
+
+        $this->bearer($treasurerToken)
+            ->patchJson("/api/v1/membership/{$memberMembership->id}/toggle-dues")
+            ->assertOk()
+            ->assertJsonPath('has_paid_dues', true);
+
+        // Approved payment destination & receipt upload
+        $destination = PaymentDestination::create([
+            'campus_id' => $this->alijis->id,
+            'channel' => 'GCash',
+            'account_name' => 'CPF Alijis Chapter',
+            'account_number' => '0917-123-4567',
+            'is_active' => true,
+            'approved_by_adviser_id' => $adviser->id,
+        ]);
+
+        $submitRes = $this->bearer($memberToken)
+            ->post('/api/v1/payments/submit', [
+                'destination_id' => $destination->id,
+                'purpose' => 'AY 2026-2027 Membership Dues',
+                'amount' => 150,
+                'reference_number' => 'GCASH-554433',
+                'receipt' => UploadedFile::fake()->create('receipt.pdf', 120, 'application/pdf'),
+            ], ['Accept' => 'application/json'])
+            ->assertCreated()
+            ->assertJsonPath('status', 'submitted');
+
+        $paymentId = (int) $submitRes->json('payment.id');
+
+        // Member sees own submission, but empty validation_queue
+        $this->bearer($memberToken)
+            ->getJson('/api/v1/payments')
+            ->assertOk()
+            ->assertJsonCount(1, 'destinations')
+            ->assertJsonCount(1, 'my_submissions')
+            ->assertJsonCount(0, 'validation_queue')
+            ->assertJsonPath('my_submissions.0.has_receipt', true);
+
+        // Treasurer sees validation_queue and validates receipt
+        $this->bearer($treasurerToken)
+            ->getJson('/api/v1/payments')
+            ->assertOk()
+            ->assertJsonPath('permissions.can_validate_payments', true)
+            ->assertJsonCount(1, 'validation_queue')
+            ->assertJsonPath('validation_queue.0.id', $paymentId);
+
+        $this->bearer($treasurerToken)
+            ->patchJson("/api/v1/payments/{$paymentId}/validate", [
+                'status' => 'validated',
+                'treasurer_notes' => 'Confirmed in chapter ledger.',
+            ])
+            ->assertOk()
+            ->assertJsonPath('status', 'validated');
+
+        $this->assertNotEmpty($adviserToken);
+    }
+
+    public function test_api_v1_referrals_validates_counselor_availability_and_returns_privacy_safe_mine_view(): void
+    {
+        [$counselorUser] = $this->createVerifiedMember($this->alijis, CpfRole::GuidanceCounselor, 'Soriano, Clarissa D.');
+        [$peer] = $this->createVerifiedMember($this->alijis, CpfRole::Member, 'Reyes, Katrina M.');
+
+        $counselor = CampusCounselor::ensureDefaultCounselorsForCampus($this->alijis->id)->firstOrFail();
+        // Default first counselor has vacant windows: 08:30-10:00, 10:30-12:00, 13:30-15:00 on Mon-Fri (days 1..5).
+        $nextWeekday = now()->addDay();
+        while ($nextWeekday->isWeekend()) {
+            $nextWeekday = $nextWeekday->addDay();
+        }
+        $weekdayDate = $nextWeekday->toDateString();
+
+        $peerToken = $peer->createToken('Peer')->plainTextToken;
+
+        // 1. Slot outside counselor's weekly_vacant_slots (e.g. 16:30-17:30) fails with 422
+        $this->bearer($peerToken)
+            ->postJson('/api/v1/referrals', [
+                'referral_type' => 'peer_referral',
+                'student_identifier' => 'Client, Juan P.',
+                'suggested_priority' => ReferralPriority::Routine->value,
+                'concern_summary' => 'Private intake concern.',
+                'counselor_id' => $counselor->id,
+                'preferred_date' => $weekdayDate,
+                'preferred_start_time' => '16:30',
+                'preferred_end_time' => '17:30',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('preferred_start_time');
+
+        // 2. Valid slot inside counselor's 08:30-10:00 window succeeds (201)
+        $created = $this->bearer($peerToken)
+            ->postJson('/api/v1/referrals', [
+                'referral_type' => 'peer_referral',
+                'student_identifier' => 'Client, Juan P.',
+                'student_course_section' => 'BSIT 2A',
+                'suggested_priority' => ReferralPriority::SemiUrgent->value,
+                'concern_summary' => 'CONFIDENTIAL PEER INTAKE TEXT',
+                'counselor_id' => $counselor->id,
+                'preferred_date' => $weekdayDate,
+                'preferred_start_time' => '08:30',
+                'preferred_end_time' => '09:30',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('status', 'submitted')
+            ->assertJsonPath('feedback_status', 'pending')
+            ->assertJsonPath('suggested_slot.start_time', '08:30');
+
+        $referralId = (int) $created->json('referral_id');
+
+        // 3. Overlapping slot on the same date fails with 422
+        $this->bearer($peerToken)
+            ->postJson('/api/v1/referrals', [
+                'referral_type' => 'self_counseling',
+                'student_identifier' => 'Reyes, Katrina M.',
+                'concern_summary' => 'Overlapping slot check.',
+                'counselor_id' => $counselor->id,
+                'preferred_date' => $weekdayDate,
+                'preferred_start_time' => '09:00',
+                'preferred_end_time' => '10:00',
+            ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('preferred_start_time');
+
+        // 4. Counselor confirms referral on web route with confidential clinical notes
+        $this->actingAs($counselorUser)
+            ->patchJson("/referrals/{$referralId}/confirm", [
+                'feedback_status' => 'ongoing',
+                'safe_scheduling_note' => 'Confirmed at Guidance Testing Room.',
+                'confidential_clinical_notes' => 'STRICTLY SECRET CLINICAL ASSESSMENT',
+            ])
+            ->assertOk();
+
+        // 5. GET /api/v1/referrals/mine exposes ONLY safe status + confirmed slot — zero clinical leakage
+        $mineRes = $this->bearer($peerToken)
+            ->getJson('/api/v1/referrals/mine')
+            ->assertOk()
+            ->assertJsonPath('referrals.0.id', $referralId)
+            ->assertJsonPath('referrals.0.status', 'ongoing')
+            ->assertJsonPath('referrals.0.feedback_status', 'ongoing')
+            ->assertJsonPath('referrals.0.safe_scheduling_note', 'Confirmed at Guidance Testing Room.')
+            ->assertJsonPath('referrals.0.confirmed_slot.start_time', '08:30')
+            ->assertJsonMissingPath('referrals.0.concern_summary')
+            ->assertJsonMissingPath('referrals.0.encrypted_concern_summary')
+            ->assertJsonMissingPath('referrals.0.confidential_clinical_notes');
+
+        $mineRes->assertDontSee('STRICTLY SECRET CLINICAL ASSESSMENT');
+        $mineRes->assertDontSee('CONFIDENTIAL PEER INTAKE TEXT');
+    }
+
+    public function test_api_v1_elections_nominate_vote_and_ephemeral_cache_live_chat_flushes_on_close(): void
+    {
+        [$adviser] = $this->createVerifiedMember($this->alijis, CpfRole::Adviser, 'Montemayor, Elena V.');
+        [$memberA] = $this->createVerifiedMember($this->alijis, CpfRole::Member, 'Mercado, Sofia R.');
+        [$memberB] = $this->createVerifiedMember($this->alijis, CpfRole::Member, 'Reyes, Katrina M.');
+
+        $adviserToken = $adviser->createToken('Adviser')->plainTextToken;
+        $tokenA = $memberA->createToken('Member A')->plainTextToken;
+        $tokenB = $memberB->createToken('Member B')->plainTextToken;
+
+        // No active election initially
+        $this->bearer($tokenA)
+            ->getJson('/api/v1/elections/active')
+            ->assertOk()
+            ->assertJsonPath('active_election', null);
+
+        $election = Election::create([
+            'campus_id' => $this->alijis->id,
+            'academic_year' => '2026-2027',
+            'title' => 'CPF Mobile General Election',
+            'status' => 'open',
+            'current_position' => 'president',
+            'current_phase' => 'nomination',
+            'round_number' => 1,
+            'position_results' => [],
+            'created_by_user_id' => $adviser->id,
+        ]);
+
+        $cacheKey = Election::liveChatCacheKey($election->id);
+        Cache::forget($cacheKey);
+
+        // Self-nominate Member A & Member B via API
+        $this->bearer($tokenA)
+            ->postJson("/api/v1/elections/{$election->id}/nominate", [
+                'nominee_user_id' => $memberA->id,
+                'platform' => 'Peer wellness outreach.',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('candidate.nomination_status', 'accepted');
+
+        $this->bearer($tokenB)
+            ->postJson("/api/v1/elections/{$election->id}/nominate", [
+                'nominee_user_id' => $memberB->id,
+                'platform' => 'Inclusive peer workshops.',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('candidate.nomination_status', 'accepted');
+
+        // Move to voting phase and verify GET /api/v1/elections/active + POST vote
+        $election->update(['current_phase' => 'voting']);
+        $candidateA = ElectionCandidate::where('election_id', $election->id)
+            ->where('user_id', $memberA->id)
+            ->firstOrFail();
+
+        $this->bearer($tokenB)
+            ->postJson("/api/v1/elections/{$election->id}/vote", [
+                'candidate_id' => $candidateA->id,
+            ])
+            ->assertOk()
+            ->assertJsonPath('status', 'voted');
+
+        $this->bearer($tokenB)
+            ->getJson('/api/v1/elections/active')
+            ->assertOk()
+            ->assertJsonPath('active_election.id', $election->id)
+            ->assertJsonPath('active_election.voting_status.has_voted_current_round', true)
+            ->assertJsonPath('active_election.voting_status.my_current_vote_candidate_id', $candidateA->id);
+
+        // Ephemeral live chat stores ONLY in Cache (capped at 100 messages)
+        for ($i = 1; $i <= 105; $i++) {
+            Cache::put($cacheKey, array_merge(Cache::get($cacheKey, []), [[
+                'id' => "seed-{$i}",
+                'election_id' => $election->id,
+                'sender_user_id' => $memberA->id,
+                'sender_name' => 'Mercado, Sofia R.',
+                'sender_role' => 'member',
+                'sender_role_label' => 'Verified Peer Member',
+                'message_body' => "Message #{$i}",
+                'sent_at' => now()->toIso8601String(),
+            ]]), now()->addHours(2));
+        }
+
+        // Posting a new message trims the cache array down to max 100 messages
+        $this->bearer($tokenA)
+            ->postJson("/api/v1/elections/{$election->id}/live-chat", [
+                'message_body' => 'Good luck to all nominees!',
+            ])
+            ->assertCreated()
+            ->assertJsonPath('status', 'sent')
+            ->assertJsonPath('messages_count', 100);
+
+        $chatRes = $this->bearer($tokenB)
+            ->getJson("/api/v1/elections/{$election->id}/live-chat")
+            ->assertOk()
+            ->assertJsonCount(100, 'messages');
+
+        $this->assertSame('Good luck to all nominees!', $chatRes->json('messages.99.message_body'));
+        $this->assertTrue(Cache::has($cacheKey));
+
+        // Closing the election automatically flushes the live-chat cache key and blocks further chat
+        $this->actingAs($adviser)
+            ->patchJson("/elections/{$election->id}/status", [
+                'status' => 'closed',
+            ])
+            ->assertOk();
+
+        $this->assertFalse(Cache::has($cacheKey));
+
+        $this->bearer($tokenA)
+            ->getJson("/api/v1/elections/{$election->id}/live-chat")
+            ->assertStatus(422);
+
+        $this->bearer($adviserToken)
+            ->postJson("/api/v1/elections/{$election->id}/live-chat", [
+                'message_body' => 'Should be rejected because session closed.',
+            ])
+            ->assertStatus(422);
     }
 }

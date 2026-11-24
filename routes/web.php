@@ -2,10 +2,12 @@
 
 use App\Http\Controllers\AdviserHandoverController;
 use App\Http\Controllers\AlumniArchiveController;
+use App\Http\Controllers\AnnouncementController;
 use App\Http\Controllers\Auth\ForcePasswordChangeController;
 use App\Http\Controllers\Auth\PasskeyCodeLoginController;
 use App\Http\Controllers\CampusOperationsController;
 use App\Http\Controllers\CommunityHubController;
+use App\Http\Controllers\CounselorInvitationController;
 use App\Http\Controllers\CpfFeatureController;
 use App\Http\Controllers\CpfV4Controller;
 use App\Http\Controllers\Credentials\BlockchainCredentialController;
@@ -65,6 +67,12 @@ Route::post('login/passkey-code', [PasskeyCodeLoginController::class, 'store'])
     ->middleware(['guest', 'throttle:5,1'])
     ->name('login.passkey-code');
 
+Route::get('counselor-invitations/{token}', [CounselorInvitationController::class, 'show'])
+    ->name('counselor-invitations.show');
+Route::post('counselor-invitations/{token}/accept', [CounselorInvitationController::class, 'accept'])
+    ->middleware('throttle:5,1')
+    ->name('counselor-invitations.accept');
+
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::get('profile-photos/{targetUser}', [ProfileController::class, 'showPhoto'])
         ->name('profile-photos.show');
@@ -82,6 +90,12 @@ Route::middleware(['auth', 'verified'])->group(function () {
             ->middleware('throttle:5,1')
             ->name('adviser-handover.respond');
         Route::delete('adviser-handover/{handover}', [AdviserHandoverController::class, 'cancel'])->name('adviser-handover.cancel');
+        Route::post('counselor-invitations', [CounselorInvitationController::class, 'store'])
+            ->middleware('throttle:10,1')
+            ->name('counselor-invitations.store');
+        Route::get('announcements', [AnnouncementController::class, 'index'])->name('announcements.index');
+        Route::post('announcements', [AnnouncementController::class, 'store'])->name('announcements.store');
+        Route::delete('announcements/{announcement}', [AnnouncementController::class, 'destroy'])->name('announcements.destroy');
         Route::get('events-activities', [EventActivityController::class, 'index'])->name('events.index');
         Route::post('events-activities', [EventActivityController::class, 'store'])->name('events.store');
         Route::patch('events-activities/{event}/approve', [EventActivityController::class, 'approve'])->name('events.approve');
@@ -125,6 +139,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::post('officers-gc/{channel}/messages', [CpfFeatureController::class, 'sendOfficerGcMessage'])->name('officers-gc.send');
         Route::post('officers-gc/{channel}/archive', [CpfFeatureController::class, 'archiveOfficerGc'])->name('officers-gc.archive');
         Route::post('counselors-gc/messages', [CpfFeatureController::class, 'sendCounselorGcMessage'])->name('counselors-gc.send');
+        Route::post('counselors-gc/archive', [CpfFeatureController::class, 'archiveCounselorGc'])->name('counselors-gc.archive');
 
         // v4 Community, Treasurer & Governance routes
         Route::post('achievements', [CpfV4Controller::class, 'storeAchievement'])->name('achievements.store');

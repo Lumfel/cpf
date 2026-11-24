@@ -1,5 +1,6 @@
 export type CpfRoleValue =
     | 'adviser'
+    | 'guidance_counselor'
     | 'president'
     | 'vice_president'
     | 'secretary'
@@ -85,6 +86,8 @@ export type AuthPermissions = {
     proposeEvents?: boolean;
     isOfficerOrAdviser?: boolean;
     isClubAdviser: boolean;
+    canCoordinateGuidance?: boolean;
+    canPublishAnnouncements?: boolean;
     accessAlumniArchive?: boolean;
 };
 
@@ -120,6 +123,12 @@ export type PendingAdviserHandoverState = {
         initiated_at: string | null;
         expires_at: string | null;
     } | null;
+    availableGuidanceCounselors?: Array<{
+        membership_id: number;
+        user_id: number;
+        full_name: string;
+        email: string;
+    }>;
 };
 
 export type PasskeyIssuedNotice = {

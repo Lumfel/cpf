@@ -155,7 +155,7 @@ class CampusMembershipController extends Controller
             'myChangeRequests' => $myChangeRequests,
             'pendingChangeRequests' => $pendingChangeRequests,
             'availableRoles' => collect(CpfRole::cases())
-                ->filter(fn (CpfRole $r) => $r !== CpfRole::Adviser)
+                ->filter(fn (CpfRole $r) => ! in_array($r, [CpfRole::Adviser, CpfRole::GuidanceCounselor], true))
                 ->map(fn (CpfRole $r) => [
                     'value' => $r->value,
                     'label' => $r->label(),
@@ -307,6 +307,12 @@ class CampusMembershipController extends Controller
             $newRole === CpfRole::Adviser && $membership->role !== CpfRole::Adviser,
             422,
             'Club Adviser authority can only be transferred to an incoming Guidance Counselor via the Adviser Handover tab.',
+        );
+
+        abort_if(
+            $newRole === CpfRole::GuidanceCounselor && $membership->role !== CpfRole::GuidanceCounselor,
+            422,
+            'Guidance Counselors must be registered via the Club Adviser Email + OTP Counselor Invitation flow.',
         );
 
         if ($membership->role === CpfRole::Adviser && $newRole !== CpfRole::Adviser) {

@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Enums\CpfRole;
 use App\Http\Controllers\Controller;
 use App\Http\Controllers\EventActivityController;
 use App\Models\CampusEvent;
@@ -14,6 +15,11 @@ class EventApiController extends Controller
     public function index(Request $request): JsonResponse
     {
         $user = $request->user();
+        abort_if(
+            $user?->verifiedRole() === CpfRole::GuidanceCounselor,
+            403,
+            'Guidance Counselors have coordination-only access and are blocked from Club Events.',
+        );
         $membership = $user->primaryMembership()->with('campus:id,code,name')->first();
         $isOfficerOrAdviser = $user->verifiedRole()?->isOfficerOrAdviser() ?? false;
         $canProposeEvents = $user->canProposeEvents();

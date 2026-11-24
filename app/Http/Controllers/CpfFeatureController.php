@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Actions\Gc\ArchiveAndResetOfficerGc;
+use App\Actions\Gc\ArchiveCounselorGc;
 use App\Actions\Security\IssueMemberPasskey;
 use App\Actions\Support\RequestTestingRoom;
 use App\Actions\Support\SubmitGuidanceReferral;
@@ -115,9 +116,9 @@ class CpfFeatureController extends Controller
         $membership = $user?->primaryMembership;
 
         abort_unless(
-            $role && $role->isOfficerOrAdviser() && $membership && $membership->campus_id === $roomRequest->campus_id,
+            $role && ($role->isOfficerOrAdviser() || $role->canCoordinateGuidance()) && $membership && $membership->campus_id === $roomRequest->campus_id,
             403,
-            'Only verified campus officers or the Club Adviser can review Testing Room requests.',
+            'Only verified campus officers, Guidance Counselors, or the Club Adviser can review Testing Room requests.',
         );
 
         $validated = $request->validate([
@@ -154,19 +155,40 @@ class CpfFeatureController extends Controller
             'student_course_section' => ['nullable', 'string', 'max:80'],
             'suggested_priority' => ['required', Rule::enum(ReferralPriority::class)],
             'concern_summary' => ['required', 'string', 'max:4000'],
+            'counselor_id' => ['nullable', 'integer', 'exists:campus_counselors,id'],
+            'preferred_date' => ['nullable', 'required_with:preferred_start_time,preferred_end_time', 'date', 'after_or_equal:today'],
+            'preferred_start_time' => ['nullable', 'required_with:preferred_date,preferred_end_time', 'date_format:H:i'],
+            'preferred_end_time' => ['nullable', 'required_with:preferred_date,preferred_start_time', 'date_format:H:i', 'after:preferred_start_time'],
         ]);
+
+        $campusId = (int) $validated['campus_id'];
 
         if ($membership !== null) {
             abort_unless(
-                (int) $validated['campus_id'] === $membership->campus_id,
+                $campusId === $membership->campus_id,
                 403,
                 'Referrals must be submitted to your assigned campus chapter.',
             );
         }
 
-        $referral = $action->handle($request->user(), (int) $validated['campus_id'], $validated, $request->ip());
+        if (! empty($validated['counselor_id'])) {
+            abort_unless(
+                CampusCounselor::query()
+                    ->where('id', (int) $validated['counselor_id'])
+                    ->where('campus_id', $campusId)
+                    ->exists(),
+                422,
+                'Selected counselor does not belong to this campus.',
+            );
+        }
 
-        return response()->json(['status' => 'submitted', 'referral_id' => $referral->id], 201);
+        $referral = $action->handle($request->user(), $campusId, $validated, $request->ip());
+
+        return response()->json([
+            'status' => 'submitted',
+            'feedback_status' => $referral->feedback_status,
+            'referral_id' => $referral->id,
+        ], 201);
     }
 
     public function confirmReferral(Request $request, GuidanceReferral $referral): JsonResponse
@@ -175,25 +197,73 @@ class CpfFeatureController extends Controller
         $membership = $user?->primaryMembership;
 
         abort_unless(
-            $user?->isClubAdviser() && $membership?->campus_id === $referral->campus_id,
+            $user?->canCoordinateGuidance() && $membership?->campus_id === $referral->campus_id,
             403,
-            'Only the Club Adviser / Guidance Counselor of this campus can confirm referral priority.',
+            'Only the Club Adviser or a campus Guidance Counselor can update referral status and triage.',
         );
 
         $validated = $request->validate([
-            'counselor_confirmed_priority' => ['required', Rule::enum(ReferralPriority::class)],
-            'status' => ['required', 'in:in_review,scheduled,resolved'],
+            'counselor_confirmed_priority' => ['nullable', Rule::enum(ReferralPriority::class)],
+            'feedback_status' => ['nullable', 'required_without:status', Rule::in(['pending', 'ongoing', 'completed'])],
+            'status' => ['nullable', 'required_without:feedback_status', Rule::in(['pending', 'ongoing', 'completed', 'submitted', 'in_review', 'scheduled', 'resolved'])],
+            'safe_scheduling_note' => ['nullable', 'string', 'max:500'],
+            'confidential_clinical_notes' => ['nullable', 'string', 'max:4000'],
         ]);
 
-        $confirmedPriority = ReferralPriority::from($validated['counselor_confirmed_priority']);
+        $confirmedPriority = isset($validated['counselor_confirmed_priority'])
+            ? ReferralPriority::from($validated['counselor_confirmed_priority'])
+            : ($referral->counselor_confirmed_priority ?? $referral->suggested_priority);
 
-        DB::transaction(function () use ($referral, $confirmedPriority, $validated, $user, $request): void {
-            $referral->update([
+        $rawFeedback = $validated['feedback_status'] ?? null;
+        $rawStatus = $validated['status'] ?? null;
+
+        $feedbackStatus = $rawFeedback ?? match ($rawStatus) {
+            'pending', 'submitted' => 'pending',
+            'completed', 'resolved' => 'completed',
+            default => 'ongoing',
+        };
+
+        $internalStatus = match ($rawStatus) {
+            'in_review', 'scheduled', 'resolved', 'submitted' => $rawStatus,
+            default => match ($feedbackStatus) {
+                'pending' => 'submitted',
+                'completed' => 'resolved',
+                default => 'in_review',
+            },
+        };
+
+        DB::transaction(function () use ($referral, $confirmedPriority, $feedbackStatus, $internalStatus, $validated, $user, $request): void {
+            $payload = [
                 'counselor_confirmed_priority' => $confirmedPriority,
                 'triage_response_target' => $confirmedPriority->responseTarget(),
                 'assigned_counselor_id' => $user->id,
-                'status' => $validated['status'],
-            ]);
+                'status' => $internalStatus,
+                'feedback_status' => $feedbackStatus,
+            ];
+
+            if (array_key_exists('safe_scheduling_note', $validated)) {
+                $payload['safe_scheduling_note'] = filled($validated['safe_scheduling_note'])
+                    ? trim((string) $validated['safe_scheduling_note'])
+                    : null;
+            }
+
+            if (array_key_exists('confidential_clinical_notes', $validated)) {
+                $payload['confidential_clinical_notes'] = filled($validated['confidential_clinical_notes'])
+                    ? trim((string) $validated['confidential_clinical_notes'])
+                    : null;
+            }
+
+            if ($referral->room_request_id !== null && $feedbackStatus === 'ongoing') {
+                RoomRequest::query()
+                    ->whereKey($referral->room_request_id)
+                    ->where('status', 'pending')
+                    ->update([
+                        'status' => 'approved',
+                        'reviewed_by_user_id' => $user->id,
+                    ]);
+            }
+
+            $referral->update($payload);
 
             ReferralAuditLog::create([
                 'referral_id' => $referral->id,
@@ -203,9 +273,12 @@ class CpfFeatureController extends Controller
             ]);
         });
 
+        $fresh = $referral->fresh();
+
         return response()->json([
-            'status' => $referral->status,
-            'referral' => $referral->fresh(),
+            'status' => $fresh->status,
+            'feedback_status' => $fresh->feedback_status,
+            'referral' => $fresh,
         ]);
     }
 
@@ -249,7 +322,38 @@ class CpfFeatureController extends Controller
         $archiveDir = (string) config('cpf.archive_path', storage_path('app/archives'));
         $archive = $action->handle($user, $channel, $archiveDir);
 
-        return response()->json(['status' => 'archived', 'archive' => $archive]);
+        $nextChannel = OfficerGcChannel::query()
+            ->where('campus_id', $channel->campus_id)
+            ->where('is_active', true)
+            ->latest('id')
+            ->first();
+
+        return response()->json([
+            'status' => 'archived',
+            'archive' => $archive,
+            'next_channel' => $nextChannel,
+        ]);
+    }
+
+    public function archiveCounselorGc(Request $request, ArchiveCounselorGc $action): JsonResponse
+    {
+        $user = $request->user();
+        $membership = $user?->primaryMembership;
+
+        abort_unless(
+            $user?->canCoordinateGuidance() && $membership !== null,
+            403,
+            'Only the campus Club Adviser and Guidance Counselors may archive and clear the Counselors Private GC.',
+        );
+
+        $archiveDir = (string) config('cpf.archive_path', storage_path('app/archives'));
+        $result = $action->handle($user, $membership->campus_id, $archiveDir);
+
+        return response()->json([
+            'status' => 'archived',
+            'archive' => $result['archive'],
+            'total_messages' => $result['total_messages'],
+        ]);
     }
 
     public function sendCounselorGcMessage(Request $request): JsonResponse
@@ -259,7 +363,7 @@ class CpfFeatureController extends Controller
         $membership = $user?->primaryMembership;
 
         abort_unless(
-            $user?->isClubAdviser() && $membership !== null,
+            $user?->canCoordinateGuidance() && $membership !== null,
             403,
             'Counselors Private GC is restricted to the campus Club Adviser and Guidance Counselors.',
         );

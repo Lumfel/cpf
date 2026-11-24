@@ -896,31 +896,31 @@ function formatFieldLabel(key: string): string {
                     <div
                         v-for="(member, idx) in filteredMembersAZ"
                         :key="member.id"
-                        class="group flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-4 transition-[transform,border-color,background-color] duration-200 hover:-translate-y-0.5 hover:shadow-md"
+                        class="group flex flex-col gap-3 rounded-2xl border p-4 transition-[border-color,background-color,box-shadow] duration-200 hover:shadow-md"
                         :class="
                             member.is_in_messenger_gc
                                 ? 'border-[#1A8F26]/35 bg-[#FBF6EE]/90'
                                 : 'border-amber-500/40 bg-white'
                         "
                     >
-                        <div class="flex items-start gap-3.5">
+                        <div class="flex items-stretch gap-3.5">
                             <!-- Clickable Alphabetical Index Badge -> Minimal Member QR Card -->
                             <button
                                 type="button"
                                 @click="openMemberQr(member)"
                                 :title="`View ${member.full_name_last_first_mi} Attendance QR Code`"
-                                class="flex size-10 shrink-0 cursor-pointer flex-col items-center justify-center rounded-xl font-bold transition hover:scale-105 hover:ring-2 hover:ring-[#0384C5]/45 focus:ring-2 focus:ring-[#0384C5] focus:outline-none"
+                                class="flex min-h-[72px] w-12 shrink-0 cursor-pointer flex-col items-center justify-center self-stretch rounded-xl font-bold transition hover:scale-[1.03] hover:ring-2 hover:ring-[#0384C5]/45 focus:ring-2 focus:ring-[#0384C5] focus:outline-none"
                                 :class="
                                     member.is_in_messenger_gc
                                         ? 'bg-[#1A8F26] text-white'
                                         : 'bg-[#F3EBDD] text-slate-800'
                                 "
                             >
-                                <span class="text-xs leading-none">{{ member.full_name_last_first_mi.charAt(0).toUpperCase() }}</span>
-                                <span class="text-[10px] opacity-75">#{{ idx + 1 }}</span>
+                                <span class="text-sm leading-none">{{ member.full_name_last_first_mi.charAt(0).toUpperCase() }}</span>
+                                <span class="mt-1 text-[10px] opacity-80">#{{ idx + 1 }}</span>
                             </button>
 
-                            <div>
+                            <div class="min-w-0 flex-1">
                                 <div class="flex flex-wrap items-center gap-2">
                                     <h3 class="text-sm font-bold text-slate-900">
                                         {{ member.full_name_last_first_mi }}
@@ -974,8 +974,8 @@ function formatFieldLabel(key: string): string {
                             </div>
                         </div>
 
-                        <!-- Right Controls: Adviser Role Selector + President/Adviser GC Confirmation + Treasurer Dues Check -->
-                        <div class="flex flex-wrap items-center gap-3">
+                        <!-- Static Bottom Action Toolbar: Adviser Role Selector + GC Confirmation + Dues + Passkey + Former Transition -->
+                        <div class="flex flex-wrap items-center gap-2.5 border-t border-black/10 pt-3">
                             <!-- Only Club Adviser (In Charge) can promote/change roles -->
                             <div v-if="permissions.isClubAdviser" class="flex items-center gap-1.5">
                                 <template v-if="member.role === 'adviser'">

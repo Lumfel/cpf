@@ -136,6 +136,51 @@ class DatabaseSeeder extends Seeder
             ],
         );
 
+        // 1b. Coordination-Only Campus Guidance Counselor (Non-Adviser)
+        $guidanceCounselor = User::updateOrCreate(
+            ['email' => 'counselor@cpf.chmsu.edu.ph'],
+            [
+                'name' => 'Delos Santos, Clarissa R.',
+                'password' => $defaultPassword,
+                'email_verified_at' => now(),
+                'must_change_password' => false,
+                'temporary_password_issued_at' => null,
+            ],
+        );
+
+        $counselorMembership = CampusMembership::updateOrCreate(
+            ['user_id' => $guidanceCounselor->id, 'campus_id' => $alijis->id],
+            [
+                'role' => CpfRole::GuidanceCounselor,
+                'status' => MembershipStatus::Approved,
+                'enrollment_source' => 'officer_added',
+                'recorded_email' => $guidanceCounselor->email,
+                'first_name' => 'Clarissa', 'middle_name' => 'R.', 'last_name' => 'Delos Santos',
+                'full_name_last_first_mi' => 'Delos Santos, Clarissa R.',
+                'course' => 'Guidance Services',
+                'year_level' => 'Faculty',
+                'section' => 'Guidance Counselor',
+                'course_year_section' => 'Guidance Services / Guidance Counselor',
+                'sex' => 'Female',
+                'gender_identity' => 'Woman',
+                'birthdate' => '1988-11-08',
+                'active_email' => $guidanceCounselor->email,
+                'active_fb_account' => 'Clarissa Delos Santos RGC (CHMSU Alijis Guidance Services)',
+                'facebook_profile_url' => 'https://www.facebook.com/clarissa.delossantos.chmsu',
+                'cellphone_number' => '0917-555-0112',
+                'added_or_approved_by' => $adviser->id,
+                'approved_at' => now(),
+                'is_in_messenger_gc' => true,
+                'gc_confirmed_by' => $adviser->id,
+                'gc_confirmed_at' => now(),
+                'has_paid_dues' => true,
+                'dues_confirmed_by' => $adviser->id,
+                'dues_confirmed_at' => now(),
+            ],
+        );
+
+        app(\App\Services\ClubTenureService::class)->openTenure($counselorMembership, $adviser);
+
         // 2. President (Can add/approve members + confirm Messenger GC)
         $president = User::updateOrCreate(
             ['email' => 'president@cpf.chmsu.edu.ph'],
@@ -767,9 +812,44 @@ class DatabaseSeeder extends Seeder
             ],
         );
 
+        \App\Models\CampusAnnouncement::updateOrCreate(
+            [
+                'campus_id' => $alijis->id,
+                'title' => 'CPF Campus General Assembly Notice — AY 2026–2027',
+            ],
+            [
+                'published_by_user_id' => $pio->id,
+                'publisher_role' => CpfRole::Pio->value,
+                'template_key' => 'general_assembly',
+                'body' => 'All verified CHMSU Alijis peer facilitators are invited to attend our General Assembly. Please bring your Attendance QR ID for check-in.',
+                'schedule_label' => 'Friday • 3:00 PM – 5:00 PM',
+                'location' => 'CHMSU Alijis Student Activity Center',
+                'is_pinned' => true,
+                'published_at' => now()->subHours(6),
+            ],
+        );
+
+        \App\Models\CampusAnnouncement::updateOrCreate(
+            [
+                'campus_id' => $alijis->id,
+                'title' => 'Midterm Peer Wellness Check-in & Calm Drop-in Hours',
+            ],
+            [
+                'published_by_user_id' => $secretary->id,
+                'publisher_role' => CpfRole::Secretary->value,
+                'template_key' => 'wellness_checkin',
+                'body' => 'Take a gentle pause this week. Our peer facilitators and campus Guidance Counselors have open Testing Room drop-in slots on Campus Hub.',
+                'schedule_label' => 'Monday – Friday • 9:00 AM – 4:00 PM',
+                'location' => 'CHMSU Alijis Testing Room',
+                'is_pinned' => false,
+                'published_at' => now()->subHours(2),
+            ],
+        );
+
         $alijisMemberIds = CampusMembership::query()
             ->where('campus_id', $alijis->id)
             ->where('status', MembershipStatus::Approved->value)
+            ->where('role', '!=', CpfRole::GuidanceCounselor->value)
             ->pluck('user_id');
 
         foreach ($alijisMemberIds as $recipientId) {

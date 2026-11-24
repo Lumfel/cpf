@@ -7,6 +7,7 @@ use App\Models\Campus;
 use App\Models\CampusCounselor;
 use App\Models\CampusRoom;
 use App\Models\CounselorGcMessage;
+use App\Models\CounselorInvitation;
 use App\Models\GuidanceReferral;
 use App\Models\OfficerGcArchive;
 use App\Models\OfficerGcChannel;
@@ -29,6 +30,8 @@ class CampusOperationsController extends Controller
         $campusId = $membership?->campus_id ?? $campuses->first()?->id ?? 1;
         $isOfficerOrAdviser = $user->verifiedRole()?->isOfficerOrAdviser() ?? false;
         $isClubAdviser = $user->isClubAdviser();
+        $canCoordinateGuidance = $user->canCoordinateGuidance();
+        $canReviewTestingRoom = $isOfficerOrAdviser || $canCoordinateGuidance;
 
         $testingRoom = CampusRoom::query()->firstOrCreate(
             [
@@ -70,7 +73,7 @@ class CampusOperationsController extends Controller
         $roomRequests = RoomRequest::query()
             ->with(['requester:id,name', 'counselor:id,name'])
             ->where('campus_id', $campusId)
-            ->when(! $isOfficerOrAdviser, function ($query) use ($user) {
+            ->when(! $canReviewTestingRoom, function ($query) use ($user) {
                 $query->where(function ($q) use ($user) {
                     $q->where('requested_by_user_id', $user->id)
                         ->orWhere('status', 'approved');
@@ -81,10 +84,10 @@ class CampusOperationsController extends Controller
             ->get()
             ->map(fn (RoomRequest $req) => [
                 'id' => $req->id,
-                'purpose' => ($isOfficerOrAdviser || $req->requested_by_user_id === $user->id)
+                'purpose' => ($canReviewTestingRoom || $req->requested_by_user_id === $user->id)
                     ? $req->purpose
                     : 'Booked',
-                'requester_name' => ($isOfficerOrAdviser || $req->requested_by_user_id === $user->id)
+                'requester_name' => ($canReviewTestingRoom || $req->requested_by_user_id === $user->id)
                     ? ($req->requester?->name ?? 'CPF Member')
                     : 'Confidential Booking',
                 'counselor_name' => $req->counselor?->name,
@@ -97,7 +100,9 @@ class CampusOperationsController extends Controller
             ])
             ->values();
 
+        // Privacy-safe view for the submitting peer: ONLY safe feedback status + scheduled slot + non-clinical scheduling note.
         $myReferrals = GuidanceReferral::query()
+            ->with('counselor:id,name')
             ->where('submitted_by_user_id', $user->id)
             ->latest()
             ->get()
@@ -106,10 +111,13 @@ class CampusOperationsController extends Controller
                 'referral_type' => $ref->referral_type,
                 'student_identifier' => $ref->student_identifier,
                 'student_course_section' => $ref->student_course_section,
-                'suggested_priority' => $ref->suggested_priority->value,
-                'counselor_confirmed_priority' => $ref->counselor_confirmed_priority?->value,
-                'triage_response_target' => $ref->triage_response_target,
-                'status' => $ref->status,
+                'feedback_status' => $ref->feedback_status ?: 'pending',
+                'safe_scheduling_note' => $ref->safe_scheduling_note,
+                'counselor_id' => $ref->counselor_id,
+                'counselor_name' => $ref->counselor?->name,
+                'preferred_date' => $ref->preferred_date?->format('Y-m-d'),
+                'preferred_start_time' => $ref->preferred_start_time ? substr((string) $ref->preferred_start_time, 0, 5) : null,
+                'preferred_end_time' => $ref->preferred_end_time ? substr((string) $ref->preferred_end_time, 0, 5) : null,
                 'created_at' => $ref->created_at?->toDateTimeString(),
             ])
             ->values();
@@ -117,9 +125,9 @@ class CampusOperationsController extends Controller
         $counselorInbox = collect();
         $counselorGcMessages = collect();
 
-        if ($isClubAdviser && $membership !== null) {
+        if ($canCoordinateGuidance && $membership !== null) {
             $counselorInbox = GuidanceReferral::query()
-                ->with('submitter:id,name')
+                ->with(['submitter:id,name', 'counselor:id,name'])
                 ->where('campus_id', $campusId)
                 ->latest()
                 ->get()
@@ -132,7 +140,14 @@ class CampusOperationsController extends Controller
                     'counselor_confirmed_priority' => $ref->counselor_confirmed_priority?->value,
                     'triage_response_target' => $ref->triage_response_target,
                     'concern_summary' => $ref->encrypted_concern_summary,
+                    'confidential_clinical_notes' => $ref->confidential_clinical_notes,
                     'status' => $ref->status,
+                    'feedback_status' => $ref->feedback_status ?: 'pending',
+                    'safe_scheduling_note' => $ref->safe_scheduling_note,
+                    'counselor_name' => $ref->counselor?->name,
+                    'preferred_date' => $ref->preferred_date?->format('Y-m-d'),
+                    'preferred_start_time' => $ref->preferred_start_time ? substr((string) $ref->preferred_start_time, 0, 5) : null,
+                    'preferred_end_time' => $ref->preferred_end_time ? substr((string) $ref->preferred_end_time, 0, 5) : null,
                     'submitter_name' => $ref->submitter?->name ?? 'Peer Member',
                     'created_at' => $ref->created_at?->toDateTimeString(),
                 ])
@@ -155,6 +170,26 @@ class CampusOperationsController extends Controller
                     'sender_role' => $msg->sender_role,
                     'message_body' => $msg->message_body,
                     'created_at' => (string) $msg->created_at,
+                ])
+                ->values();
+        }
+
+        $counselorInvitations = collect();
+        if ($isClubAdviser && $membership !== null) {
+            $counselorInvitations = CounselorInvitation::query()
+                ->where('campus_id', $campusId)
+                ->latest('id')
+                ->limit(15)
+                ->get()
+                ->map(fn (CounselorInvitation $inv) => [
+                    'id' => $inv->id,
+                    'email' => $inv->email,
+                    'counselor_name' => $inv->counselor_name,
+                    'status' => $inv->accepted_at !== null
+                        ? 'accepted'
+                        : ($inv->expires_at->isFuture() ? 'pending' : 'expired'),
+                    'expires_at' => $inv->expires_at->toDayDateTimeString(),
+                    'accepted_at' => $inv->accepted_at?->toDayDateTimeString(),
                 ])
                 ->values();
         }
@@ -215,6 +250,9 @@ class CampusOperationsController extends Controller
             'campuses' => $campuses,
             'isOfficerOrAdviser' => $isOfficerOrAdviser,
             'isClubAdviser' => $isClubAdviser,
+            'canCoordinateGuidance' => $canCoordinateGuidance,
+            'canReviewTestingRoom' => $canReviewTestingRoom,
+            'counselorInvitations' => $counselorInvitations,
             'testingRoom' => $testingRoom,
             'counselors' => $counselors,
             'calendarBookings' => $calendarBookings,

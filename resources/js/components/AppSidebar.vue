@@ -23,6 +23,7 @@ const page = usePage<{ auth: Auth }>();
 const roleLabel = computed(() => page.props.auth?.roleLabel ?? 'Ordinary Account');
 const campusName = computed(() => page.props.auth?.membership?.campus?.name ?? 'No Campus Assigned');
 const isOfficerOrAdviser = computed(() => Boolean(page.props.auth?.can?.isOfficerOrAdviser));
+const isGuidanceCounselor = computed(() => page.props.auth?.role === 'guidance_counselor');
 const isAlumni = computed(() => Boolean(page.props.auth?.isAlumni));
 const canAccessAlumniArchive = computed(() => Boolean(page.props.auth?.can?.accessAlumniArchive));
 
@@ -43,6 +44,21 @@ const mainNavItems = computed<NavItem[]>(() => {
                 title: 'Dashboard',
                 href: dashboard(),
                 icon: LayoutGrid,
+            },
+        ];
+    }
+
+    if (isGuidanceCounselor.value) {
+        return [
+            {
+                title: 'Dashboard',
+                href: dashboard(),
+                icon: LayoutGrid,
+            },
+            {
+                title: 'Campus Hub (Guidance)',
+                href: '/campus-hub',
+                icon: Building2,
             },
         ];
     }

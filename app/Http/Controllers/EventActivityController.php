@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\CpfRole;
 use App\Enums\MembershipStatus;
 use App\Models\Campus;
 use App\Models\CampusEvent;
@@ -25,6 +26,11 @@ class EventActivityController extends Controller
     public function index(Request $request): Response
     {
         $user = $request->user();
+        abort_if(
+            $user?->verifiedRole() === CpfRole::GuidanceCounselor,
+            403,
+            'Guidance Counselors have coordination-only access to Counselors GC, Testing Room schedules, and Guidance Referrals.',
+        );
         $membership = $user->primaryMembership()->with('campus:id,code,name')->first();
         $campus = $membership?->campus
             ?? Campus::query()->where('is_active', true)->orderBy('id')->first();
@@ -743,9 +749,11 @@ class EventActivityController extends Controller
         $membership = $user?->primaryMembership;
 
         abort_unless(
-            $user?->verifiedRole() !== null && $membership?->campus_id === $event->campus_id,
+            $user?->verifiedRole() !== null
+                && $user->verifiedRole() !== CpfRole::GuidanceCounselor
+                && $membership?->campus_id === $event->campus_id,
             403,
-            'Only verified members of this campus can submit an event reflection.',
+            'Only verified student members and officers of this campus can submit an event reflection.',
         );
 
         $event->syncLifecycleTimestamps();

@@ -23,6 +23,11 @@ class CommunityHubController extends Controller
     public function index(Request $request): Response
     {
         $user = $request->user();
+        abort_if(
+            $user?->verifiedRole() === CpfRole::GuidanceCounselor,
+            403,
+            'Guidance Counselors have coordination-only access and are blocked from student club elections.',
+        );
         $membership = $user->primaryMembership()->with('campus:id,code,name,adviser_name')->first();
         $campusId = $membership?->campus_id ?? Campus::query()->value('id') ?? 1;
         $isClubAdviser = $user->isClubAdviser();
@@ -31,6 +36,7 @@ class CommunityHubController extends Controller
             ->with('user:id,name,profile_photo_path,updated_at')
             ->where('campus_id', $campusId)
             ->where('status', MembershipStatus::Approved->value)
+            ->where('role', '!=', CpfRole::GuidanceCounselor->value)
             ->alphabetical()
             ->get([
                 'user_id',

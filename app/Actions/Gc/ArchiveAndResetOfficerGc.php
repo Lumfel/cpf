@@ -2,11 +2,13 @@
 
 namespace App\Actions\Gc;
 
+use App\Models\Campus;
 use App\Models\OfficerGcArchive;
 use App\Models\OfficerGcChannel;
 use App\Models\SchoolYearArchive;
 use App\Models\User;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Str;
 use ZipArchive;
 
 class ArchiveAndResetOfficerGc
@@ -19,7 +21,7 @@ class ArchiveAndResetOfficerGc
                 mkdir($archiveDir, 0755, true);
             }
 
-            $zipName = sprintf('cpf_campus_%d_officers_gc_%s.zip', $channel->campus_id, $channel->academic_year);
+            $zipName = sprintf('cpf_campus_%d_officers_gc_%s.zip', $channel->campus_id, Str::slug($channel->academic_year));
             $zipPath = rtrim($archiveDir, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.$zipName;
 
             $zip = new ZipArchive();
@@ -59,7 +61,58 @@ class ArchiveAndResetOfficerGc
             $channel->messages()->delete();
             $channel->update(['is_active' => false, 'reset_at' => $archivedAt]);
 
+            // Immediately provision and activate a fresh Officers GC channel for the new/next term
+            $campusCode = strtolower((string) (Campus::query()->whereKey($channel->campus_id)->value('code') ?? "campus-{$channel->campus_id}"));
+            $nextAcademicYear = $this->nextAvailableAcademicYear($channel->campus_id, $channel->academic_year);
+
+            OfficerGcChannel::create([
+                'campus_id' => $channel->campus_id,
+                'academic_year' => $nextAcademicYear,
+                'channel_key' => sprintf('campus.%s.officers-gc.%s', $campusCode, Str::slug($nextAcademicYear)),
+                'is_active' => true,
+            ]);
+
             return $archive;
         });
+    }
+
+    private function nextAvailableAcademicYear(int $campusId, string $currentAcademicYear): string
+    {
+        $candidate = $currentAcademicYear;
+
+        if (preg_match('/^(\d{4})-(\d{4})$/', trim($currentAcademicYear), $matches) === 1) {
+            $startYear = (int) $matches[1] + 1;
+            $endYear = (int) $matches[2] + 1;
+            $candidate = "{$startYear}-{$endYear}";
+
+            while (
+                OfficerGcChannel::query()
+                    ->where('campus_id', $campusId)
+                    ->where('academic_year', $candidate)
+                    ->exists()
+            ) {
+                $startYear++;
+                $endYear++;
+                $candidate = "{$startYear}-{$endYear}";
+            }
+
+            return $candidate;
+        }
+
+        $base = Str::limit(trim($currentAcademicYear) ?: sprintf('%d-%d', now()->year, now()->year + 1), 15, '');
+        $suffix = 2;
+        $candidate = "{$base}-T{$suffix}";
+
+        while (
+            OfficerGcChannel::query()
+                ->where('campus_id', $campusId)
+                ->where('academic_year', $candidate)
+                ->exists()
+        ) {
+            $suffix++;
+            $candidate = "{$base}-T{$suffix}";
+        }
+
+        return $candidate;
     }
 }

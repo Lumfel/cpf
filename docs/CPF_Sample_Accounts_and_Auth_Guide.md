@@ -27,26 +27,27 @@ php artisan cpf:reset-demo
 
 ---
 
-## 2. Sample Accounts (CHMSU Alijis Campus — Active Now • 11 Seeded Users)
+## 2. Sample Accounts (CHMSU Alijis Campus — Active Now • 12 Seeded Users)
 
 > **Active Campus Lock:** The portal is currently active for **CHMSU Alijis Campus**. Binalbagan, Talisay, and Fortune Towne chapters are currently on hold (**Coming Soon**).
 
-**Default password for all 10 pre-approved seeded accounts:** `password`  
-**Pending applicant #11:** receives a locked **12-character Passkey Code** (`XXXX-XXXX-XXXX`) upon approval so they can sign in and set their own personal password (no temporary password step).
+**Default password for all 11 pre-approved seeded accounts:** `password`  
+**Pending applicant #12:** receives a locked **12-character Passkey Code** (`XXXX-XXXX-XXXX`) upon approval so they can sign in and set their own personal password (no temporary password step).
 
 | # | Role (CPF Constitution) | Name | Email | Course / Year / Section | Governance Access & Key Responsibilities |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| 1 | **Club Adviser** (Guidance Counselor) | Montemayor, Elena V. | `adviser@cpf.chmsu.edu.ph` | Guidance Services / Adviser | Top authority (zero Admin role; account deletion disabled): approve/add members, assign student officer roles (Counselor-only handover via **Adviser Handover**), confirm GC & Dues, issue Passkey Codes, triage encrypted referrals, manage events & ZIP archives, preside & break ties in elections, **Officers Private GC** |
-| 2 | **President** | Mercado, Sofia R. | `president@cpf.chmsu.edu.ph` | BS Psychology • Yr 4 • Sec A | Approve/add members, co-sign **Dues Checklist**, propose events, confirm Messenger GC, issue Passkey Codes, review Testing Room requests, **Officers Private GC** |
-| 3 | **Vice President** | Bautista, Miguel A. | `vice_president@cpf.chmsu.edu.ph` | BSIT • Yr 4 • Sec B | Assumes President duties in absence; approve/add members, co-sign **Dues Checklist**, propose events, confirm Messenger GC, issue Passkey Codes, **Officers Private GC** |
-| 4 | **Secretary** | Alvarez, Hannah G. | `secretary@cpf.chmsu.edu.ph` | BSIS • Yr 3 • Sec A | Maintain records/minutes; view pending queue, confirm Messenger GC, issue Passkey Codes, **Officers Private GC** |
-| 5 | **Treasurer** | Delgado, Liam C. | `treasurer@cpf.chmsu.edu.ph` | BSIT • Yr 3 • Sec B | Custody of funds & liquidation; confirm A–Z **Membership Dues Checklist** on `/dashboard` & `/membership`, **Officers Private GC** |
-| 6 | **Auditor** | Castillo, Marco D. | `auditor@cpf.chmsu.edu.ph` | BSA • Yr 4 • Sec A | Audit incoming/outgoing funds and Treasurer reports; **read-only Audit View** of Campus Dues Checklist on `/dashboard`, **Officers Private GC** |
-| 7 | **Business Manager** | Soriano, Patricia E. | `business@cpf.chmsu.edu.ph` | BSBA • Yr 3 • Sec A | Lead business projects & fundraising proposals, view campus roster, **Officers Private GC** |
-| 8 | **Public Information Officer (PIO)** | Navarro, Bianca F. | `pio@cpf.chmsu.edu.ph` | BS Psychology • Yr 2 • Sec B | Disseminate announcements & meeting notices; confirm Messenger GC, issue Passkey Codes, **Officers Private GC** |
-| 9 | **Sergeant-at-Arms** | Mendoza, Rafael J. | `saa@cpf.chmsu.edu.ph` | BSED • Yr 3 • Sec A | Maintain peace, calm, and order during meetings/events, view campus roster, **Officers Private GC** |
-| 10 | **Verified Member** | Reyes, Katrina M. | `katrina@cpf.chmsu.edu.ph` | BSIT • Yr 4 • Sec A | Approved peer facilitator (`is_in_messenger_gc = false`, `has_paid_dues = false`), Attendance QR ID, personal Passkey Code, seeded Blockchain Credentials |
-| 11 | **Pending Applicant** | Tibo-oc, Paul Felippe G. | `paulfelippegtibooc@gmail.com` | BSIT • Yr 4 • Sec A | `status = pending` — appears in the Pending Membership Applications queue on `/membership` for Adviser/President/VP confirmation |
+| 1 | **Club Adviser** (Guidance Counselor) | Montemayor, Elena V. | `adviser@cpf.chmsu.edu.ph` | Guidance Services / Adviser | Top authority (zero Admin role; account deletion disabled): approve/add members, invite campus Guidance Counselors via 24h Signed Link + 6-digit OTP, initiate **Adviser Handover** (existing Counselor dropdown or new invite), confirm GC & Dues, triage encrypted referrals, publish templated announcements, preside over elections, **Officers & Counselors Private GCs** |
+| 2 | **Guidance Counselor** *(Non-Adviser • Coordination Only)* | Delos Santos, Clarissa R. | `counselor@cpf.chmsu.edu.ph` | Guidance Services / Guidance Counselor | **Coordination-only** (`canCoordinateGuidance = true`, `isOfficerOrAdviser = false`): access **ONLY** to **Counselors Private GC**, **Testing Room** schedule/review, and confidential **Guidance Referrals** (`pending` / `ongoing` / `completed`). Blocked from Member Approvals, Dues, Officers GC, Elections/Voting, and Club Events; selectable in **Adviser Handover** dropdown |
+| 3 | **President** | Mercado, Sofia R. | `president@cpf.chmsu.edu.ph` | BS Psychology • Yr 4 • Sec A | Approve/add members, co-sign **Dues Checklist**, propose events, confirm Messenger GC, issue Passkey Codes, review Testing Room requests, **Officers Private GC** |
+| 4 | **Vice President** | Bautista, Miguel A. | `vice_president@cpf.chmsu.edu.ph` | BSIT • Yr 4 • Sec B | Assumes President duties in absence; approve/add members, co-sign **Dues Checklist**, propose events, confirm Messenger GC, issue Passkey Codes, **Officers Private GC** |
+| 5 | **Secretary** | Alvarez, Hannah G. | `secretary@cpf.chmsu.edu.ph` | BSIS • Yr 3 • Sec A | Maintain records/minutes; publish **Templated Campus Announcements**, view pending queue, confirm Messenger GC, issue Passkey Codes, **Officers Private GC** |
+| 6 | **Treasurer** | Delgado, Liam C. | `treasurer@cpf.chmsu.edu.ph` | BSIT • Yr 3 • Sec B | Custody of funds & liquidation; confirm A–Z **Membership Dues Checklist** on `/dashboard` & `/membership`, **Officers Private GC** |
+| 7 | **Auditor** | Castillo, Marco D. | `auditor@cpf.chmsu.edu.ph` | BSA • Yr 4 • Sec A | Audit incoming/outgoing funds and Treasurer reports; **read-only Audit View** of Campus Dues Checklist on `/dashboard`, **Officers Private GC** |
+| 8 | **Business Manager** | Soriano, Patricia E. | `business@cpf.chmsu.edu.ph` | BSBA • Yr 3 • Sec A | Lead business projects & fundraising proposals, view campus roster, **Officers Private GC** |
+| 9 | **Public Information Officer (PIO)** | Navarro, Bianca F. | `pio@cpf.chmsu.edu.ph` | BS Psychology • Yr 2 • Sec B | Publish **Templated Campus Announcements** (*General Assembly*, *Workshop Reminder*, *Dues Notice*, *Wellness Check-in*), confirm Messenger GC, **Officers Private GC** |
+| 10 | **Sergeant-at-Arms** | Mendoza, Rafael J. | `saa@cpf.chmsu.edu.ph` | BSED • Yr 3 • Sec A | Maintain peace, calm, and order during meetings/events, view campus roster, **Officers Private GC** |
+| 11 | **Verified Peer Member** | Reyes, Katrina M. | `katrina@cpf.chmsu.edu.ph` | BSIT • Yr 4 • Sec A | Approved peer facilitator (`is_in_messenger_gc = false`, `has_paid_dues = false`), Attendance QR ID, personal Passkey Code, privacy-safe Peer Referral submission with free-slot scheduling, seeded Blockchain Credentials |
+| 12 | **Pending Applicant** | Tibo-oc, Paul Felippe G. | `paulfelippegtibooc@gmail.com` | BSIT • Yr 4 • Sec A | `status = pending` — appears in the Pending Membership Applications queue on `/membership` for Adviser/President/VP confirmation |
 
 > **Zero Admin & Data Safety:** Per Constitution governance, there is no generic Admin role, direct student/officer promotion to `adviser` is blocked (Adviser authority transfers strictly to incoming Guidance Counselors via `/membership` -> **Adviser Handover**), directly added/approved users automatically receive verified email timestamps (`email_verified_at`), and **account deletion is permanently disabled** (`DELETE /settings/profile` returns `403`).
 

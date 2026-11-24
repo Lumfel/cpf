@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Actions\Gc\ArchiveAndResetOfficerGc;
 use App\Enums\CpfRole;
 use App\Enums\MembershipStatus;
 use App\Models\CampusMembership;
@@ -10,10 +11,12 @@ use App\Models\ElectionCandidate;
 use App\Models\ElectionOptOut;
 use App\Models\ElectionVote;
 use App\Models\MemberAchievement;
+use App\Models\OfficerGcChannel;
 use App\Models\PaymentDestination;
 use App\Models\PaymentSubmission;
 use App\Models\PeerQuote;
 use App\Models\TimeCapsule;
+use App\Models\User;
 use App\Support\CpfElectionPositions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -217,6 +220,12 @@ class CpfV4Controller extends Controller
             'Only verified members of this campus may nominate candidates.',
         );
 
+        abort_if(
+            $user->verifiedRole() === CpfRole::GuidanceCounselor,
+            403,
+            'Guidance Counselors have coordination-only access and do not participate in student club elections.',
+        );
+
         abort_unless(
             $election->status === 'open' && $election->current_phase === 'nomination' && $election->current_position !== null,
             422,
@@ -334,6 +343,12 @@ class CpfV4Controller extends Controller
             $user?->verifiedRole() !== null && $membership?->campus_id === $election->campus_id,
             403,
             'Only verified members of this campus may update nomination eligibility.',
+        );
+
+        abort_if(
+            $user->verifiedRole() === CpfRole::GuidanceCounselor,
+            403,
+            'Guidance Counselors have coordination-only access and do not participate in student club elections.',
         );
 
         abort_unless(
@@ -458,7 +473,7 @@ class CpfV4Controller extends Controller
             'won_by' => 'skipped',
         ];
 
-        $this->advanceElectionPosition($election, $position, $results);
+        $this->advanceElectionPosition($election, $position, $results, null, $user);
 
         return response()->json([
             'status' => 'position_skipped',
@@ -487,7 +502,14 @@ class CpfV4Controller extends Controller
             'Completed elections cannot be reopened. Start a new election session instead.',
         );
 
+        $wasOpenOrDraft = $election->status !== 'closed';
+        $wasCompleted = $election->current_phase === 'completed';
+
         $election->update(['status' => $validated['status']]);
+
+        if ($validated['status'] === 'closed' && $wasOpenOrDraft && ! $wasCompleted) {
+            $this->autoArchiveActiveOfficerGc($election, $user);
+        }
 
         return response()->json(['status' => $election->status, 'election' => $election]);
     }
@@ -504,9 +526,9 @@ class CpfV4Controller extends Controller
         );
 
         abort_if(
-            $user->isClubAdviser(),
+            $user->isClubAdviser() || $user->verifiedRole() === CpfRole::GuidanceCounselor,
             403,
-            'The Club Adviser presides over the election and only breaks ties — student members cast floor votes.',
+            'Only student CPF members and officers cast floor votes in campus elections.',
         );
 
         abort_unless($election->status === 'open', 422, 'Election is not currently open.');
@@ -640,7 +662,7 @@ class CpfV4Controller extends Controller
 
         if ($leaders->count() === 1) {
             $wonBy = $election->current_phase === 'tie_breaker' ? 'tiebreak_runoff' : 'vote';
-            $this->recordWinnerAndAdvance($election, $position, $leaders->first(), $maxVotes, $wonBy);
+            $this->recordWinnerAndAdvance($election, $position, $leaders->first(), $maxVotes, $wonBy, $user);
 
             return response()->json([
                 'status' => 'position_finalized',
@@ -664,7 +686,7 @@ class CpfV4Controller extends Controller
         if ($chosenResolution === 'adviser_tiebreak') {
             $chosen = $leaders->firstWhere('id', (int) ($validated['winner_candidate_id'] ?? 0));
             abort_unless($chosen !== null, 422, 'Please choose one of the tied candidates to break the tie.');
-            $this->recordWinnerAndAdvance($election, $position, $chosen, $maxVotes, 'adviser_tiebreak');
+            $this->recordWinnerAndAdvance($election, $position, $chosen, $maxVotes, 'adviser_tiebreak', $user);
 
             return response()->json([
                 'status' => 'position_finalized',
@@ -674,7 +696,7 @@ class CpfV4Controller extends Controller
 
         if ($chosenResolution === 'draw_lots') {
             $winner = $leaders->get(random_int(0, $leaders->count() - 1));
-            $this->recordWinnerAndAdvance($election, $position, $winner, $maxVotes, 'draw_lots');
+            $this->recordWinnerAndAdvance($election, $position, $winner, $maxVotes, 'draw_lots', $user);
 
             return response()->json([
                 'status' => 'position_finalized',
@@ -710,9 +732,9 @@ class CpfV4Controller extends Controller
             : CpfRole::tryFrom((string) $membership->role);
 
         abort_if(
-            $role === CpfRole::Adviser,
+            in_array($role, [CpfRole::Adviser, CpfRole::GuidanceCounselor], true),
             422,
-            'The Club Adviser presides over the election chamber and cannot be nominated for student officer positions.',
+            'Guidance Counselors and the Club Adviser cannot be nominated for student officer positions.',
         );
 
         $isOptedOut = ElectionOptOut::query()
@@ -783,6 +805,7 @@ class CpfV4Controller extends Controller
         ElectionCandidate $winner,
         int $votes,
         string $wonBy,
+        ?User $actor = null,
     ): void {
         $winnerMembership = CampusMembership::query()
             ->where('campus_id', $election->campus_id)
@@ -800,7 +823,7 @@ class CpfV4Controller extends Controller
             'won_by' => $wonBy,
         ];
 
-        $this->advanceElectionPosition($election, $position, $results, (int) $winner->user_id);
+        $this->advanceElectionPosition($election, $position, $results, (int) $winner->user_id, $actor);
     }
 
     /**
@@ -811,6 +834,7 @@ class CpfV4Controller extends Controller
         string $currentPosition,
         array $results,
         ?int $winnerUserId = null,
+        ?User $actor = null,
     ): void {
         $nextPosition = CpfElectionPositions::nextAfter($currentPosition);
 
@@ -850,6 +874,33 @@ class CpfV4Controller extends Controller
                 ]);
             }
         });
+
+        if ($nextPosition === null) {
+            $this->autoArchiveActiveOfficerGc($election, $actor);
+        }
+    }
+
+    private function autoArchiveActiveOfficerGc(Election $election, ?User $actor = null): void
+    {
+        $activeChannel = OfficerGcChannel::query()
+            ->where('campus_id', $election->campus_id)
+            ->where('is_active', true)
+            ->latest('id')
+            ->first();
+
+        if (! $activeChannel) {
+            return;
+        }
+
+        $archiver = $actor
+            ?? ($election->created_by_user_id ? User::query()->find($election->created_by_user_id) : null);
+
+        if (! $archiver) {
+            return;
+        }
+
+        $archiveDir = (string) config('cpf.archive_path', storage_path('app/archives'));
+        app(ArchiveAndResetOfficerGc::class)->handle($archiver, $activeChannel, $archiveDir);
     }
 
     public function submitPayment(Request $request): JsonResponse
@@ -858,6 +909,11 @@ class CpfV4Controller extends Controller
         $membership = $user?->primaryMembership;
 
         abort_unless($membership !== null, 403, 'A campus membership record is required before submitting dues.');
+        abort_if(
+            $user?->verifiedRole() === CpfRole::GuidanceCounselor,
+            403,
+            'Guidance Counselors are coordination-only and are blocked from student club dues.',
+        );
 
         $validated = $request->validate([
             'destination_id' => ['required', 'integer', 'exists:payment_destinations,id'],

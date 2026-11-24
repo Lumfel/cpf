@@ -2,7 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\CpfRole;
 use App\Enums\MembershipStatus;
+use App\Models\CampusAnnouncement;
 use App\Models\CampusEvent;
 use App\Models\CampusEventAttendance;
 use App\Models\CampusEventNotification;
@@ -33,10 +35,11 @@ class DashboardController extends Controller
         $campusId = $membership?->campus_id;
         $campusCode = $membership?->campus?->code ?? 'CHMSU';
         $roleValue = $user->verifiedRole()?->value ?? 'applicant';
+        $isGuidanceCounselor = $user->verifiedRole() === CpfRole::GuidanceCounselor;
         $isAlumni = $user->isAlumni();
 
-        // Attendance QR is unlocked once the verified active member creates their personal password.
-        $qrUnlocked = ! $isAlumni && $user->must_change_password === false && $user->verifiedRole() !== null;
+        // Attendance QR is unlocked once the verified active member creates their personal password (student/adviser club events only).
+        $qrUnlocked = ! $isAlumni && ! $isGuidanceCounselor && $user->must_change_password === false && $user->verifiedRole() !== null;
         $qrSvg = null;
         $qrPayload = null;
         $memberIdCode = null;
@@ -137,7 +140,7 @@ class DashboardController extends Controller
             : null;
 
         $campusEvents = collect();
-        if ($campusId !== null) {
+        if ($campusId !== null && ! $isGuidanceCounselor) {
             $canProposeEvents = $user->canProposeEvents();
             $campusEvents = CampusEvent::query()
                 ->where('campus_id', $campusId)
@@ -207,8 +210,27 @@ class DashboardController extends Controller
             );
         }
 
+        $canPublishAnnouncements = $user->canPublishAnnouncements();
+        $campusAnnouncements = collect();
+        if ($campusId !== null && $user->verifiedRole() !== null) {
+            $campusAnnouncements = CampusAnnouncement::query()
+                ->with('publisher:id,name')
+                ->where('campus_id', $campusId)
+                ->orderByDesc('is_pinned')
+                ->orderByDesc('published_at')
+                ->orderByDesc('id')
+                ->limit(20)
+                ->get()
+                ->map(fn (CampusAnnouncement $item) => AnnouncementController::formatAnnouncement($item))
+                ->values();
+        }
+
         return Inertia::render('Dashboard', [
             'isAlumni' => $isAlumni,
+            'isGuidanceCounselor' => $isGuidanceCounselor,
+            'canPublishAnnouncements' => $canPublishAnnouncements,
+            'announcementTemplates' => array_values(CampusAnnouncement::templates()),
+            'campusAnnouncements' => $campusAnnouncements,
             'myTenureSummary' => $myTenureSummary,
             'qrUnlocked' => $qrUnlocked,
             'memberIdCode' => $memberIdCode,
@@ -228,7 +250,7 @@ class DashboardController extends Controller
                 'is_active' => (bool) $officerGcChannel->is_active,
             ] : null,
             'officerGcMessages' => $officerGcMessages,
-            'myDuesStatus' => $membership ? [
+            'myDuesStatus' => ($membership && ! $isGuidanceCounselor) ? [
                 'has_paid_dues' => (bool) $membership->has_paid_dues,
                 'dues_confirmed_at' => $membership->dues_confirmed_at?->toDayDateTimeString(),
                 'dues_confirmer_name' => $membership->duesConfirmer?->name,

@@ -2,6 +2,8 @@
 
 namespace App\Http\Middleware;
 
+use App\Enums\CpfRole;
+use App\Enums\MembershipStatus;
 use App\Http\Controllers\FirstBootSetupController;
 use App\Models\AdviserHandover;
 use App\Models\Campus;
@@ -81,6 +83,7 @@ class HandleInertiaRequests extends Middleware
         $pendingAdviserHandover = [
             'incoming' => null,
             'outgoing' => null,
+            'availableGuidanceCounselors' => [],
         ];
 
         if ($user) {
@@ -105,6 +108,25 @@ class HandleInertiaRequests extends Middleware
                 }
 
                 if ($user->isClubAdviser()) {
+                    if ($membership) {
+                        $pendingAdviserHandover['availableGuidanceCounselors'] = CampusMembership::query()
+                            ->with('user:id,name,email')
+                            ->where('campus_id', $membership->campus_id)
+                            ->where('status', MembershipStatus::Approved->value)
+                            ->where('role', CpfRole::GuidanceCounselor->value)
+                            ->where('user_id', '!=', $user->id)
+                            ->alphabetical()
+                            ->get()
+                            ->map(fn (CampusMembership $counselorMembership) => [
+                                'membership_id' => $counselorMembership->id,
+                                'user_id' => $counselorMembership->user_id,
+                                'full_name' => $counselorMembership->full_name_last_first_mi,
+                                'email' => $counselorMembership->user?->email ?? $counselorMembership->active_email,
+                            ])
+                            ->values()
+                            ->all();
+                    }
+
                     $outgoing = AdviserHandover::query()
                         ->with(['campus:id,code,name', 'toUser:id,name,email', 'toMembership:id,full_name_last_first_mi,course_year_section'])
                         ->where('from_user_id', $user->id)
@@ -156,6 +178,8 @@ class HandleInertiaRequests extends Middleware
                     'proposeEvents' => $user ? $user->canProposeEvents() : false,
                     'isOfficerOrAdviser' => $user ? ($user->verifiedRole()?->isOfficerOrAdviser() ?? false) : false,
                     'isClubAdviser' => $user ? $user->isClubAdviser() : false,
+                    'canCoordinateGuidance' => $user ? $user->canCoordinateGuidance() : false,
+                    'canPublishAnnouncements' => $user ? $user->canPublishAnnouncements() : false,
                     'accessAlumniArchive' => $user ? $user->canAccessAlumniArchive() : false,
                 ],
             ],

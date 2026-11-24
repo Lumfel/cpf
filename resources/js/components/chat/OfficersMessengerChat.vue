@@ -1,6 +1,18 @@
 <script setup lang="ts">
 import { Link } from '@inertiajs/vue3';
-import { Archive, ExternalLink, HeartHandshake, Lock, MessageCircle, Search, Send, Users } from '@lucide/vue';
+import {
+    AlertTriangle,
+    Archive,
+    CheckCircle2,
+    ExternalLink,
+    HeartHandshake,
+    Lock,
+    MessageCircle,
+    Search,
+    Send,
+    Users,
+    X,
+} from '@lucide/vue';
 import { computed, nextTick, onMounted, ref, watch } from 'vue';
 import { apiRequest } from '@/lib/csrfFetch';
 
@@ -46,6 +58,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
     (e: 'archive'): void;
+    (e: 'counselor-archived'): void;
     (e: 'message-sent', message: MessengerOfficerMessage): void;
 }>();
 
@@ -57,9 +70,67 @@ const activeThread = ref<'officers' | 'counselors'>(
 const draft = ref('');
 const sending = ref(false);
 const errorText = ref<string | null>(null);
+const archiveNotice = ref<string | null>(null);
 const threadSearch = ref('');
 const comingSoonNotice = ref<string | null>(null);
 const scrollContainer = ref<HTMLElement | null>(null);
+const composerRef = ref<HTMLTextAreaElement | null>(null);
+const confirmArchiveTarget = ref<'officers' | 'counselors' | null>(null);
+const archiving = ref(false);
+
+function autoResizeComposer() {
+    const el = composerRef.value;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 144)}px`;
+}
+
+function resetComposerHeight() {
+    nextTick(() => {
+        if (composerRef.value) {
+            composerRef.value.style.height = 'auto';
+        }
+    });
+}
+
+function requestArchiveConfirmation(target: 'officers' | 'counselors') {
+    errorText.value = null;
+    archiveNotice.value = null;
+    confirmArchiveTarget.value = target;
+}
+
+async function confirmArchiveAction() {
+    if (!confirmArchiveTarget.value || archiving.value) return;
+
+    const target = confirmArchiveTarget.value;
+    if (target === 'officers') {
+        confirmArchiveTarget.value = null;
+        emit('archive');
+        return;
+    }
+
+    archiving.value = true;
+    errorText.value = null;
+    archiveNotice.value = null;
+
+    const { ok, data } = await apiRequest<{ message?: string; total_messages?: number }>(
+        '/counselors-gc/archive',
+        'POST',
+        {},
+    );
+
+    archiving.value = false;
+    confirmArchiveTarget.value = null;
+
+    if (!ok) {
+        errorText.value = data.message ?? 'Unable to archive Counselors Private GC.';
+        return;
+    }
+
+    counselorMsgs.value = [];
+    archiveNotice.value = `Counselors Private GC archived (${data.total_messages ?? 0} message(s) saved to SHA-256 ZIP) and cleared.`;
+    emit('counselor-archived');
+}
 
 watch(
     () => props.initialMessages,
@@ -211,6 +282,7 @@ async function sendMessage() {
         emit('message-sent', payload.message);
     }
     draft.value = '';
+    resetComposerHeight();
     scrollToBottom();
 }
 </script>
@@ -396,14 +468,32 @@ async function sendMessage() {
                         <button
                             v-if="activeThread === 'officers' && canArchive && channel?.is_active !== false"
                             type="button"
-                            @click="emit('archive')"
+                            @click="requestArchiveConfirmation('officers')"
                             class="inline-flex items-center gap-1.5 rounded-full border border-red-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-red-700 transition hover:bg-red-50"
                         >
                             <Archive class="size-3.5" />
                             Archive ZIP &amp; Reset
                         </button>
+                        <button
+                            v-if="activeThread === 'counselors' && canAccessCounselorGc"
+                            type="button"
+                            @click="requestArchiveConfirmation('counselors')"
+                            class="inline-flex items-center gap-1.5 rounded-full border border-red-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-red-700 transition hover:bg-red-50"
+                        >
+                            <Archive class="size-3.5" />
+                            Archive ZIP &amp; Clear
+                        </button>
                     </div>
                 </header>
+
+                <!-- Archive Success Banner -->
+                <div
+                    v-if="archiveNotice"
+                    class="flex items-center gap-1.5 border-b border-[#1A8F26]/25 bg-[#1A8F26]/10 px-4 py-2 text-[11px] font-semibold text-[#1A8F26]"
+                >
+                    <CheckCircle2 class="size-3.5 shrink-0" />
+                    <span>{{ archiveNotice }}</span>
+                </div>
 
                 <!-- Coming Soon Toast Banner -->
                 <div
@@ -463,7 +553,7 @@ async function sendMessage() {
                             </div>
 
                             <div
-                                class="px-3.5 py-2 text-xs leading-relaxed shadow-2xs"
+                                class="whitespace-pre-wrap break-words px-3.5 py-2 text-xs leading-relaxed shadow-2xs"
                                 :class="
                                     isMine(msg)
                                         ? 'rounded-2xl rounded-br-sm bg-[#0384C5] text-white'
@@ -488,18 +578,25 @@ async function sendMessage() {
                     {{ errorText }}
                 </div>
 
-                <!-- Messenger Pill Composer -->
+                <!-- Messenger Multi-line Pill Composer (Enter sends, Shift+Enter adds newline) -->
                 <form
                     v-if="canSendInCurrentThread"
                     @submit.prevent="sendMessage"
-                    class="flex items-center gap-2 border-t border-black/10 bg-white px-4 py-3"
+                    class="flex items-end gap-2 border-t border-black/10 bg-white px-4 py-3"
                 >
-                    <input
+                    <textarea
+                        ref="composerRef"
                         v-model="draft"
-                        type="text"
+                        rows="1"
                         maxlength="2000"
-                        :placeholder="activeThread === 'counselors' ? 'Aa  Message Campus Counselors GC...' : 'Aa  Message Main Officers GC...'"
-                        class="min-w-0 flex-1 rounded-full border border-black/15 bg-[#FBF6EE] px-4 py-2 text-xs text-slate-900 focus:border-[#0384C5] focus:outline-none"
+                        :placeholder="
+                            activeThread === 'counselors'
+                                ? 'Aa  Message Campus Counselors GC... (Shift+Enter for new line)'
+                                : 'Aa  Message Main Officers GC... (Shift+Enter for new line)'
+                        "
+                        @input="autoResizeComposer"
+                        @keydown.enter.exact.prevent="sendMessage"
+                        class="max-h-36 min-w-0 flex-1 resize-none overflow-y-auto rounded-2xl border border-black/15 bg-[#FBF6EE] px-4 py-2 text-xs leading-relaxed text-slate-900 focus:border-[#0384C5] focus:outline-none"
                     />
                     <button
                         type="submit"
@@ -512,6 +609,71 @@ async function sendMessage() {
                 </form>
                 <div v-else class="border-t border-black/10 bg-[#FBF6EE] px-4 py-3 text-center text-xs text-slate-500">
                     No active channel is currently open for messaging.
+                </div>
+            </div>
+        </div>
+
+        <!-- In-Page Archive Confirmation Modal (Officers GC & Counselors GC) -->
+        <div
+            v-if="confirmArchiveTarget"
+            class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-sm"
+            @click.self="confirmArchiveTarget = null"
+        >
+            <div class="w-full max-w-md rounded-2xl border border-black/10 bg-white p-6 text-xs shadow-xl">
+                <div class="flex items-start justify-between gap-3 border-b border-black/10 pb-3">
+                    <div class="flex items-center gap-2 text-sm font-bold text-red-700">
+                        <AlertTriangle class="size-4 shrink-0" />
+                        <span>
+                            {{
+                                confirmArchiveTarget === 'counselors'
+                                    ? 'Archive & Clear Counselors Private GC?'
+                                    : 'Archive & Reset Main Officers GC?'
+                            }}
+                        </span>
+                    </div>
+                    <button
+                        type="button"
+                        @click="confirmArchiveTarget = null"
+                        class="rounded-lg border border-black/10 bg-white p-1 text-slate-600 hover:bg-slate-50"
+                        aria-label="Close confirmation modal"
+                    >
+                        <X class="size-4" />
+                    </button>
+                </div>
+
+                <p class="mt-3 leading-relaxed text-slate-700">
+                    <template v-if="confirmArchiveTarget === 'counselors'">
+                        Are you sure? All current messages in <strong>Counselors Private GC</strong> will be exported into a SHA-256 verified ZIP archive and cleared from the live thread.
+                    </template>
+                    <template v-else>
+                        Are you sure? All messages in <strong>Main Officers GC ({{ channel?.academic_year ?? 'Current Term' }})</strong> will be exported into a SHA-256 verified ZIP archive, cleared, and a fresh active channel will immediately open for the next term.
+                    </template>
+                </p>
+
+                <div class="mt-5 flex justify-end gap-2">
+                    <button
+                        type="button"
+                        :disabled="archiving"
+                        @click="confirmArchiveTarget = null"
+                        class="rounded-xl border border-black/15 bg-white px-4 py-2 font-semibold text-slate-700 hover:bg-slate-50"
+                    >
+                        Cancel
+                    </button>
+                    <button
+                        type="button"
+                        :disabled="archiving"
+                        @click="confirmArchiveAction"
+                        class="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-2 font-bold text-white transition hover:bg-red-700 disabled:opacity-50"
+                    >
+                        <Archive class="size-3.5" />
+                        {{
+                            archiving
+                                ? 'Archiving...'
+                                : confirmArchiveTarget === 'counselors'
+                                  ? 'Yes, Archive & Clear'
+                                  : 'Yes, Archive & Reset'
+                        }}
+                    </button>
                 </div>
             </div>
         </div>

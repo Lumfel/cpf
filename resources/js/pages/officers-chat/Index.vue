@@ -55,8 +55,13 @@ async function archiveAndResetGc() {
         return;
     }
 
-    statusBanner.value = 'Officers GC archived into a SHA-256 verified ZIP and reset for the new term.';
+    statusBanner.value = 'Officers GC archived into a SHA-256 verified ZIP and a fresh active channel has been opened for the new term.';
     router.reload({ only: ['officerChannel', 'officerMessages', 'gcArchives'] });
+}
+
+function handleCounselorArchived() {
+    statusBanner.value = 'Counselors Private GC archived into a SHA-256 verified ZIP and cleared.';
+    router.reload({ only: ['counselorGcMessages'] });
 }
 </script>
 
@@ -105,6 +110,7 @@ async function archiveAndResetGc() {
             :campus-name="campusName"
             :can-archive="isClubAdviser"
             @archive="archiveAndResetGc"
+            @counselor-archived="handleCounselorArchived"
         />
 
         <!-- Annual Officer GC ZIP Archives (Adviser & Officers Read Record) -->

@@ -5,6 +5,7 @@ namespace App\Enums;
 enum CpfRole: string
 {
     case Adviser = 'adviser';
+    case GuidanceCounselor = 'guidance_counselor';
     case President = 'president';
     case VicePresident = 'vice_president';
     case Secretary = 'secretary';
@@ -19,6 +20,7 @@ enum CpfRole: string
     {
         return match ($this) {
             self::Adviser => 'Club Adviser (Guidance Counselor)',
+            self::GuidanceCounselor => 'Guidance Counselor',
             self::President => 'President',
             self::VicePresident => 'Vice President',
             self::Secretary => 'Secretary',
@@ -35,6 +37,7 @@ enum CpfRole: string
     {
         return match ($this) {
             self::Adviser => 'Guides all officers, approves organizational plans and special meetings, co-signs funds, certifies candidacy, and oversees disciplinary sanctions.',
+            self::GuidanceCounselor => 'Coordinates confidential peer referrals, manages Testing Room counseling schedules, and collaborates in the Counselors Private GC without student club governance authority.',
             self::President => 'Head of the organization; presides over meetings, signs official letters/reports, submits Accomplishment Reports, and coordinates through the Adviser.',
             self::VicePresident => 'Assumes Presidential duties upon absence/vacancy, co-approves contracts, and assists with chapter governance and collections.',
             self::Secretary => 'Maintains meeting minutes, records, official letters, A–Z roster accountability, and issues Passkey codes under Presidential direction.',
@@ -88,7 +91,23 @@ enum CpfRole: string
 
     public function isOfficerOrAdviser(): bool
     {
-        return $this !== self::Member;
+        return ! in_array($this, [self::Member, self::GuidanceCounselor], true);
+    }
+
+    /**
+     * Coordination-only guidance access (Counselors Private GC, Testing Room schedule, Guidance Referrals).
+     */
+    public function canCoordinateGuidance(): bool
+    {
+        return in_array($this, [self::Adviser, self::GuidanceCounselor], true);
+    }
+
+    /**
+     * PIO, Secretary, and Club Adviser can publish templated campus announcements.
+     */
+    public function canPublishAnnouncements(): bool
+    {
+        return in_array($this, [self::Adviser, self::Pio, self::Secretary], true);
     }
 
     /**
@@ -103,6 +122,7 @@ enum CpfRole: string
     {
         return match ($this) {
             self::Adviser => 100,
+            self::GuidanceCounselor => 95,
             self::President => 90,
             self::VicePresident => 80,
             self::Secretary => 70,
@@ -119,6 +139,7 @@ enum CpfRole: string
     {
         return match ($this) {
             self::Adviser => 'Former Club Adviser',
+            self::GuidanceCounselor => 'Former Guidance Counselor',
             self::President => 'Former President',
             self::VicePresident => 'Former Vice President',
             self::Secretary => 'Former Secretary',

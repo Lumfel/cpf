@@ -7,9 +7,11 @@ import {
     KeyRound,
     ShieldAlert,
     ShieldCheck,
+    UserCheck,
+    UserPlus,
     XCircle,
 } from '@lucide/vue';
-import { computed, ref } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { apiRequest } from '@/lib/csrfFetch';
 import type { PendingAdviserHandoverState } from '@/types';
 
@@ -26,6 +28,9 @@ withDefaults(
 const page = usePage<{ pendingAdviserHandover?: PendingAdviserHandoverState }>();
 const incoming = computed(() => page.props.pendingAdviserHandover?.incoming ?? null);
 const outgoing = computed(() => page.props.pendingAdviserHandover?.outgoing ?? null);
+const availableCounselors = computed(
+    () => page.props.pendingAdviserHandover?.availableGuidanceCounselors ?? [],
+);
 
 const busy = ref(false);
 const notice = ref<string | null>(null);
@@ -34,7 +39,27 @@ const errorText = ref<string | null>(null);
 // Incoming handover acceptance state
 const verificationCode = ref('');
 
-// Initiate handover state (Guidance Counselor turnover only)
+// Initiate handover state (Select Existing Guidance Counselor OR Invite/Create New fallback)
+const handoverMode = ref<'existing_counselor' | 'invite_new'>(
+    availableCounselors.value.length > 0 ? 'existing_counselor' : 'invite_new',
+);
+const selectedMembershipId = ref<number | ''>(
+    availableCounselors.value[0]?.membership_id ?? '',
+);
+
+watch(
+    availableCounselors,
+    (list) => {
+        if (list.length > 0 && selectedMembershipId.value === '') {
+            selectedMembershipId.value = list[0].membership_id;
+        }
+        if (list.length === 0 && handoverMode.value === 'existing_counselor') {
+            handoverMode.value = 'invite_new';
+        }
+    },
+    { immediate: true },
+);
+
 const currentPassword = ref('');
 const handoverNotes = ref('');
 const newFirstName = ref('');
@@ -52,17 +77,26 @@ async function initiateHandover() {
     notice.value = null;
     errorText.value = null;
 
-    const payload: Record<string, unknown> = {
-        current_password: currentPassword.value,
-        handover_notes: handoverNotes.value || null,
-        first_name: newFirstName.value,
-        middle_name: newMiddleName.value || null,
-        last_name: newLastName.value,
-        email: newEmail.value,
-        sex: newSex.value,
-        cellphone_number: newPhone.value || null,
-        initial_password: newInitialPassword.value,
-    };
+    const payload: Record<string, unknown> =
+        handoverMode.value === 'existing_counselor'
+            ? {
+                  mode: 'existing_counselor',
+                  target_membership_id: selectedMembershipId.value,
+                  current_password: currentPassword.value,
+                  handover_notes: handoverNotes.value || null,
+              }
+            : {
+                  mode: 'invite_new',
+                  current_password: currentPassword.value,
+                  handover_notes: handoverNotes.value || null,
+                  first_name: newFirstName.value,
+                  middle_name: newMiddleName.value || null,
+                  last_name: newLastName.value,
+                  email: newEmail.value,
+                  sex: newSex.value,
+                  cellphone_number: newPhone.value || null,
+                  initial_password: newInitialPassword.value,
+              };
 
     const { ok, data } = await apiRequest<{
         status?: string;
@@ -299,13 +333,68 @@ async function copyCode() {
                         Transfer Club Adviser Authority to Incoming Guidance Counselor
                     </h2>
                     <p class="mt-1 text-slate-600">
-                        To prevent an accidental campus lockout, your Campus Club Adviser role transfers atomically only after the incoming Guidance Counselor enters the 6-character handover code and accepts.
+                        Select a registered campus Guidance Counselor or invite/create a new Counselor account as fallback. Authority transfers atomically only after your successor confirms the 6-character handover code.
                     </p>
+                </div>
+
+                <div class="flex flex-wrap gap-2">
+                    <button
+                        type="button"
+                        :disabled="availableCounselors.length === 0"
+                        @click="handoverMode = 'existing_counselor'"
+                        class="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-50"
+                        :class="
+                            handoverMode === 'existing_counselor'
+                                ? 'bg-[#0384C5] text-white'
+                                : 'border border-black/15 bg-white text-slate-700'
+                        "
+                    >
+                        <UserCheck class="size-3.5" />
+                        Select Registered Counselor ({{ availableCounselors.length }})
+                    </button>
+                    <button
+                        type="button"
+                        @click="handoverMode = 'invite_new'"
+                        class="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition"
+                        :class="
+                            handoverMode === 'invite_new'
+                                ? 'bg-[#FF8D06] text-white'
+                                : 'border border-black/15 bg-white text-slate-700'
+                        "
+                    >
+                        <UserPlus class="size-3.5" />
+                        Invite / Create New
+                    </button>
                 </div>
             </div>
 
             <form class="mt-4 grid gap-3" @submit.prevent="initiateHandover">
-                <div class="grid gap-3 rounded-2xl border border-black/10 bg-[#FBF6EE] p-4">
+                <div
+                    v-if="handoverMode === 'existing_counselor' && availableCounselors.length > 0"
+                    class="grid gap-2 rounded-2xl border border-[#0384C5]/25 bg-[#FBF6EE] p-4"
+                >
+                    <label class="block font-bold text-slate-800">
+                        Select Registered Campus Guidance Counselor *
+                    </label>
+                    <select
+                        v-model="selectedMembershipId"
+                        required
+                        class="w-full rounded-xl border border-black/15 bg-white px-3 py-2 text-slate-900"
+                    >
+                        <option
+                            v-for="counselor in availableCounselors"
+                            :key="counselor.membership_id"
+                            :value="counselor.membership_id"
+                        >
+                            {{ counselor.full_name }} ({{ counselor.email }})
+                        </option>
+                    </select>
+                    <p class="text-[11px] text-slate-600">
+                        Only verified Guidance Counselors on your campus appear here — student officers and members are excluded.
+                    </p>
+                </div>
+
+                <div v-else class="grid gap-3 rounded-2xl border border-black/10 bg-[#FBF6EE] p-4">
                     <div class="grid gap-3 sm:grid-cols-3">
                         <div>
                             <label class="mb-1 block font-bold text-slate-800">First Name *</label>

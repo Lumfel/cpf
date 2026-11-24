@@ -31,75 +31,116 @@ class AdviserHandoverController extends Controller
             'Only the campus Club Adviser can initiate an Adviser role handover.',
         );
 
-        $validated = $request->validate([
-            'current_password' => ['required', 'string'],
-            'handover_notes' => ['nullable', 'string', 'max:1000'],
-            'first_name' => ['required', 'string', 'max:100'],
-            'middle_name' => ['nullable', 'string', 'max:50'],
-            'last_name' => ['required', 'string', 'max:100'],
-            'email' => ['required', 'email', 'max:255', 'unique:users,email'],
-            'sex' => ['required', Rule::in(['Male', 'Female'])],
-            'cellphone_number' => ['nullable', 'string', 'max:30'],
-            'initial_password' => ['required', 'string', 'min:8'],
-        ]);
+        $mode = (string) $request->input('mode', '');
+        if ($mode === '' && $request->filled('target_membership_id') && ! $request->filled('first_name')) {
+            $mode = 'existing_counselor';
+        } elseif ($mode === '') {
+            $mode = 'invite_new';
+        }
 
         abort_unless(
-            Hash::check($validated['current_password'], (string) $user->password),
+            in_array($mode, ['existing_counselor', 'invite_new'], true),
             422,
-            'Current Adviser password is incorrect.',
+            'Invalid Adviser handover mode. Select an existing campus Guidance Counselor or invite a new Counselor.',
         );
 
-        $fullName = CampusMembership::formatLastFirstMi(
-            (string) $validated['first_name'],
-            $validated['middle_name'] ?? null,
-            (string) $validated['last_name'],
-        );
-        $email = strtolower(trim((string) $validated['email']));
-        $phone = trim((string) ($validated['cellphone_number'] ?? ''));
-
-        $targetMembership = DB::transaction(function () use ($validated, $fullName, $email, $phone, $membership, $user): CampusMembership {
-            $incomingUser = new User([
-                'name' => $fullName,
-                'email' => $email,
-                'password' => Hash::make((string) $validated['initial_password']),
-                'must_change_password' => true,
-                'temporary_password_issued_at' => now(),
+        if ($mode === 'existing_counselor') {
+            $validated = $request->validate([
+                'current_password' => ['required', 'string'],
+                'handover_notes' => ['nullable', 'string', 'max:1000'],
+                'target_membership_id' => ['required', 'integer', 'exists:campus_memberships,id'],
             ]);
-            $incomingUser->email_verified_at = now();
-            $incomingUser->save();
 
-            return CampusMembership::create([
-                'user_id' => $incomingUser->id,
-                'campus_id' => $membership->campus_id,
-                'role' => CpfRole::Member,
-                'status' => MembershipStatus::Approved,
-                'enrollment_source' => 'officer_added',
-                'recorded_email' => $email,
-                'first_name' => trim((string) $validated['first_name']),
-                'middle_name' => isset($validated['middle_name']) ? trim((string) $validated['middle_name']) : null,
-                'last_name' => trim((string) $validated['last_name']),
-                'full_name_last_first_mi' => $fullName,
-                'course' => 'Guidance Services',
-                'year_level' => 'Faculty',
-                'section' => 'Incoming Adviser',
-                'course_year_section' => 'Guidance Services / Incoming Adviser',
-                'sex' => $validated['sex'],
-                'gender_identity' => $validated['sex'] === 'Male' ? 'Man' : 'Woman',
-                'birthdate' => '1985-01-01',
-                'active_email' => $email,
-                'facebook_profile_url' => 'https://www.facebook.com/chmsu.cpf.adviser',
-                'active_fb_account' => $fullName,
-                'cellphone_number' => $phone !== '' ? $phone : '0917-000-0000',
-                'added_or_approved_by' => $user->id,
-                'approved_at' => now(),
-                'is_in_messenger_gc' => true,
-                'gc_confirmed_by' => $user->id,
-                'gc_confirmed_at' => now(),
-                'has_paid_dues' => true,
-                'dues_confirmed_by' => $user->id,
-                'dues_confirmed_at' => now(),
-            ])->load('user:id,name,email');
-        });
+            abort_unless(
+                Hash::check($validated['current_password'], (string) $user->password),
+                422,
+                'Current Adviser password is incorrect.',
+            );
+
+            $targetMembership = CampusMembership::query()
+                ->with('user:id,name,email')
+                ->find($validated['target_membership_id']);
+
+            abort_unless(
+                $targetMembership !== null
+                && $targetMembership->campus_id === $membership->campus_id
+                && $targetMembership->status === MembershipStatus::Approved
+                && $targetMembership->role === CpfRole::GuidanceCounselor
+                && $targetMembership->user_id !== $user->id,
+                422,
+                'Only an existing approved Guidance Counselor on your campus can be selected for Adviser handover.',
+            );
+        } else {
+            $validated = $request->validate([
+                'current_password' => ['required', 'string'],
+                'handover_notes' => ['nullable', 'string', 'max:1000'],
+                'first_name' => ['required', 'string', 'max:100'],
+                'middle_name' => ['nullable', 'string', 'max:50'],
+                'last_name' => ['required', 'string', 'max:100'],
+                'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+                'sex' => ['required', Rule::in(['Male', 'Female'])],
+                'cellphone_number' => ['nullable', 'string', 'max:30'],
+                'initial_password' => ['required', 'string', 'min:8'],
+            ]);
+
+            abort_unless(
+                Hash::check($validated['current_password'], (string) $user->password),
+                422,
+                'Current Adviser password is incorrect.',
+            );
+
+            $fullName = CampusMembership::formatLastFirstMi(
+                (string) $validated['first_name'],
+                $validated['middle_name'] ?? null,
+                (string) $validated['last_name'],
+            );
+            $email = strtolower(trim((string) $validated['email']));
+            $phone = trim((string) ($validated['cellphone_number'] ?? ''));
+
+            $targetMembership = DB::transaction(function () use ($validated, $fullName, $email, $phone, $membership, $user): CampusMembership {
+                $incomingUser = new User([
+                    'name' => $fullName,
+                    'email' => $email,
+                    'password' => Hash::make((string) $validated['initial_password']),
+                    'must_change_password' => true,
+                    'temporary_password_issued_at' => now(),
+                ]);
+                $incomingUser->email_verified_at = now();
+                $incomingUser->save();
+
+                return CampusMembership::create([
+                    'user_id' => $incomingUser->id,
+                    'campus_id' => $membership->campus_id,
+                    'role' => CpfRole::Member,
+                    'status' => MembershipStatus::Approved,
+                    'enrollment_source' => 'officer_added',
+                    'recorded_email' => $email,
+                    'first_name' => trim((string) $validated['first_name']),
+                    'middle_name' => isset($validated['middle_name']) ? trim((string) $validated['middle_name']) : null,
+                    'last_name' => trim((string) $validated['last_name']),
+                    'full_name_last_first_mi' => $fullName,
+                    'course' => 'Guidance Services',
+                    'year_level' => 'Faculty',
+                    'section' => 'Incoming Adviser',
+                    'course_year_section' => 'Guidance Services / Incoming Adviser',
+                    'sex' => $validated['sex'],
+                    'gender_identity' => $validated['sex'] === 'Male' ? 'Man' : 'Woman',
+                    'birthdate' => '1985-01-01',
+                    'active_email' => $email,
+                    'facebook_profile_url' => 'https://www.facebook.com/chmsu.cpf.adviser',
+                    'active_fb_account' => $fullName,
+                    'cellphone_number' => $phone !== '' ? $phone : '0917-000-0000',
+                    'added_or_approved_by' => $user->id,
+                    'approved_at' => now(),
+                    'is_in_messenger_gc' => true,
+                    'gc_confirmed_by' => $user->id,
+                    'gc_confirmed_at' => now(),
+                    'has_paid_dues' => true,
+                    'dues_confirmed_by' => $user->id,
+                    'dues_confirmed_at' => now(),
+                ])->load('user:id,name,email');
+            });
+        }
 
         $confirmationCode = $this->generateVerificationCode();
 
