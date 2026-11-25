@@ -14,7 +14,7 @@ return [
     |
     */
     'prototype' => [
-        'enabled' => (bool) env('CPF_PROTOTYPE_ENABLED', env('APP_ENV', 'local') !== 'production'),
+        'enabled' => env('APP_ENV', 'local') !== 'production' && (bool) env('CPF_PROTOTYPE_ENABLED', true),
         'route_prefix' => env('CPF_PROTOTYPE_PREFIX', 'prototype'),
     ],
 

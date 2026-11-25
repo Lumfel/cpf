@@ -17,6 +17,7 @@ use App\Models\PaymentSubmission;
 use App\Models\PeerQuote;
 use App\Models\TimeCapsule;
 use App\Models\User;
+use App\Services\ClubTenureService;
 use App\Support\CpfElectionPositions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -144,19 +145,37 @@ class CpfV4Controller extends Controller
             'closes_at' => ['nullable', 'date', 'after_or_equal:opens_at'],
         ]);
 
-        $election = Election::create([
-            'campus_id' => $membership->campus_id,
-            'academic_year' => trim($validated['academic_year']),
-            'title' => trim($validated['title']),
-            'status' => $validated['status'] ?? 'open',
-            'current_position' => 'president',
-            'current_phase' => 'nomination',
-            'round_number' => 1,
-            'position_results' => [],
-            'opens_at' => $validated['opens_at'] ?? null,
-            'closes_at' => $validated['closes_at'] ?? null,
-            'created_by_user_id' => $user->id,
-        ]);
+        $targetStatus = $validated['status'] ?? 'open';
+
+        $election = DB::transaction(function () use ($membership, $validated, $targetStatus, $user): Election {
+            if ($targetStatus === 'open') {
+                $hasOpenElection = Election::query()
+                    ->where('campus_id', $membership->campus_id)
+                    ->where('status', 'open')
+                    ->lockForUpdate()
+                    ->exists();
+
+                abort_if(
+                    $hasOpenElection,
+                    422,
+                    'Another election session is already open for this campus. Pause or complete it before starting a new open session.',
+                );
+            }
+
+            return Election::create([
+                'campus_id' => $membership->campus_id,
+                'academic_year' => trim($validated['academic_year']),
+                'title' => trim($validated['title']),
+                'status' => $targetStatus,
+                'current_position' => 'president',
+                'current_phase' => 'nomination',
+                'round_number' => 1,
+                'position_results' => [],
+                'opens_at' => $validated['opens_at'] ?? null,
+                'closes_at' => $validated['closes_at'] ?? null,
+                'created_by_user_id' => $user->id,
+            ]);
+        });
 
         return response()->json(['status' => 'created', 'election' => $election], 201);
     }
@@ -178,33 +197,40 @@ class CpfV4Controller extends Controller
             'platform' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        abort_if(
-            $election->status === 'closed' || $election->current_phase === 'completed',
-            422,
-            'Cannot add candidates to a closed or completed election.',
-        );
+        $candidate = DB::transaction(function () use ($election, $validated, $user): ElectionCandidate {
+            $lockedElection = Election::query()
+                ->whereKey($election->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        abort_if(
-            isset(($election->position_results ?? [])[$validated['position']]),
-            422,
-            'This position has already been finalized or skipped.',
-        );
+            abort_if(
+                $lockedElection->status === 'closed' || $lockedElection->current_phase !== 'nomination',
+                422,
+                'Candidates can only be added during the nomination phase while the election is not closed.',
+            );
 
-        $member = $this->validateNomineeEligibility($election, (int) $validated['user_id'], $validated['position']);
+            abort_if(
+                isset(($lockedElection->position_results ?? [])[$validated['position']]),
+                422,
+                'This position has already been finalized or skipped.',
+            );
 
-        $candidate = ElectionCandidate::updateOrCreate(
-            [
-                'election_id' => $election->id,
-                'user_id' => $member->user_id,
-                'position' => $validated['position'],
-            ],
-            [
-                'platform' => isset($validated['platform']) ? trim($validated['platform']) : null,
-                'nominated_by_user_id' => $user->id,
-                'nomination_status' => 'accepted',
-                'is_tie_contender' => false,
-            ],
-        );
+            $member = $this->validateNomineeEligibility($lockedElection, (int) $validated['user_id'], $validated['position']);
+
+            return ElectionCandidate::updateOrCreate(
+                [
+                    'election_id' => $lockedElection->id,
+                    'user_id' => $member->user_id,
+                    'position' => $validated['position'],
+                ],
+                [
+                    'platform' => isset($validated['platform']) ? trim($validated['platform']) : null,
+                    'nominated_by_user_id' => $user->id,
+                    'nomination_status' => 'accepted',
+                    'is_tie_contender' => false,
+                ],
+            );
+        });
 
         return response()->json(['status' => 'added', 'candidate' => $candidate], 201);
     }
@@ -226,49 +252,64 @@ class CpfV4Controller extends Controller
             'Guidance Counselors have coordination-only access and do not participate in student club elections.',
         );
 
-        abort_unless(
-            $election->status === 'open' && $election->current_phase === 'nomination' && $election->current_position !== null,
-            422,
-            'Nominations are not currently open.',
-        );
-
         $validated = $request->validate([
             'nominee_user_id' => ['required', 'integer', 'exists:users,id'],
             'platform' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        $position = (string) $election->current_position;
-        $nomineeUserId = (int) $validated['nominee_user_id'];
+        $result = DB::transaction(function () use ($election, $validated, $user): array {
+            $lockedElection = Election::query()
+                ->whereKey($election->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $this->validateNomineeEligibility($election, $nomineeUserId, $position, $user->id);
+            abort_unless(
+                $lockedElection->status === 'open'
+                    && $lockedElection->current_phase === 'nomination'
+                    && $lockedElection->current_position !== null,
+                422,
+                'Nominations are not currently open.',
+            );
 
-        $existing = ElectionCandidate::query()
-            ->where('election_id', $election->id)
-            ->where('user_id', $nomineeUserId)
-            ->where('position', $position)
-            ->first();
+            $position = (string) $lockedElection->current_position;
+            $nomineeUserId = (int) $validated['nominee_user_id'];
 
-        if ($existing && $existing->nomination_status === 'accepted') {
-            return response()->json(['status' => 'already_accepted', 'candidate' => $existing], 200);
-        }
+            $this->validateNomineeEligibility($lockedElection, $nomineeUserId, $position, $user->id);
 
-        $nominationStatus = ($nomineeUserId === $user->id) ? 'accepted' : 'pending';
+            $existing = ElectionCandidate::query()
+                ->where('election_id', $lockedElection->id)
+                ->where('user_id', $nomineeUserId)
+                ->where('position', $position)
+                ->lockForUpdate()
+                ->first();
 
-        $candidate = ElectionCandidate::updateOrCreate(
-            [
-                'election_id' => $election->id,
-                'user_id' => $nomineeUserId,
-                'position' => $position,
-            ],
-            [
-                'platform' => isset($validated['platform']) ? trim($validated['platform']) : ($existing?->platform ?? null),
-                'nominated_by_user_id' => $user->id,
-                'nomination_status' => $nominationStatus,
-                'is_tie_contender' => false,
-            ],
-        );
+            if ($existing && $existing->nomination_status === 'accepted') {
+                return ['http_status' => 200, 'status' => 'already_accepted', 'candidate' => $existing];
+            }
 
-        return response()->json(['status' => 'nominated', 'candidate' => $candidate], 201);
+            $nominationStatus = ($nomineeUserId === $user->id) ? 'accepted' : 'pending';
+
+            $candidate = ElectionCandidate::updateOrCreate(
+                [
+                    'election_id' => $lockedElection->id,
+                    'user_id' => $nomineeUserId,
+                    'position' => $position,
+                ],
+                [
+                    'platform' => isset($validated['platform']) ? trim($validated['platform']) : ($existing?->platform ?? null),
+                    'nominated_by_user_id' => $user->id,
+                    'nomination_status' => $nominationStatus,
+                    'is_tie_contender' => false,
+                ],
+            );
+
+            return ['http_status' => 201, 'status' => 'nominated', 'candidate' => $candidate];
+        });
+
+        return response()->json([
+            'status' => $result['status'],
+            'candidate' => $result['candidate'],
+        ], $result['http_status']);
     }
 
     public function respondNomination(Request $request, Election $election, ElectionCandidate $candidate): JsonResponse
@@ -284,35 +325,46 @@ class CpfV4Controller extends Controller
             'You can only respond to your own campus election nomination.',
         );
 
-        abort_unless(
-            $election->status === 'open'
-                && $election->current_phase === 'nomination'
-                && $candidate->position === $election->current_position,
-            422,
-            'Nominations are not currently open for this position.',
-        );
-
-        abort_unless(
-            $candidate->nomination_status === 'pending',
-            422,
-            'This nomination has already been responded to.',
-        );
-
         $validated = $request->validate([
             'decision' => ['required', Rule::in(['accepted', 'declined'])],
         ]);
 
-        if ($validated['decision'] === 'accepted') {
-            $this->validateNomineeEligibility($election, $user->id, $candidate->position, $user->id);
+        $updatedCandidate = DB::transaction(function () use ($election, $candidate, $validated, $user): ElectionCandidate {
+            $lockedElection = Election::query()
+                ->whereKey($election->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-            $candidate->update(['nomination_status' => 'accepted']);
-        } else {
-            DB::transaction(function () use ($election, $candidate, $user): void {
-                $candidate->update(['nomination_status' => 'declined']);
+            $lockedCandidate = ElectionCandidate::query()
+                ->whereKey($candidate->id)
+                ->where('election_id', $lockedElection->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            abort_unless(
+                $lockedElection->status === 'open'
+                    && $lockedElection->current_phase === 'nomination'
+                    && $lockedCandidate->position === $lockedElection->current_position,
+                422,
+                'Nominations are not currently open for this position.',
+            );
+
+            abort_unless(
+                $lockedCandidate->nomination_status === 'pending',
+                422,
+                'This nomination has already been responded to.',
+            );
+
+            if ($validated['decision'] === 'accepted') {
+                $this->validateNomineeEligibility($lockedElection, $user->id, $lockedCandidate->position, $user->id);
+
+                $lockedCandidate->update(['nomination_status' => 'accepted']);
+            } else {
+                $lockedCandidate->update(['nomination_status' => 'declined']);
 
                 ElectionOptOut::query()->firstOrCreate(
                     [
-                        'election_id' => $election->id,
+                        'election_id' => $lockedElection->id,
                         'user_id' => $user->id,
                     ],
                     [
@@ -321,16 +373,18 @@ class CpfV4Controller extends Controller
                 );
 
                 ElectionCandidate::query()
-                    ->where('election_id', $election->id)
+                    ->where('election_id', $lockedElection->id)
                     ->where('user_id', $user->id)
                     ->where('nomination_status', 'pending')
                     ->update(['nomination_status' => 'declined']);
-            });
-        }
+            }
+
+            return $lockedCandidate->fresh();
+        });
 
         return response()->json([
             'status' => $validated['decision'],
-            'candidate' => $candidate->fresh(),
+            'candidate' => $updatedCandidate,
         ]);
     }
 
@@ -386,56 +440,92 @@ class CpfV4Controller extends Controller
             'Only the campus Club Adviser can close nominations.',
         );
 
-        abort_unless(
-            $election->status === 'open' && $election->current_phase === 'nomination' && $election->current_position !== null,
-            422,
-            'No active nomination round is open.',
-        );
+        $declareVacant = $request->boolean('declare_vacant');
 
-        $position = (string) $election->current_position;
+        $result = DB::transaction(function () use ($election, $declareVacant, $user): array {
+            $lockedElection = Election::query()
+                ->whereKey($election->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $accepted = ElectionCandidate::query()
-            ->where('election_id', $election->id)
-            ->where('position', $position)
-            ->where('nomination_status', 'accepted')
-            ->get();
+            abort_unless(
+                $lockedElection->status === 'open'
+                    && $lockedElection->current_phase === 'nomination'
+                    && $lockedElection->current_position !== null,
+                422,
+                'No active nomination round is open.',
+            );
 
-        if ($accepted->count() >= 2) {
-            DB::transaction(function () use ($election, $position): void {
+            $position = (string) $lockedElection->current_position;
+
+            $accepted = ElectionCandidate::query()
+                ->where('election_id', $lockedElection->id)
+                ->where('position', $position)
+                ->where('nomination_status', 'accepted')
+                ->lockForUpdate()
+                ->get();
+
+            if ($accepted->count() >= 2) {
                 ElectionCandidate::query()
-                    ->where('election_id', $election->id)
+                    ->where('election_id', $lockedElection->id)
                     ->where('position', $position)
                     ->where('nomination_status', 'pending')
                     ->update(['nomination_status' => 'declined']);
 
-                $election->update([
+                $lockedElection->update([
                     'current_phase' => 'voting',
                     'round_number' => 1,
                 ]);
-            });
 
-            return response()->json([
-                'status' => 'voting_opened',
-                'election' => $election->fresh(),
-            ]);
+                return ['status' => 'voting_opened', 'completed' => false];
+            }
+
+            if ($accepted->count() === 1) {
+                ElectionCandidate::query()
+                    ->where('election_id', $lockedElection->id)
+                    ->where('position', $position)
+                    ->where('nomination_status', 'pending')
+                    ->update(['nomination_status' => 'declined']);
+
+                $completed = $this->recordWinnerAndAdvance($lockedElection, $position, $accepted->first(), 0, 'unopposed', $user);
+
+                return ['status' => 'elected_unopposed', 'completed' => $completed];
+            }
+
+            if ($declareVacant) {
+                ElectionCandidate::query()
+                    ->where('election_id', $lockedElection->id)
+                    ->where('position', $position)
+                    ->where('nomination_status', 'pending')
+                    ->update(['nomination_status' => 'declined']);
+
+                $results = $lockedElection->position_results ?? [];
+                $results[$position] = [
+                    'status' => 'vacant',
+                    'winner_user_id' => null,
+                    'winner_name' => null,
+                    'course_year_section' => null,
+                    'votes' => 0,
+                    'won_by' => 'vacant',
+                ];
+
+                $completed = $this->advanceElectionPosition($lockedElection, $position, $results, null, $user);
+
+                return ['status' => 'position_vacant', 'completed' => $completed];
+            }
+
+            abort(422, 'Need at least 2 accepted candidates to close nominations, or the Club Adviser can declare the seat vacant / skip when 0 candidates accepted.');
+        });
+
+        if ($result['completed']) {
+            Election::flushLiveChatCache((int) $election->id);
+            $this->autoArchiveActiveOfficerGc($election->fresh(), $user);
         }
 
-        if ($accepted->count() === 1) {
-            abort_unless(
-                $user->isClubAdviser(),
-                403,
-                'Need at least 2 accepted candidates for a member to close nominations; only the Club Adviser can close an unopposed position.',
-            );
-
-            $this->recordWinnerAndAdvance($election, $position, $accepted->first(), 0, 'unopposed', $user);
-
-            return response()->json([
-                'status' => 'elected_unopposed',
-                'election' => $election->fresh(),
-            ]);
-        }
-
-        abort(422, 'Need at least 2 accepted candidates to close nominations (or the Club Adviser can skip an optional Year Representative seat).');
+        return response()->json([
+            'status' => $result['status'],
+            'election' => $election->fresh(),
+        ]);
     }
 
     public function skipOptionalPosition(Request $request, Election $election): JsonResponse
@@ -446,37 +536,73 @@ class CpfV4Controller extends Controller
         abort_unless(
             $user?->isClubAdviser() && $membership?->campus_id === $election->campus_id,
             403,
-            'Only the campus Club Adviser can skip an optional representative position.',
+            'Only the campus Club Adviser can skip an optional representative position or declare a vacant seat.',
         );
 
-        abort_unless(
-            $election->status === 'open' && $election->current_phase === 'nomination' && $election->current_position !== null,
-            422,
-            'Skipping is only available during an active nomination round.',
-        );
+        $result = DB::transaction(function () use ($election, $user): array {
+            $lockedElection = Election::query()
+                ->whereKey($election->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $position = (string) $election->current_position;
+            abort_unless(
+                $lockedElection->status === 'open'
+                    && $lockedElection->current_phase === 'nomination'
+                    && $lockedElection->current_position !== null,
+                422,
+                'Skipping is only available during an active nomination round.',
+            );
 
-        abort_unless(
-            CpfElectionPositions::isOptional($position),
-            422,
-            'Only Year-Level Representative seats are optional and may be skipped.',
-        );
+            $position = (string) $lockedElection->current_position;
+            $isOptional = CpfElectionPositions::isOptional($position);
 
-        $results = $election->position_results ?? [];
-        $results[$position] = [
-            'status' => 'skipped',
-            'winner_user_id' => null,
-            'winner_name' => null,
-            'course_year_section' => null,
-            'votes' => 0,
-            'won_by' => 'skipped',
-        ];
+            if (! $isOptional) {
+                $acceptedCount = ElectionCandidate::query()
+                    ->where('election_id', $lockedElection->id)
+                    ->where('position', $position)
+                    ->where('nomination_status', 'accepted')
+                    ->lockForUpdate()
+                    ->count();
 
-        $this->advanceElectionPosition($election, $position, $results, null, $user);
+                abort_if(
+                    $acceptedCount > 0,
+                    422,
+                    'Mandatory officer seats can only be declared vacant when 0 candidates have accepted nominations.',
+                );
+            }
+
+            ElectionCandidate::query()
+                ->where('election_id', $lockedElection->id)
+                ->where('position', $position)
+                ->where('nomination_status', 'pending')
+                ->update(['nomination_status' => 'declined']);
+
+            $seatOutcome = $isOptional ? 'skipped' : 'vacant';
+            $results = $lockedElection->position_results ?? [];
+            $results[$position] = [
+                'status' => $seatOutcome,
+                'winner_user_id' => null,
+                'winner_name' => null,
+                'course_year_section' => null,
+                'votes' => 0,
+                'won_by' => $seatOutcome,
+            ];
+
+            $completed = $this->advanceElectionPosition($lockedElection, $position, $results, null, $user);
+
+            return [
+                'status' => $isOptional ? 'position_skipped' : 'position_vacant',
+                'completed' => $completed,
+            ];
+        });
+
+        if ($result['completed']) {
+            Election::flushLiveChatCache((int) $election->id);
+            $this->autoArchiveActiveOfficerGc($election->fresh(), $user);
+        }
 
         return response()->json([
-            'status' => 'position_skipped',
+            'status' => $result['status'],
             'election' => $election->fresh(),
         ]);
     }
@@ -496,22 +622,43 @@ class CpfV4Controller extends Controller
             'status' => ['required', 'in:draft,open,closed'],
         ]);
 
-        abort_if(
-            $election->current_phase === 'completed' && $validated['status'] === 'open',
-            422,
-            'Completed elections cannot be reopened. Start a new election session instead.',
-        );
+        $updatedElection = DB::transaction(function () use ($election, $validated): Election {
+            $lockedElection = Election::query()
+                ->whereKey($election->id)
+                ->lockForUpdate()
+                ->firstOrFail();
 
-        $wasOpenOrDraft = $election->status !== 'closed';
-        $wasCompleted = $election->current_phase === 'completed';
+            abort_if(
+                $lockedElection->current_phase === 'completed' && in_array($validated['status'], ['open', 'draft'], true),
+                422,
+                'Completed elections cannot be reopened or reverted to draft. Start a new election session instead.',
+            );
 
-        $election->update(['status' => $validated['status']]);
+            if ($validated['status'] === 'open') {
+                $hasOtherOpen = Election::query()
+                    ->where('campus_id', $lockedElection->campus_id)
+                    ->where('status', 'open')
+                    ->whereKeyNot($lockedElection->id)
+                    ->lockForUpdate()
+                    ->exists();
 
-        if ($validated['status'] === 'closed' && $wasOpenOrDraft && ! $wasCompleted) {
-            $this->autoArchiveActiveOfficerGc($election, $user);
+                abort_if(
+                    $hasOtherOpen,
+                    422,
+                    'Another election session is already open for this campus. Pause or complete it before opening another.',
+                );
+            }
+
+            $lockedElection->update(['status' => $validated['status']]);
+
+            return $lockedElection->fresh();
+        });
+
+        if ($updatedElection->status !== 'open') {
+            Election::flushLiveChatCache((int) $updatedElection->id);
         }
 
-        return response()->json(['status' => $election->status, 'election' => $election]);
+        return response()->json(['status' => $updatedElection->status, 'election' => $updatedElection]);
     }
 
     public function castVote(Request $request, Election $election): JsonResponse
@@ -625,7 +772,7 @@ class CpfV4Controller extends Controller
             'winner_candidate_id' => ['nullable', 'integer', 'exists:election_candidates,id'],
         ]);
 
-        $responsePayload = DB::transaction(function () use ($election, $validated, $user): array {
+        $outcome = DB::transaction(function () use ($election, $validated, $user): array {
             $lockedElection = Election::query()
                 ->whereKey($election->id)
                 ->lockForUpdate()
@@ -668,18 +815,35 @@ class CpfV4Controller extends Controller
             $leaders = $candidates->filter(fn (ElectionCandidate $c) => (int) $tallies->get($c->id, 0) === $maxVotes)->values();
 
             $resolution = $validated['tie_resolution'] ?? null;
+            $isManualTieBreak = in_array($resolution, ['adviser_tiebreak', 'draw_lots'], true);
 
-            if ($totalVotes === 0 && ! ($lockedElection->current_phase === 'tie_breaker' && in_array($resolution, ['adviser_tiebreak', 'draw_lots'], true))) {
+            if ($isManualTieBreak) {
+                abort_unless(
+                    $lockedElection->current_phase === 'tie_breaker',
+                    422,
+                    'Manual tie-break resolution is only available during an active tie-breaker phase.',
+                );
+
+                abort_if(
+                    $leaders->count() < 2,
+                    422,
+                    'This runoff round already has a clear vote leader and is no longer tied. Tally the runoff votes instead.',
+                );
+            }
+
+            if ($totalVotes === 0 && ! ($lockedElection->current_phase === 'tie_breaker' && $isManualTieBreak)) {
                 abort(422, 'No votes have been cast in this round yet.');
             }
 
             if ($leaders->count() === 1) {
                 $wonBy = $lockedElection->current_phase === 'tie_breaker' ? 'tiebreak_runoff' : 'vote';
-                $this->recordWinnerAndAdvance($lockedElection, $position, $leaders->first(), $maxVotes, $wonBy, $user);
+                $completed = $this->recordWinnerAndAdvance($lockedElection, $position, $leaders->first(), $maxVotes, $wonBy, $user);
 
                 return [
-                    'status' => 'position_finalized',
-                    'election' => $lockedElection->fresh(),
+                    'completed' => $completed,
+                    'payload' => [
+                        'status' => 'position_finalized',
+                    ],
                 ];
             }
 
@@ -688,9 +852,11 @@ class CpfV4Controller extends Controller
                 $this->startTieBreakerRunoff($lockedElection, $position, $leaders, $roundNumber + 1);
 
                 return [
-                    'status' => 'tie_runoff_started',
-                    'tied_candidate_ids' => $leaders->pluck('id')->values(),
-                    'election' => $lockedElection->fresh(),
+                    'completed' => false,
+                    'payload' => [
+                        'status' => 'tie_runoff_started',
+                        'tied_candidate_ids' => $leaders->pluck('id')->values(),
+                    ],
                 ];
             }
 
@@ -699,34 +865,48 @@ class CpfV4Controller extends Controller
             if ($chosenResolution === 'adviser_tiebreak') {
                 $chosen = $leaders->firstWhere('id', (int) ($validated['winner_candidate_id'] ?? 0));
                 abort_unless($chosen !== null, 422, 'Please choose one of the tied candidates to break the tie.');
-                $this->recordWinnerAndAdvance($lockedElection, $position, $chosen, $maxVotes, 'adviser_tiebreak', $user);
+                $completed = $this->recordWinnerAndAdvance($lockedElection, $position, $chosen, $maxVotes, 'adviser_tiebreak', $user);
 
                 return [
-                    'status' => 'position_finalized',
-                    'election' => $lockedElection->fresh(),
+                    'completed' => $completed,
+                    'payload' => [
+                        'status' => 'position_finalized',
+                    ],
                 ];
             }
 
             if ($chosenResolution === 'draw_lots') {
                 $winner = $leaders->get(random_int(0, $leaders->count() - 1));
-                $this->recordWinnerAndAdvance($lockedElection, $position, $winner, $maxVotes, 'draw_lots', $user);
+                $completed = $this->recordWinnerAndAdvance($lockedElection, $position, $winner, $maxVotes, 'draw_lots', $user);
 
                 return [
-                    'status' => 'position_finalized',
-                    'election' => $lockedElection->fresh(),
+                    'completed' => $completed,
+                    'payload' => [
+                        'status' => 'position_finalized',
+                    ],
                 ];
             }
 
             $this->startTieBreakerRunoff($lockedElection, $position, $leaders, $roundNumber + 1);
 
             return [
-                'status' => 'tie_runoff_started',
-                'tied_candidate_ids' => $leaders->pluck('id')->values(),
-                'election' => $lockedElection->fresh(),
+                'completed' => false,
+                'payload' => [
+                    'status' => 'tie_runoff_started',
+                    'tied_candidate_ids' => $leaders->pluck('id')->values(),
+                ],
             ];
         });
 
-        return response()->json($responsePayload);
+        if ($outcome['completed']) {
+            Election::flushLiveChatCache((int) $election->id);
+            $this->autoArchiveActiveOfficerGc($election->fresh(), $user);
+        }
+
+        return response()->json([
+            ...$outcome['payload'],
+            'election' => $election->fresh(),
+        ]);
     }
 
     private function validateNomineeEligibility(
@@ -822,7 +1002,7 @@ class CpfV4Controller extends Controller
         int $votes,
         string $wonBy,
         ?User $actor = null,
-    ): void {
+    ): bool {
         $winnerMembership = CampusMembership::query()
             ->where('campus_id', $election->campus_id)
             ->where('user_id', $winner->user_id)
@@ -839,11 +1019,15 @@ class CpfV4Controller extends Controller
             'won_by' => $wonBy,
         ];
 
-        $this->advanceElectionPosition($election, $position, $results, (int) $winner->user_id, $actor);
+        return $this->advanceElectionPosition($election, $position, $results, (int) $winner->user_id, $actor);
     }
 
     /**
+     * Advances the election to the next seat or completes the election and applies
+     * atomic officer term turnover inside the active transaction.
+     *
      * @param  array<string, mixed>  $results
+     * @return bool True if this call completed the final seat of the election.
      */
     private function advanceElectionPosition(
         Election $election,
@@ -851,10 +1035,10 @@ class CpfV4Controller extends Controller
         array $results,
         ?int $winnerUserId = null,
         ?User $actor = null,
-    ): void {
+    ): bool {
         $nextPosition = CpfElectionPositions::nextAfter($currentPosition);
 
-        DB::transaction(function () use ($election, $currentPosition, $nextPosition, $results, $winnerUserId): void {
+        DB::transaction(function () use ($election, $currentPosition, $nextPosition, $results, $winnerUserId, $actor): void {
             ElectionCandidate::query()
                 ->where('election_id', $election->id)
                 ->where('position', $currentPosition)
@@ -881,6 +1065,10 @@ class CpfV4Controller extends Controller
                     'round_number' => 1,
                     'status' => 'closed',
                 ]);
+
+                // C1: Apply elected officer roles & transition outgoing non-Adviser officers
+                // atomically BEFORE the new term's Officers GC channel is opened.
+                app(ClubTenureService::class)->applyElectionTermTurnover($election, $actor);
             } else {
                 $election->update([
                     'position_results' => $results,
@@ -891,32 +1079,50 @@ class CpfV4Controller extends Controller
             }
         });
 
-        if ($nextPosition === null) {
-            $this->autoArchiveActiveOfficerGc($election, $actor);
-        }
+        return $nextPosition === null;
     }
 
     private function autoArchiveActiveOfficerGc(Election $election, ?User $actor = null): void
     {
-        $activeChannel = OfficerGcChannel::query()
-            ->where('campus_id', $election->campus_id)
-            ->where('is_active', true)
-            ->latest('id')
-            ->first();
+        DB::transaction(function () use ($election, $actor): void {
+            $lockedElection = Election::query()
+                ->whereKey($election->id)
+                ->lockForUpdate()
+                ->first();
 
-        if (! $activeChannel) {
-            return;
-        }
+            if (
+                ! $lockedElection
+                || $lockedElection->current_phase !== 'completed'
+                || $lockedElection->auto_archived_at !== null
+            ) {
+                return;
+            }
 
-        $archiver = $actor
-            ?? ($election->created_by_user_id ? User::query()->find($election->created_by_user_id) : null);
+            $activeChannel = OfficerGcChannel::query()
+                ->where('campus_id', $lockedElection->campus_id)
+                ->where('is_active', true)
+                ->latest('id')
+                ->lockForUpdate()
+                ->first();
 
-        if (! $archiver) {
-            return;
-        }
+            if (! $activeChannel) {
+                $lockedElection->update(['auto_archived_at' => now()]);
 
-        $archiveDir = (string) config('cpf.archive_path', storage_path('app/archives'));
-        app(ArchiveAndResetOfficerGc::class)->handle($archiver, $activeChannel, $archiveDir);
+                return;
+            }
+
+            $archiver = $actor
+                ?? ($lockedElection->created_by_user_id ? User::query()->find($lockedElection->created_by_user_id) : null);
+
+            if (! $archiver) {
+                return;
+            }
+
+            $archiveDir = (string) config('cpf.archive_path', storage_path('app/archives'));
+            app(ArchiveAndResetOfficerGc::class)->handle($archiver, $activeChannel, $archiveDir);
+
+            $lockedElection->update(['auto_archived_at' => now()]);
+        });
     }
 
     public function submitPayment(Request $request): JsonResponse

@@ -6,6 +6,7 @@ use App\Enums\CpfRole;
 use App\Enums\MembershipStatus;
 use App\Models\CampusMembership;
 use App\Models\ClubServiceTenure;
+use App\Models\Election;
 use App\Models\User;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
@@ -89,8 +90,9 @@ class ClubTenureService
         CpfRole $newRole,
         ?User $actor = null,
         string $reason = 'role_change',
+        ?string $newAcademicYear = null,
     ): ClubServiceTenure {
-        return DB::transaction(function () use ($membership, $newRole, $actor, $reason): ClubServiceTenure {
+        return DB::transaction(function () use ($membership, $newRole, $actor, $reason, $newAcademicYear): ClubServiceTenure {
             $membership->loadMissing('campus:id,current_academic_year');
             $now = now();
             $currentRole = $membership->role instanceof CpfRole
@@ -99,6 +101,7 @@ class ClubTenureService
 
             $academicYear = $membership->campus?->current_academic_year
                 ?: sprintf('%d-%d', $now->year, $now->year + 1);
+            $nextAcademicYear = filled($newAcademicYear) ? trim((string) $newAcademicYear) : $academicYear;
 
             $existingCount = ClubServiceTenure::query()
                 ->where('campus_membership_id', $membership->id)
@@ -138,7 +141,7 @@ class ClubTenureService
                 'campus_membership_id' => $membership->id,
                 'user_id' => $membership->user_id,
                 'role' => $newRole,
-                'academic_year' => $academicYear,
+                'academic_year' => $nextAcademicYear,
                 'started_at' => $now,
                 'ended_at' => null,
                 'end_reason' => null,
@@ -150,6 +153,132 @@ class ClubTenureService
             ])->save();
 
             return $next->refresh();
+        });
+    }
+
+    /**
+     * Atomically apply elected student officer roles and transition outgoing
+     * non-Adviser officers on election completion, preserving verified tenure history.
+     *
+     * @return array{promoted_user_ids: array<int, int>, demoted_user_ids: array<int, int>, retained_user_ids: array<int, int>}
+     */
+    public function applyElectionTermTurnover(Election $election, ?User $actor = null): array
+    {
+        return DB::transaction(function () use ($election, $actor): array {
+            $results = $election->position_results ?? [];
+            $electedRolesByUserId = [];
+
+            foreach ($results as $positionKey => $entry) {
+                if (! is_array($entry) || ($entry['status'] ?? null) !== 'elected') {
+                    continue;
+                }
+
+                $winnerUserId = (int) ($entry['winner_user_id'] ?? 0);
+                if ($winnerUserId <= 0) {
+                    continue;
+                }
+
+                $targetRole = CpfRole::tryFrom((string) $positionKey);
+                if (
+                    $targetRole === null
+                    || in_array($targetRole, [CpfRole::Adviser, CpfRole::GuidanceCounselor, CpfRole::Member], true)
+                ) {
+                    continue;
+                }
+
+                $electedRolesByUserId[$winnerUserId] = $targetRole;
+            }
+
+            $studentOfficerRoleValues = array_map(
+                static fn (CpfRole $role): string => $role->value,
+                array_values(array_filter(
+                    CpfRole::cases(),
+                    static fn (CpfRole $role): bool => ! in_array($role, [CpfRole::Adviser, CpfRole::GuidanceCounselor, CpfRole::Member], true),
+                )),
+            );
+
+            $outgoingOfficers = CampusMembership::query()
+                ->with('campus:id,current_academic_year')
+                ->where('campus_id', $election->campus_id)
+                ->where('status', MembershipStatus::Approved->value)
+                ->whereIn('role', $studentOfficerRoleValues)
+                ->lockForUpdate()
+                ->get();
+
+            $promotedUserIds = [];
+            $demotedUserIds = [];
+            $retainedUserIds = [];
+            $processedUserIds = [];
+            $newTermAcademicYear = trim((string) $election->academic_year) ?: null;
+
+            foreach ($outgoingOfficers as $officerMembership) {
+                $uid = (int) $officerMembership->user_id;
+                $processedUserIds[$uid] = true;
+
+                if (isset($electedRolesByUserId[$uid])) {
+                    $newRole = $electedRolesByUserId[$uid];
+                    $this->recordRoleTransition(
+                        $officerMembership,
+                        $newRole,
+                        $actor,
+                        'term_completed',
+                        $newTermAcademicYear,
+                    );
+
+                    if ($officerMembership->role !== $newRole) {
+                        $officerMembership->update(['role' => $newRole]);
+                        $promotedUserIds[] = $uid;
+                    } else {
+                        $retainedUserIds[] = $uid;
+                    }
+                } else {
+                    $this->recordRoleTransition(
+                        $officerMembership,
+                        CpfRole::Member,
+                        $actor,
+                        'term_completed',
+                        $newTermAcademicYear,
+                    );
+                    $officerMembership->update(['role' => CpfRole::Member]);
+                    $demotedUserIds[] = $uid;
+                }
+            }
+
+            $newWinnerUserIds = array_values(array_diff(array_keys($electedRolesByUserId), array_keys($processedUserIds)));
+            if ($newWinnerUserIds !== []) {
+                $winnerMemberships = CampusMembership::query()
+                    ->with('campus:id,current_academic_year')
+                    ->where('campus_id', $election->campus_id)
+                    ->where('status', MembershipStatus::Approved->value)
+                    ->whereIn('user_id', $newWinnerUserIds)
+                    ->lockForUpdate()
+                    ->get();
+
+                foreach ($winnerMemberships as $winnerMembership) {
+                    if (in_array($winnerMembership->role, [CpfRole::Adviser, CpfRole::GuidanceCounselor], true)) {
+                        continue;
+                    }
+
+                    $uid = (int) $winnerMembership->user_id;
+                    $newRole = $electedRolesByUserId[$uid];
+
+                    $this->recordRoleTransition(
+                        $winnerMembership,
+                        $newRole,
+                        $actor,
+                        'role_change',
+                        $newTermAcademicYear,
+                    );
+                    $winnerMembership->update(['role' => $newRole]);
+                    $promotedUserIds[] = $uid;
+                }
+            }
+
+            return [
+                'promoted_user_ids' => $promotedUserIds,
+                'demoted_user_ids' => $demotedUserIds,
+                'retained_user_ids' => $retainedUserIds,
+            ];
         });
     }
 

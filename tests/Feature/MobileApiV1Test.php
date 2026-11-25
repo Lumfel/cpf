@@ -603,8 +603,9 @@ class MobileApiV1Test extends TestCase
             'created_by_user_id' => $adviser->id,
         ]);
 
+        $cache = Election::liveChatCache();
         $cacheKey = Election::liveChatCacheKey($election->id);
-        Cache::forget($cacheKey);
+        $cache->forget($cacheKey);
 
         // Self-nominate Member A & Member B via API
         $this->bearer($tokenA)
@@ -643,9 +644,9 @@ class MobileApiV1Test extends TestCase
             ->assertJsonPath('active_election.voting_status.has_voted_current_round', true)
             ->assertJsonPath('active_election.voting_status.my_current_vote_candidate_id', $candidateA->id);
 
-        // Ephemeral live chat stores ONLY in Cache (capped at 100 messages)
+        // Ephemeral live chat stores ONLY in dedicated non-DB ephemeral_chat store (capped at 100 messages)
         for ($i = 1; $i <= 105; $i++) {
-            Cache::put($cacheKey, array_merge(Cache::get($cacheKey, []), [[
+            $cache->put($cacheKey, array_merge($cache->get($cacheKey, []), [[
                 'id' => "seed-{$i}",
                 'election_id' => $election->id,
                 'sender_user_id' => $memberA->id,
@@ -672,7 +673,8 @@ class MobileApiV1Test extends TestCase
             ->assertJsonCount(100, 'messages');
 
         $this->assertSame('Good luck to all nominees!', $chatRes->json('messages.99.message_body'));
-        $this->assertTrue(Cache::has($cacheKey));
+        $this->assertTrue($cache->has($cacheKey));
+        $this->assertFalse(Cache::store('database')->has($cacheKey));
 
         // Closing the election automatically flushes the live-chat cache key and blocks further chat
         $this->actingAs($adviser)
@@ -681,7 +683,7 @@ class MobileApiV1Test extends TestCase
             ])
             ->assertOk();
 
-        $this->assertFalse(Cache::has($cacheKey));
+        $this->assertFalse($cache->has($cacheKey));
 
         $this->bearer($tokenA)
             ->getJson("/api/v1/elections/{$election->id}/live-chat")

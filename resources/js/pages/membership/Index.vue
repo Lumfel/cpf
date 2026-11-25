@@ -1844,9 +1844,14 @@ function formatFieldLabel(key: string): string {
 
                 <div v-else-if="memberQrCard" class="mx-auto flex w-full flex-col items-center justify-center gap-4">
                     <div
-                        class="cpf-qr-surface mx-auto flex aspect-square w-[min(72vw,260px)] items-center justify-center rounded-2xl border border-black/10 bg-white p-4 shadow-sm sm:w-64 [&_svg]:block [&_svg]:h-full [&_svg]:w-full"
-                        v-html="memberQrCard.qr_svg"
-                    />
+                        class="cpf-qr-surface mx-auto flex aspect-square w-[min(72vw,260px)] items-center justify-center rounded-2xl border border-black/10 bg-white p-4 shadow-sm sm:w-64"
+                    >
+                        <img
+                            :src="'data:image/svg+xml;utf8,' + encodeURIComponent(memberQrCard.qr_svg)"
+                            alt="Official Peer QR Code"
+                            class="block h-full w-full"
+                        />
+                    </div>
 
                     <div class="space-y-1">
                         <h3 class="font-editorial text-lg font-bold text-slate-900">

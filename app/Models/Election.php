@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Contracts\Cache\Repository as CacheRepository;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
@@ -17,10 +18,18 @@ use Illuminate\Support\Facades\Cache;
     'position_results',
     'opens_at',
     'closes_at',
+    'auto_archived_at',
     'created_by_user_id',
 ])]
 class Election extends Model
 {
+    public const LIVE_CHAT_CACHE_STORE = 'ephemeral_chat';
+
+    public static function liveChatCache(): CacheRepository
+    {
+        return Cache::store(self::LIVE_CHAT_CACHE_STORE);
+    }
+
     public static function liveChatCacheKey(int $electionId): string
     {
         return "election:{$electionId}:live_chat";
@@ -28,13 +37,17 @@ class Election extends Model
 
     public static function flushLiveChatCache(int $electionId): void
     {
-        Cache::forget(self::liveChatCacheKey($electionId));
+        self::liveChatCache()->forget(self::liveChatCacheKey($electionId));
     }
 
     protected static function booted(): void
     {
         static::saved(function (Election $election): void {
-            if ($election->status === 'closed' || $election->current_phase === 'completed') {
+            if (
+                $election->status !== 'open'
+                || $election->current_phase === 'completed'
+                || ($election->closes_at !== null && now()->gt($election->closes_at))
+            ) {
                 self::flushLiveChatCache((int) $election->id);
             }
         });
@@ -66,6 +79,7 @@ class Election extends Model
         return [
             'opens_at' => 'datetime',
             'closes_at' => 'datetime',
+            'auto_archived_at' => 'datetime',
             'round_number' => 'integer',
             'position_results' => 'array',
         ];

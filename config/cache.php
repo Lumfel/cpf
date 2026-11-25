@@ -53,6 +53,12 @@ return [
             'lock_path' => storage_path('framework/cache/locks'),
         ],
 
+        'ephemeral_chat' => [
+            'driver' => 'file',
+            'path' => storage_path('framework/cache/ephemeral_chat'),
+            'lock_path' => storage_path('framework/cache/ephemeral_chat_locks'),
+        ],
+
         'storage' => [
             'driver' => 'storage',
             'disk' => env('CACHE_STORAGE_DISK'),

@@ -47,62 +47,70 @@ class ArchiveAndResetOfficerGc
             );
             $zipPath = rtrim($archiveDir, DIRECTORY_SEPARATOR).DIRECTORY_SEPARATOR.$zipName;
 
-            $zip = new ZipArchive();
+            $zip = new ZipArchive;
             if ($zip->open($zipPath, ZipArchive::CREATE | ZipArchive::EXCL) !== true) {
                 throw new \RuntimeException("Unable to create archive ZIP at {$zipPath}");
             }
 
-            $zip->addFromString('transcript.json', $messages->toJson(JSON_PRETTY_PRINT));
-            $zip->close();
+            try {
+                $zip->addFromString('transcript.json', $messages->toJson(JSON_PRETTY_PRINT));
+                $zip->close();
 
-            $checksum = (string) hash_file('sha256', $zipPath);
-            $archivedAt = now();
+                $checksum = (string) hash_file('sha256', $zipPath);
+                $archivedAt = now();
 
-            $archive = OfficerGcArchive::create([
-                'campus_id' => $lockedChannel->campus_id,
-                'academic_year' => $lockedChannel->academic_year,
-                'zip_file_name' => $zipName,
-                'hdd_storage_path' => $zipPath,
-                'sha256_checksum' => $checksum,
-                'total_messages' => $messages->count(),
-                'archived_by_user_id' => $actor->id,
-                'archived_at' => $archivedAt,
-            ]);
+                $archive = OfficerGcArchive::create([
+                    'campus_id' => $lockedChannel->campus_id,
+                    'academic_year' => $lockedChannel->academic_year,
+                    'zip_file_name' => $zipName,
+                    'hdd_storage_path' => $zipPath,
+                    'sha256_checksum' => $checksum,
+                    'total_messages' => $messages->count(),
+                    'archived_by_user_id' => $actor->id,
+                    'archived_at' => $archivedAt,
+                ]);
 
-            SchoolYearArchive::create([
-                'campus_id' => $lockedChannel->campus_id,
-                'academic_year' => $lockedChannel->academic_year,
-                'archive_type' => 'officer_gc',
-                'title' => "Officers Private GC Archive ({$lockedChannel->academic_year})",
-                'zip_file_name' => $zipName,
-                'hdd_storage_path' => $zipPath,
-                'sha256_checksum' => $checksum,
-                'archived_by_user_id' => $actor->id,
-                'archived_at' => $archivedAt,
-            ]);
+                SchoolYearArchive::create([
+                    'campus_id' => $lockedChannel->campus_id,
+                    'academic_year' => $lockedChannel->academic_year,
+                    'archive_type' => 'officer_gc',
+                    'title' => "Officers Private GC Archive ({$lockedChannel->academic_year})",
+                    'zip_file_name' => $zipName,
+                    'hdd_storage_path' => $zipPath,
+                    'sha256_checksum' => $checksum,
+                    'archived_by_user_id' => $actor->id,
+                    'archived_at' => $archivedAt,
+                ]);
 
-            $archivedIds = $messages->pluck('id')->all();
-            if ($archivedIds !== []) {
-                OfficerGcMessage::query()
-                    ->where('channel_id', $lockedChannel->id)
-                    ->whereIn('id', $archivedIds)
-                    ->delete();
+                $archivedIds = $messages->pluck('id')->all();
+                if ($archivedIds !== []) {
+                    OfficerGcMessage::query()
+                        ->where('channel_id', $lockedChannel->id)
+                        ->whereIn('id', $archivedIds)
+                        ->delete();
+                }
+
+                $lockedChannel->update(['is_active' => false, 'reset_at' => $archivedAt]);
+
+                // Immediately provision and activate a fresh Officers GC channel for the new/next term
+                $campusCode = strtolower((string) (Campus::query()->whereKey($lockedChannel->campus_id)->value('code') ?? "campus-{$lockedChannel->campus_id}"));
+                $nextAcademicYear = $this->nextAvailableAcademicYear($lockedChannel->campus_id, $lockedChannel->academic_year);
+
+                OfficerGcChannel::create([
+                    'campus_id' => $lockedChannel->campus_id,
+                    'academic_year' => $nextAcademicYear,
+                    'channel_key' => sprintf('campus.%s.officers-gc.%s', $campusCode, Str::slug($nextAcademicYear)),
+                    'is_active' => true,
+                ]);
+
+                return $archive;
+            } catch (\Throwable $e) {
+                if (is_file($zipPath)) {
+                    @unlink($zipPath);
+                }
+
+                throw $e;
             }
-
-            $lockedChannel->update(['is_active' => false, 'reset_at' => $archivedAt]);
-
-            // Immediately provision and activate a fresh Officers GC channel for the new/next term
-            $campusCode = strtolower((string) (Campus::query()->whereKey($lockedChannel->campus_id)->value('code') ?? "campus-{$lockedChannel->campus_id}"));
-            $nextAcademicYear = $this->nextAvailableAcademicYear($lockedChannel->campus_id, $lockedChannel->academic_year);
-
-            OfficerGcChannel::create([
-                'campus_id' => $lockedChannel->campus_id,
-                'academic_year' => $nextAcademicYear,
-                'channel_key' => sprintf('campus.%s.officers-gc.%s', $campusCode, Str::slug($nextAcademicYear)),
-                'is_active' => true,
-            ]);
-
-            return $archive;
         });
     }
 

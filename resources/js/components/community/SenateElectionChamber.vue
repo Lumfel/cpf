@@ -43,13 +43,13 @@ export interface SenateCandidate {
 }
 
 export interface SenateElectionResult {
-    status: 'elected' | 'skipped';
+    status: 'elected' | 'skipped' | 'vacant';
     winner_user_id: number | null;
     winner_candidate_id?: number | null;
     winner_name: string | null;
     course_year_section: string | null;
     votes: number;
-    won_by: 'vote' | 'unopposed' | 'tiebreak_runoff' | 'adviser_tiebreak' | 'draw_lots' | 'skipped';
+    won_by: 'vote' | 'unopposed' | 'tiebreak_runoff' | 'adviser_tiebreak' | 'draw_lots' | 'skipped' | 'vacant';
 }
 
 export interface SenateElectionItem {
@@ -441,11 +441,15 @@ function closeNominations() {
 }
 
 function skipOptionalPosition() {
+    const label = activePositionMeta.value?.label ?? 'position';
+    const isOptional = Boolean(activePositionMeta.value?.optional);
     void runAction(
         `/elections/${props.election.id}/skip-position`,
         'POST',
         {},
-        `Skipped optional ${activePositionMeta.value?.label} and moved to the next position.`,
+        isOptional
+            ? `Skipped optional ${label} and moved to the next position.`
+            : `Declared ${label} vacant and moved to the next position.`,
     );
 }
 
@@ -513,6 +517,8 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
             return 'Drawn Lots';
         case 'skipped':
             return 'Skipped (Optional)';
+        case 'vacant':
+            return 'Declared Vacant';
         default:
             return 'Majority Vote';
     }
@@ -941,14 +947,18 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                             </span>
 
                             <button
-                                v-if="isClubAdviser && activePositionMeta.optional"
+                                v-if="isClubAdviser && (activePositionMeta.optional || acceptedForActive.length === 0)"
                                 type="button"
                                 :disabled="busy"
                                 @click="skipOptionalPosition"
                                 class="inline-flex items-center gap-1 rounded-xl border border-amber-400 bg-amber-50 px-3 py-2 font-semibold text-amber-900 hover:bg-amber-100"
                             >
                                 <SkipForward class="size-3.5" />
-                                Skip Optional {{ activePositionMeta.label }}
+                                {{
+                                    activePositionMeta.optional
+                                        ? `Skip Optional ${activePositionMeta.label}`
+                                        : `Declare ${activePositionMeta.label} Vacant & Advance`
+                                }}
                             </button>
                         </template>
 
@@ -1037,7 +1047,8 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                         :class="
                             election.position_results[pos.key]?.status === 'elected'
                                 ? 'border-[#1A8F26]/35 bg-[#1A8F26]/5'
-                                : election.position_results[pos.key]?.status === 'skipped'
+                                : election.position_results[pos.key]?.status === 'skipped' ||
+                                    election.position_results[pos.key]?.status === 'vacant'
                                   ? 'border-black/10 bg-slate-50 opacity-70'
                                   : election.current_position === pos.key && election.current_phase !== 'completed'
                                     ? 'border-[#0384C5] bg-[#0384C5]/10 ring-1 ring-[#0384C5]/30'
@@ -1059,6 +1070,12 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                                 class="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-600"
                             >
                                 Skipped
+                            </span>
+                            <span
+                                v-else-if="election.position_results[pos.key]?.status === 'vacant'"
+                                class="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800"
+                            >
+                                Vacant
                             </span>
                             <span
                                 v-else-if="election.current_position === pos.key && election.current_phase !== 'completed'"

@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Enums\CpfRole;
 use App\Enums\MembershipStatus;
-use App\Models\Campus;
 use App\Models\CampusMembership;
 use App\Models\Election;
 use App\Models\ElectionCandidate;
@@ -29,7 +28,14 @@ class CommunityHubController extends Controller
             'Guidance Counselors have coordination-only access and are blocked from student club elections.',
         );
         $membership = $user->primaryMembership()->with('campus:id,code,name,adviser_name')->first();
-        $campusId = $membership?->campus_id ?? Campus::query()->value('id') ?? 1;
+
+        abort_unless(
+            $membership !== null && $membership->status === MembershipStatus::Approved,
+            403,
+            'Only approved campus members may access the Community Hub and campus elections.',
+        );
+
+        $campusId = $membership->campus_id;
         $isClubAdviser = $user->isClubAdviser();
 
         $approvedMembersRaw = CampusMembership::query()

@@ -503,9 +503,14 @@ function toggleDuesStatus(member: DuesRosterMember) {
 
                 <div v-if="qrUnlocked && qrSvg" class="my-4 flex w-full flex-col items-center justify-center gap-3">
                     <div
-                        class="cpf-qr-surface mx-auto flex aspect-square w-[min(72vw,260px)] items-center justify-center rounded-2xl border border-black/10 bg-white p-4 shadow-sm sm:w-64 [&_svg]:block [&_svg]:h-full [&_svg]:w-full"
-                        v-html="qrSvg"
-                    />
+                        class="cpf-qr-surface mx-auto flex aspect-square w-[min(72vw,260px)] items-center justify-center rounded-2xl border border-black/10 bg-white p-4 shadow-sm sm:w-64"
+                    >
+                        <img
+                            :src="'data:image/svg+xml;utf8,' + encodeURIComponent(qrSvg)"
+                            alt="Official Peer QR Code"
+                            class="block h-full w-full"
+                        />
+                    </div>
                     <button
                         v-if="qrPayload"
                         type="button"

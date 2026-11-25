@@ -15,7 +15,6 @@ use App\Models\User;
 use App\Support\CpfElectionPositions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Str;
 
 class ElectionApiController extends Controller
@@ -64,6 +63,17 @@ class ElectionApiController extends Controller
             ->first();
 
         if (! $election || ! $election->isSessionActive()) {
+            if (
+                $election
+                && (
+                    $election->status !== 'open'
+                    || $election->current_phase === 'completed'
+                    || ($election->closes_at !== null && now()->gt($election->closes_at))
+                )
+            ) {
+                Election::flushLiveChatCache((int) $election->id);
+            }
+
             return response()->json([
                 'campus' => [
                     'id' => $campus->id,
@@ -236,15 +246,15 @@ class ElectionApiController extends Controller
 
     /**
      * GET /api/v1/elections/{election}/live-chat
-     * Reads ephemeral session chat messages from Laravel Cache ONLY while the
-     * election session is active.
+     * Reads ephemeral session chat messages from the non-DB `ephemeral_chat`
+     * cache store ONLY while the election session is active.
      */
     public function liveChatIndex(Request $request, Election $election): JsonResponse
     {
         $this->authorizeAndAssertActiveSession($request, $election);
 
         $cacheKey = Election::liveChatCacheKey((int) $election->id);
-        $messages = Cache::get($cacheKey, []);
+        $messages = Election::liveChatCache()->get($cacheKey, []);
         if (! is_array($messages)) {
             $messages = [];
         }
@@ -260,8 +270,9 @@ class ElectionApiController extends Controller
 
     /**
      * POST /api/v1/elections/{election}/live-chat
-     * Appends an ephemeral message to Laravel Cache (`election:{id}:live_chat`,
-     * max 100 messages, 2h TTL). Never writes to the database.
+     * Appends an ephemeral message to the non-DB `ephemeral_chat` cache store
+     * (`election:{id}:live_chat`, max 100 messages, 2h TTL capped at closes_at).
+     * Never writes to the database.
      */
     public function liveChatStore(Request $request, Election $election): JsonResponse
     {
@@ -278,8 +289,9 @@ class ElectionApiController extends Controller
         $body = trim((string) $validated['message_body']);
         abort_if($body === '', 422, 'Message body cannot be empty.');
 
+        $cache = Election::liveChatCache();
         $cacheKey = Election::liveChatCacheKey((int) $election->id);
-        $existing = Cache::get($cacheKey, []);
+        $existing = $cache->get($cacheKey, []);
         if (! is_array($existing)) {
             $existing = [];
         }
@@ -301,7 +313,12 @@ class ElectionApiController extends Controller
         }
         $existing = array_values($existing);
 
-        Cache::put($cacheKey, $existing, now()->addSeconds(self::LIVE_CHAT_TTL_SECONDS));
+        $expiresAt = now()->addSeconds(self::LIVE_CHAT_TTL_SECONDS);
+        if ($election->closes_at !== null && $election->closes_at->lt($expiresAt)) {
+            $expiresAt = $election->closes_at;
+        }
+
+        $cache->put($cacheKey, $existing, $expiresAt);
 
         return response()->json([
             'status' => 'sent',
@@ -336,7 +353,11 @@ class ElectionApiController extends Controller
         );
 
         if (! $election->isSessionActive()) {
-            if ($election->status === 'closed' || $election->current_phase === 'completed') {
+            if (
+                $election->status !== 'open'
+                || $election->current_phase === 'completed'
+                || ($election->closes_at !== null && now()->gt($election->closes_at))
+            ) {
                 Election::flushLiveChatCache((int) $election->id);
             }
 
