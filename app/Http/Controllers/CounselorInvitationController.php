@@ -261,12 +261,21 @@ class CounselorInvitationController extends Controller
                     return ['ok' => false, 'reason' => 'protected_user'];
                 }
 
+                $existingUser->tokens()->delete();
+                $existingUser->passkeys()->delete();
+                DB::table(config('session.table', 'sessions'))
+                    ->where('user_id', $existingUser->id)
+                    ->delete();
+
                 $existingUser->forceFill([
                     'name' => $fullName,
                     'password' => Hash::make((string) $validated['password']),
                     'email_verified_at' => $existingUser->email_verified_at ?? now(),
                     'must_change_password' => false,
                     'temporary_password_issued_at' => null,
+                    'two_factor_secret' => null,
+                    'two_factor_recovery_codes' => null,
+                    'two_factor_confirmed_at' => null,
                 ])->save();
 
                 $user = $existingUser;
@@ -320,23 +329,14 @@ class CounselorInvitationController extends Controller
                 ],
             );
 
-            CampusCounselor::query()->firstOrCreate(
-                [
-                    'campus_id' => $invitation->campus_id,
-                    'name' => $fullName,
-                ],
-                [
-                    'title' => 'Registered Guidance Counselor',
-                    'specialty' => isset($validated['specialty']) && filled($validated['specialty'])
-                        ? trim((string) $validated['specialty'])
-                        : 'Student Wellness & Peer Referral Triage',
-                    'weekly_vacant_slots' => [
-                        ['day' => 'Monday', 'start' => '09:00', 'end' => '11:30'],
-                        ['day' => 'Wednesday', 'start' => '13:30', 'end' => '16:00'],
-                        ['day' => 'Friday', 'start' => '09:00', 'end' => '11:30'],
-                    ],
-                    'is_active' => true,
-                ],
+            CampusCounselor::registerRealCounselor(
+                campusId: $invitation->campus_id,
+                name: $fullName,
+                title: 'Registered Guidance Counselor',
+                specialty: isset($validated['specialty']) && filled($validated['specialty'])
+                    ? trim((string) $validated['specialty'])
+                    : 'Student Wellness & Peer Referral Triage',
+                slots: CampusCounselor::defaultInvitedCounselorSlots(),
             );
 
             $tenureService->openTenure($membership->fresh(), $user);

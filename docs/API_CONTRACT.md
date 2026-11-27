@@ -296,6 +296,17 @@ Regular verified members receive `approved` and `cancelled` events on their camp
 
 ---
 
+### 6b. Event A–Z Manual Attendance Checklist & Manual Check-In/Out
+
+`GET /api/v1/events/{event}/checklist`  
+`POST /api/v1/events/{event}/manual-attendance`  
+**Auth:** `Bearer <token>` (`auth:sanctum`) — **Requires verified same-campus Officer or Club Adviser**
+
+- `GET` returns the alphabetical (A–Z) same-campus roster with per-member `user_id`, `full_name_last_first_mi`, `course_year_section`, `logged_in_at`, and `logged_out_at`.
+- `POST` records manual check-in (`"scan_type": "login"`) or check-out (`"scan_type": "logout"`) for `{ "user_id": 19, "scan_type": "login" }`.
+
+---
+
 ## Membership Roster, Messenger GC Checklist & Payments Endpoints
 
 ### 7. Same-Campus Approved Roster (A–Z)
@@ -707,6 +718,13 @@ Returns `"active_election": null` when no election session is currently active o
   }
 }
 ```
+
+### 16b. Accept or Decline Pending Nomination
+
+`PATCH /api/v1/elections/{election}/candidates/{candidate}/respond`  
+**Auth:** `Bearer <token>` (`auth:sanctum`) — **Requires the nominated member while `status === "open"` and `nomination_status === "pending"`**
+
+Accepts (`"action": "accept"` / `"status": "accepted"`) or declines (`"action": "decline"` / `"status": "declined"`) a pending floor nomination.
 
 ---
 

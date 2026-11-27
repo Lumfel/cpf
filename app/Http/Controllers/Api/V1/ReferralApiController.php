@@ -12,9 +12,7 @@ use App\Models\RoomRequest;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Carbon;
 use Illuminate\Validation\Rule;
-use Illuminate\Validation\ValidationException;
 
 class ReferralApiController extends Controller
 {
@@ -211,15 +209,6 @@ class ReferralApiController extends Controller
         $preferredStart = $validated['preferred_start_time'] ?? null;
         $preferredEnd = $validated['preferred_end_time'] ?? null;
 
-        if ($preferredDate !== null && $preferredStart !== null && $preferredEnd !== null && $counselor !== null) {
-            $this->assertSlotMatchesCounselorAvailability(
-                $counselor,
-                (string) $preferredDate,
-                (string) $preferredStart,
-                (string) $preferredEnd,
-            );
-        }
-
         $referral = $action->handle($user, $campusId, $validated, $request->ip());
 
         $suggestedSlot = ($preferredDate !== null && $preferredStart !== null && $preferredEnd !== null)
@@ -236,47 +225,5 @@ class ReferralApiController extends Controller
             'feedback_status' => $referral->feedback_status ?: 'pending',
             'suggested_slot' => $suggestedSlot,
         ], 201);
-    }
-
-    private function assertSlotMatchesCounselorAvailability(
-        CampusCounselor $counselor,
-        string $preferredDate,
-        string $preferredStart,
-        string $preferredEnd,
-    ): void {
-        $vacantSlots = $counselor->weekly_vacant_slots ?? [];
-        if (! is_array($vacantSlots) || $vacantSlots === []) {
-            return;
-        }
-
-        $dayIso = Carbon::parse($preferredDate)->dayOfWeekIso; // 1 (Mon) .. 7 (Sun)
-
-        $matchesWindow = false;
-        foreach ($vacantSlots as $slot) {
-            if (! is_array($slot)) {
-                continue;
-            }
-
-            $days = array_map('intval', (array) ($slot['days'] ?? [1, 2, 3, 4, 5]));
-            $slotStart = isset($slot['start']) ? substr((string) $slot['start'], 0, 5) : null;
-            $slotEnd = isset($slot['end']) ? substr((string) $slot['end'], 0, 5) : null;
-
-            if ($slotStart === null || $slotEnd === null) {
-                continue;
-            }
-
-            if (in_array($dayIso, $days, true) && $preferredStart >= $slotStart && $preferredEnd <= $slotEnd) {
-                $matchesWindow = true;
-                break;
-            }
-        }
-
-        if (! $matchesWindow) {
-            throw ValidationException::withMessages([
-                'preferred_start_time' => [
-                    'The suggested slot is outside the selected counselor\'s available consultation schedule.',
-                ],
-            ]);
-        }
     }
 }

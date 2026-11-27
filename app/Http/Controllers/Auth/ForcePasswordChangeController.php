@@ -43,6 +43,8 @@ class ForcePasswordChangeController extends Controller
             'temporary_password_issued_at' => null,
         ])->save();
 
+        $user->tokens()->delete();
+
         return redirect()->route('dashboard')->with(
             'status',
             'Your personal password has been created and your Attendance QR Code is now ready.',

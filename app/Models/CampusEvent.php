@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Enums\CpfRole;
 use App\Enums\MembershipStatus;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
@@ -31,6 +32,7 @@ use Illuminate\Support\Carbon;
     'cancellation_reason',
     'activated_at',
     'completed_at',
+    'reminder_sent_at',
 ])]
 class CampusEvent extends Model
 {
@@ -45,6 +47,7 @@ class CampusEvent extends Model
             'cancelled_at' => 'datetime',
             'activated_at' => 'datetime',
             'completed_at' => 'datetime',
+            'reminder_sent_at' => 'datetime',
         ];
     }
 
@@ -146,30 +149,50 @@ class CampusEvent extends Model
         $effective = $this->effectiveStatus($now);
 
         if ($effective === 'active' && $this->activated_at === null) {
-            $this->forceFill(['activated_at' => $now])->save();
+            $updated = self::query()
+                ->whereKey($this->id)
+                ->whereNull('activated_at')
+                ->update(['activated_at' => $now]);
 
-            self::notifyCampusMembers(
-                $this,
-                'event_activated',
-                "Activity Now Active: {$this->title}",
-                "{$this->title} is now active ({$this->event_date->format('M d, Y')} • {$this->start_time}–{$this->end_time}). Officers can now scan Attendance QR codes for Log-In & Log-Out.",
-            );
+            if ($updated > 0) {
+                $this->activated_at = $now;
+
+                self::notifyCampusMembers(
+                    $this,
+                    'event_activated',
+                    "Activity Now Active: {$this->title}",
+                    "{$this->title} is now active ({$this->event_date->format('M d, Y')} • {$this->start_time}–{$this->end_time}). Officers can now scan Attendance QR codes for Log-In & Log-Out.",
+                );
+            } else {
+                $this->refresh();
+            }
         } elseif ($effective === 'completed' && $this->completed_at === null) {
-            $this->forceFill([
-                'activated_at' => $this->activated_at ?? $this->startsAt(),
-                'completed_at' => $now,
-            ])->save();
+            $activatedAt = $this->activated_at ?? $this->startsAt();
+            $updated = self::query()
+                ->whereKey($this->id)
+                ->whereNull('completed_at')
+                ->update([
+                    'activated_at' => $activatedAt,
+                    'completed_at' => $now,
+                ]);
 
-            $completionMessage = $this->reflection_enabled
-                ? "{$this->title} has ended. Post-event reflection is enabled — verified members may now write and seal their reflection in their Time Capsule."
-                : "{$this->title} has ended. No post-event reflection is required for this activity.";
+            if ($updated > 0) {
+                $this->activated_at = $activatedAt;
+                $this->completed_at = $now;
 
-            self::notifyCampusMembers(
-                $this,
-                'event_completed',
-                "Activity Completed: {$this->title}",
-                $completionMessage,
-            );
+                $completionMessage = $this->reflection_enabled
+                    ? "{$this->title} has ended. Post-event reflection is enabled — verified members may now write and seal their reflection in their Time Capsule."
+                    : "{$this->title} has ended. No post-event reflection is required for this activity.";
+
+                self::notifyCampusMembers(
+                    $this,
+                    'event_completed',
+                    "Activity Completed: {$this->title}",
+                    $completionMessage,
+                );
+            } else {
+                $this->refresh();
+            }
         }
     }
 
@@ -183,7 +206,8 @@ class CampusEvent extends Model
         $recipientIds = CampusMembership::query()
             ->where('campus_id', $event->campus_id)
             ->where('status', MembershipStatus::Approved->value)
-            ->when($advisersOnly, fn ($query) => $query->where('role', 'adviser'))
+            ->where('role', '!=', CpfRole::GuidanceCounselor->value)
+            ->when($advisersOnly, fn ($query) => $query->where('role', CpfRole::Adviser->value))
             ->pluck('user_id')
             ->unique()
             ->values();

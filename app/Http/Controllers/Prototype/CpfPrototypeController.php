@@ -20,6 +20,19 @@ class CpfPrototypeController extends Controller
      */
     public function index(Request $request): Response
     {
+        abort_if(
+            app()->isProduction() || ! config('cpf.prototype.enabled'),
+            404,
+            'Prototype workspace is disabled.',
+        );
+
+        $user = $request->user();
+        abort_unless(
+            $user !== null && $user->isActiveOfficerOrAdviser(),
+            403,
+            'Only active verified officers or the Club Adviser may access the local prototype workspace.',
+        );
+
         $campuses = [];
         $approvedMembersAZ = [];
         $pendingApplications = [];
@@ -31,21 +44,47 @@ class CpfPrototypeController extends Controller
                 ->get(['id', 'code', 'name', 'slug', 'adviser_name', 'gc_group_name'])
                 ->toArray();
 
-            $activeCampusId = $campuses[0]['id'] ?? 1;
+            $activeCampusId = $user->primaryMembership?->campus_id ?? ($campuses[0]['id'] ?? 1);
 
             $approvedMembersAZ = CampusMembership::query()
                 ->with(['approver:id,name', 'gcConfirmer:id,name'])
                 ->where('campus_id', $activeCampusId)
                 ->where('status', MembershipStatus::Approved->value)
                 ->alphabetical()
-                ->get()
+                ->get([
+                    'id',
+                    'campus_id',
+                    'full_name_last_first_mi',
+                    'course',
+                    'year_level',
+                    'section',
+                    'course_year_section',
+                    'role',
+                    'status',
+                    'is_in_messenger_gc',
+                    'has_paid_dues',
+                    'added_or_approved_by',
+                    'gc_confirmed_by',
+                ])
                 ->toArray();
 
             $pendingApplications = CampusMembership::query()
                 ->where('campus_id', $activeCampusId)
                 ->where('status', MembershipStatus::Pending->value)
+                ->where('role', CpfRole::Member->value)
                 ->alphabetical()
-                ->get()
+                ->get([
+                    'id',
+                    'campus_id',
+                    'full_name_last_first_mi',
+                    'course',
+                    'year_level',
+                    'section',
+                    'course_year_section',
+                    'role',
+                    'status',
+                    'created_at',
+                ])
                 ->toArray();
         } catch (Throwable) {
             // Fallback gracefully to sample data if DB is not yet migrated in a local environment

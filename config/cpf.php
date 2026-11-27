@@ -14,9 +14,11 @@ return [
     |
     */
     'prototype' => [
-        'enabled' => env('APP_ENV', 'local') !== 'production' && (bool) env('CPF_PROTOTYPE_ENABLED', true),
+        'enabled' => env('APP_ENV', 'production') === 'local' && (bool) env('CPF_PROTOTYPE_ENABLED', false),
         'route_prefix' => env('CPF_PROTOTYPE_PREFIX', 'prototype'),
     ],
+
+    'first_boot_secret' => env('CPF_FIRST_BOOT_SECRET', ''),
 
     /*
     |--------------------------------------------------------------------------

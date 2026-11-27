@@ -27,5 +27,7 @@ class ResetUserPassword implements ResetsUserPasswords
             'must_change_password' => false,
             'temporary_password_issued_at' => null,
         ])->save();
+
+        $user->tokens()->delete();
     }
 }

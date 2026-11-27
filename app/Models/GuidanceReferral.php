@@ -29,6 +29,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'preferred_date',
     'preferred_start_time',
     'preferred_end_time',
+    'sla_alerted_at',
 ])]
 #[Hidden(['encrypted_concern_summary', 'confidential_clinical_notes'])]
 class GuidanceReferral extends Model
@@ -45,6 +46,7 @@ class GuidanceReferral extends Model
             'encrypted_concern_summary' => 'encrypted',
             'confidential_clinical_notes' => 'encrypted',
             'preferred_date' => 'date',
+            'sla_alerted_at' => 'datetime',
         ];
     }
 

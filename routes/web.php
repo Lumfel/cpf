@@ -73,114 +73,118 @@ Route::post('counselor-invitations/{token}/accept', [CounselorInvitationControll
     ->middleware('throttle:5,1')
     ->name('counselor-invitations.accept');
 
-Route::middleware(['auth', 'verified'])->group(function () {
+Route::middleware(['auth'])->group(function () {
     Route::get('force-password-change', [ForcePasswordChangeController::class, 'edit'])
         ->name('password.force-change.edit');
     Route::post('force-password-change', [ForcePasswordChangeController::class, 'update'])
         ->name('password.force-change.update');
 
     Route::middleware(EnsureTemporaryPasswordChanged::class)->group(function () {
-        Route::get('profile-photos/{targetUser}', [ProfileController::class, 'showPhoto'])
-            ->name('profile-photos.show');
         Route::get('dashboard', [DashboardController::class, 'index'])->name('dashboard');
-        Route::get('policy-and-bylaws', fn () => Inertia::render('PolicyAndBylaws'))
-            ->name('policy-and-bylaws');
-        Route::post('adviser-handover', [AdviserHandoverController::class, 'store'])
-            ->middleware('throttle:5,1')
-            ->name('adviser-handover.store');
         Route::post('adviser-handover/{handover}/respond', [AdviserHandoverController::class, 'respond'])
             ->middleware('throttle:5,1')
             ->name('adviser-handover.respond');
-        Route::delete('adviser-handover/{handover}', [AdviserHandoverController::class, 'cancel'])
-            ->middleware('throttle:5,1')
-            ->name('adviser-handover.cancel');
-        Route::post('counselor-invitations', [CounselorInvitationController::class, 'store'])
-            ->middleware('throttle:10,1')
-            ->name('counselor-invitations.store');
-        Route::get('announcements', [AnnouncementController::class, 'index'])->name('announcements.index');
-        Route::post('announcements', [AnnouncementController::class, 'store'])->name('announcements.store');
-        Route::delete('announcements/{announcement}', [AnnouncementController::class, 'destroy'])->name('announcements.destroy');
-        Route::get('events-activities', [EventActivityController::class, 'index'])->name('events.index');
-        Route::post('events-activities', [EventActivityController::class, 'store'])->name('events.store');
-        Route::patch('events-activities/{event}/approve', [EventActivityController::class, 'approve'])->name('events.approve');
-        Route::patch('events-activities/{event}/schedule', [EventActivityController::class, 'updateSchedule'])->name('events.schedule');
-        Route::patch('events-activities/{event}/cancel', [EventActivityController::class, 'cancel'])->name('events.cancel');
-        Route::post('events-activities/{event}/scan', [EventActivityController::class, 'scanQr'])->name('events.scan');
-        Route::post('events-activities/{event}/manual-attendance', [EventActivityController::class, 'manualAttendance'])
-            ->name('events.manual-attendance');
-        Route::post('events-activities/{event}/reflection', [EventActivityController::class, 'storeReflection'])->name('events.reflection');
-        Route::patch('events-activities/{event}/reflection-setting', [EventActivityController::class, 'updateReflectionSetting'])->name('events.reflection-setting');
-        Route::patch('events-activities/{event}/reflection-setting/review', [EventActivityController::class, 'reviewReflectionSetting'])->name('events.reflection-setting.review');
-        Route::patch('events-activities/notifications/{notification}/read', [EventActivityController::class, 'markNotificationRead'])->name('events.notifications.read');
-        Route::post('events-activities/notifications/read-all', [EventActivityController::class, 'markAllNotificationsRead'])->name('events.notifications.read-all');
-        Route::get('membership', [CampusMembershipController::class, 'index'])->name('membership.index');
-        Route::get('membership/{membership}/qr', [CampusMembershipController::class, 'showQr'])->name('membership.qr');
-        Route::post('membership/officer-add', [CampusMembershipController::class, 'storeOfficerMember'])->name('membership.officer-add');
-        Route::patch('membership/{membership}/approve', [CampusMembershipController::class, 'approve'])->name('membership.approve');
-        Route::patch('membership/{membership}/toggle-gc', [CampusMembershipController::class, 'toggleGc'])->name('membership.toggle-gc');
-        Route::patch('membership/{membership}/toggle-dues', [CampusMembershipController::class, 'toggleDues'])->name('membership.toggle-dues');
-        Route::patch('membership/{membership}/suspend-privileges', [CampusMembershipController::class, 'toggleOfficerSuspension'])->name('membership.suspend-privileges');
-        Route::get('membership/dues-audit-logs', [CampusMembershipController::class, 'duesAuditLogs'])->name('membership.dues-audit-logs');
-        Route::patch('membership/{membership}/role', [CampusMembershipController::class, 'updateRole'])->name('membership.update-role');
-        Route::post('membership/{membership}/transition-alumni', [CampusMembershipController::class, 'transitionToAlumni'])
-            ->name('membership.transition-alumni');
-        Route::get('alumni-archive', [AlumniArchiveController::class, 'index'])
-            ->name('alumni-archive.index');
-        Route::get('alumni-archive/gc/{archive}/transcript', [AlumniArchiveController::class, 'gcTranscript'])
-            ->name('alumni-archive.gc-transcript');
-        Route::post('membership/change-requests', [CampusMembershipController::class, 'storeChangeRequest'])
-            ->name('membership.change-requests.store');
-        Route::patch('membership/change-requests/{changeRequest}/review', [CampusMembershipController::class, 'reviewChangeRequest'])
-            ->name('membership.change-requests.review');
-        Route::get('officers-chat', [OfficersChatController::class, 'index'])->name('officers-chat.index');
-        Route::get('campus-hub', [CampusOperationsController::class, 'index'])->name('campus.operations');
-        Route::get('community-hub', [CommunityHubController::class, 'index'])->name('community.index');
-
-        Route::post('passkeys/{membership}/issue', [CpfFeatureController::class, 'issuePasskey'])->name('passkeys.issue');
-        Route::post('my-passkey/regenerate', [CpfFeatureController::class, 'regenerateOwnPasskey'])->name('my-passkey.regenerate');
-        Route::post('testing-room/request', [CpfFeatureController::class, 'requestTestingRoom'])->name('testing-room.request');
-        Route::patch('testing-room/{roomRequest}/review', [CpfFeatureController::class, 'reviewTestingRoom'])->name('testing-room.review');
-        Route::post('referrals/submit', [CpfFeatureController::class, 'submitReferral'])->name('referrals.submit');
-        Route::patch('referrals/{referral}/confirm', [CpfFeatureController::class, 'confirmReferral'])->name('referrals.confirm');
-        Route::get('officers-gc/{channel}/messages', [CpfFeatureController::class, 'fetchOfficerGcMessages'])->name('officers-gc.fetch');
-        Route::post('officers-gc/{channel}/messages', [CpfFeatureController::class, 'sendOfficerGcMessage'])->name('officers-gc.send');
-        Route::post('officers-gc/{channel}/archive', [CpfFeatureController::class, 'archiveOfficerGc'])->name('officers-gc.archive');
-        Route::get('counselors-gc/messages', [CpfFeatureController::class, 'fetchCounselorGcMessages'])->name('counselors-gc.fetch');
-        Route::post('counselors-gc/messages', [CpfFeatureController::class, 'sendCounselorGcMessage'])->name('counselors-gc.send');
-        Route::post('counselors-gc/archive', [CpfFeatureController::class, 'archiveCounselorGc'])->name('counselors-gc.archive');
-        Route::get('counselors-dm/{peerUser}/messages', [CpfFeatureController::class, 'fetchCounselorDmMessages'])->name('counselors-dm.fetch');
-        Route::post('counselors-dm/{peerUser}/messages', [CpfFeatureController::class, 'sendCounselorDmMessage'])->name('counselors-dm.send');
-
-        // v4 Community, Treasurer & Governance routes
-        Route::post('achievements', [CpfV4Controller::class, 'storeAchievement'])->name('achievements.store');
-        Route::post('time-capsules', [CpfV4Controller::class, 'storeTimeCapsule'])->name('time-capsules.store');
-        Route::post('time-capsules/{capsule}/open', [CpfV4Controller::class, 'openTimeCapsule'])->name('time-capsules.open');
-        Route::post('elections', [CpfV4Controller::class, 'storeElection'])->name('elections.store');
-        Route::post('elections/{election}/candidates', [CpfV4Controller::class, 'storeCandidate'])->name('elections.candidates.store');
-        Route::post('elections/{election}/nominate', [CpfV4Controller::class, 'nominateCandidate'])->name('elections.nominate');
-        Route::patch('elections/{election}/candidates/{candidate}/respond', [CpfV4Controller::class, 'respondNomination'])->name('elections.candidates.respond');
-        Route::post('elections/{election}/opt-in', [CpfV4Controller::class, 'optInNominations'])->name('elections.opt-in');
-        Route::post('elections/{election}/close-nominations', [CpfV4Controller::class, 'closeNominations'])->name('elections.close-nominations');
-        Route::post('elections/{election}/skip-position', [CpfV4Controller::class, 'skipOptionalPosition'])->name('elections.skip-position');
-        Route::post('elections/{election}/finalize-position', [CpfV4Controller::class, 'finalizePosition'])->name('elections.finalize-position');
-        Route::patch('elections/{election}/status', [CpfV4Controller::class, 'updateElectionStatus'])->name('elections.status');
-        Route::post('elections/{election}/vote', [CpfV4Controller::class, 'castVote'])->name('elections.vote');
-        Route::post('payments/submit', [CpfV4Controller::class, 'submitPayment'])->name('payments.submit');
-        Route::post('payments/destinations', [CpfV4Controller::class, 'storePaymentDestination'])->name('payments.destinations.store');
-        Route::patch('payments/destinations/{destination}/approve', [CpfV4Controller::class, 'approvePaymentDestination'])->name('payments.destinations.approve');
-        Route::patch('payments/{payment}/validate', [CpfV4Controller::class, 'validatePayment'])->name('payments.validate');
-        Route::post('quotes', [CpfV4Controller::class, 'storeQuote'])->name('quotes.store');
-
-        // v5 Blockchain Credentials (Achievements, Digital Certificates, Awards)
-        Route::post('credentials/achievements', [BlockchainCredentialController::class, 'storeAchievement'])
-            ->name('credentials.achievements.store');
-        Route::post('credentials/certificates', [BlockchainCredentialController::class, 'storeCertificate'])
-            ->name('credentials.certificates.store');
-        Route::post('credentials/awards', [BlockchainCredentialController::class, 'storeAward'])
-            ->name('credentials.awards.store');
-        Route::get('credentials/chain-audit', [BlockchainCredentialController::class, 'auditChain'])
-            ->name('credentials.chain-audit');
     });
+});
+
+Route::middleware(['auth', EnsureTemporaryPasswordChanged::class, 'verified'])->group(function () {
+    Route::get('profile-photos/{targetUser}', [ProfileController::class, 'showPhoto'])
+        ->name('profile-photos.show');
+    Route::get('policy-and-bylaws', fn () => Inertia::render('PolicyAndBylaws'))
+        ->name('policy-and-bylaws');
+    Route::post('adviser-handover', [AdviserHandoverController::class, 'store'])
+        ->middleware('throttle:5,1')
+        ->name('adviser-handover.store');
+    Route::delete('adviser-handover/{handover}', [AdviserHandoverController::class, 'cancel'])
+        ->middleware('throttle:5,1')
+        ->name('adviser-handover.cancel');
+    Route::post('counselor-invitations', [CounselorInvitationController::class, 'store'])
+        ->middleware('throttle:10,1')
+        ->name('counselor-invitations.store');
+    Route::get('announcements', [AnnouncementController::class, 'index'])->name('announcements.index');
+    Route::post('announcements', [AnnouncementController::class, 'store'])->name('announcements.store');
+    Route::delete('announcements/{announcement}', [AnnouncementController::class, 'destroy'])->name('announcements.destroy');
+    Route::get('events-activities', [EventActivityController::class, 'index'])->name('events.index');
+    Route::post('events-activities', [EventActivityController::class, 'store'])->name('events.store');
+    Route::patch('events-activities/{event}/approve', [EventActivityController::class, 'approve'])->name('events.approve');
+    Route::patch('events-activities/{event}/schedule', [EventActivityController::class, 'updateSchedule'])->name('events.schedule');
+    Route::patch('events-activities/{event}/cancel', [EventActivityController::class, 'cancel'])->name('events.cancel');
+    Route::post('events-activities/{event}/scan', [EventActivityController::class, 'scanQr'])->name('events.scan');
+    Route::post('events-activities/{event}/manual-attendance', [EventActivityController::class, 'manualAttendance'])
+        ->name('events.manual-attendance');
+    Route::post('events-activities/{event}/reflection', [EventActivityController::class, 'storeReflection'])->name('events.reflection');
+    Route::patch('events-activities/{event}/reflection-setting', [EventActivityController::class, 'updateReflectionSetting'])->name('events.reflection-setting');
+    Route::patch('events-activities/{event}/reflection-setting/review', [EventActivityController::class, 'reviewReflectionSetting'])->name('events.reflection-setting.review');
+    Route::patch('events-activities/notifications/{notification}/read', [EventActivityController::class, 'markNotificationRead'])->name('events.notifications.read');
+    Route::post('events-activities/notifications/read-all', [EventActivityController::class, 'markAllNotificationsRead'])->name('events.notifications.read-all');
+    Route::get('membership', [CampusMembershipController::class, 'index'])->name('membership.index');
+    Route::get('membership/{membership}/qr', [CampusMembershipController::class, 'showQr'])->name('membership.qr');
+    Route::post('membership/officer-add', [CampusMembershipController::class, 'storeOfficerMember'])->name('membership.officer-add');
+    Route::patch('membership/{membership}/approve', [CampusMembershipController::class, 'approve'])->name('membership.approve');
+    Route::patch('membership/{membership}/toggle-gc', [CampusMembershipController::class, 'toggleGc'])->name('membership.toggle-gc');
+    Route::patch('membership/{membership}/toggle-dues', [CampusMembershipController::class, 'toggleDues'])->name('membership.toggle-dues');
+    Route::patch('membership/{membership}/suspend-privileges', [CampusMembershipController::class, 'toggleOfficerSuspension'])->name('membership.suspend-privileges');
+    Route::get('membership/dues-audit-logs', [CampusMembershipController::class, 'duesAuditLogs'])->name('membership.dues-audit-logs');
+    Route::patch('membership/{membership}/role', [CampusMembershipController::class, 'updateRole'])->name('membership.update-role');
+    Route::post('membership/{membership}/transition-alumni', [CampusMembershipController::class, 'transitionToAlumni'])
+        ->name('membership.transition-alumni');
+    Route::get('alumni-archive', [AlumniArchiveController::class, 'index'])
+        ->name('alumni-archive.index');
+    Route::get('alumni-archive/gc/{archive}/transcript', [AlumniArchiveController::class, 'gcTranscript'])
+        ->name('alumni-archive.gc-transcript');
+    Route::post('membership/change-requests', [CampusMembershipController::class, 'storeChangeRequest'])
+        ->name('membership.change-requests.store');
+    Route::patch('membership/change-requests/{changeRequest}/review', [CampusMembershipController::class, 'reviewChangeRequest'])
+        ->name('membership.change-requests.review');
+    Route::get('officers-chat', [OfficersChatController::class, 'index'])->name('officers-chat.index');
+    Route::get('campus-hub', [CampusOperationsController::class, 'index'])->name('campus.operations');
+    Route::get('community-hub', [CommunityHubController::class, 'index'])->name('community.index');
+
+    Route::post('passkeys/{membership}/issue', [CpfFeatureController::class, 'issuePasskey'])->name('passkeys.issue');
+    Route::post('my-passkey/regenerate', [CpfFeatureController::class, 'regenerateOwnPasskey'])->name('my-passkey.regenerate');
+    Route::post('testing-room/request', [CpfFeatureController::class, 'requestTestingRoom'])->name('testing-room.request');
+    Route::patch('testing-room/{roomRequest}/review', [CpfFeatureController::class, 'reviewTestingRoom'])->name('testing-room.review');
+    Route::post('referrals/submit', [CpfFeatureController::class, 'submitReferral'])->name('referrals.submit');
+    Route::patch('referrals/{referral}/confirm', [CpfFeatureController::class, 'confirmReferral'])->name('referrals.confirm');
+    Route::get('officers-gc/{channel}/messages', [CpfFeatureController::class, 'fetchOfficerGcMessages'])->name('officers-gc.fetch');
+    Route::post('officers-gc/{channel}/messages', [CpfFeatureController::class, 'sendOfficerGcMessage'])->name('officers-gc.send');
+    Route::post('officers-gc/{channel}/archive', [CpfFeatureController::class, 'archiveOfficerGc'])->name('officers-gc.archive');
+    Route::get('counselors-gc/messages', [CpfFeatureController::class, 'fetchCounselorGcMessages'])->name('counselors-gc.fetch');
+    Route::post('counselors-gc/messages', [CpfFeatureController::class, 'sendCounselorGcMessage'])->name('counselors-gc.send');
+    Route::post('counselors-gc/archive', [CpfFeatureController::class, 'archiveCounselorGc'])->name('counselors-gc.archive');
+    Route::get('counselors-dm/{peerUser}/messages', [CpfFeatureController::class, 'fetchCounselorDmMessages'])->name('counselors-dm.fetch');
+    Route::post('counselors-dm/{peerUser}/messages', [CpfFeatureController::class, 'sendCounselorDmMessage'])->name('counselors-dm.send');
+
+    // v4 Community, Treasurer & Governance routes
+    Route::post('achievements', [CpfV4Controller::class, 'storeAchievement'])->name('achievements.store');
+    Route::post('time-capsules', [CpfV4Controller::class, 'storeTimeCapsule'])->name('time-capsules.store');
+    Route::post('time-capsules/{capsule}/open', [CpfV4Controller::class, 'openTimeCapsule'])->name('time-capsules.open');
+    Route::post('elections', [CpfV4Controller::class, 'storeElection'])->name('elections.store');
+    Route::post('elections/{election}/candidates', [CpfV4Controller::class, 'storeCandidate'])->name('elections.candidates.store');
+    Route::post('elections/{election}/nominate', [CpfV4Controller::class, 'nominateCandidate'])->name('elections.nominate');
+    Route::patch('elections/{election}/candidates/{candidate}/respond', [CpfV4Controller::class, 'respondNomination'])->name('elections.candidates.respond');
+    Route::post('elections/{election}/opt-in', [CpfV4Controller::class, 'optInNominations'])->name('elections.opt-in');
+    Route::post('elections/{election}/close-nominations', [CpfV4Controller::class, 'closeNominations'])->name('elections.close-nominations');
+    Route::post('elections/{election}/skip-position', [CpfV4Controller::class, 'skipOptionalPosition'])->name('elections.skip-position');
+    Route::post('elections/{election}/finalize-position', [CpfV4Controller::class, 'finalizePosition'])->name('elections.finalize-position');
+    Route::patch('elections/{election}/status', [CpfV4Controller::class, 'updateElectionStatus'])->name('elections.status');
+    Route::post('elections/{election}/vote', [CpfV4Controller::class, 'castVote'])->name('elections.vote');
+    Route::post('payments/submit', [CpfV4Controller::class, 'submitPayment'])->name('payments.submit');
+    Route::post('payments/destinations', [CpfV4Controller::class, 'storePaymentDestination'])->name('payments.destinations.store');
+    Route::patch('payments/destinations/{destination}/approve', [CpfV4Controller::class, 'approvePaymentDestination'])->name('payments.destinations.approve');
+    Route::patch('payments/{payment}/validate', [CpfV4Controller::class, 'validatePayment'])->name('payments.validate');
+    Route::get('payments/{payment}/receipt', [CpfV4Controller::class, 'streamReceipt'])->name('payments.receipt');
+    Route::post('quotes', [CpfV4Controller::class, 'storeQuote'])->name('quotes.store');
+
+    // v5 Blockchain Credentials (Achievements, Digital Certificates, Awards)
+    Route::post('credentials/achievements', [BlockchainCredentialController::class, 'storeAchievement'])
+        ->name('credentials.achievements.store');
+    Route::post('credentials/certificates', [BlockchainCredentialController::class, 'storeCertificate'])
+        ->name('credentials.certificates.store');
+    Route::post('credentials/awards', [BlockchainCredentialController::class, 'storeAward'])
+        ->name('credentials.awards.store');
+    Route::get('credentials/chain-audit', [BlockchainCredentialController::class, 'auditChain'])
+        ->name('credentials.chain-audit');
 });
 
 require __DIR__.'/settings.php';

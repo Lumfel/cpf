@@ -5,10 +5,13 @@ namespace App\Http\Controllers\Settings;
 use App\Enums\MembershipStatus;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Settings\ProfileUpdateRequest;
+use App\Models\Campus;
+use App\Models\CampusMembership;
 use App\Models\User;
 use Illuminate\Contracts\Auth\MustVerifyEmail;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Inertia\Inertia;
 use Inertia\Response;
@@ -32,13 +35,36 @@ class ProfileController extends Controller
      */
     public function update(ProfileUpdateRequest $request): RedirectResponse
     {
-        $request->user()->fill($request->validated());
+        $user = $request->user();
+        $membership = $user->primaryMembership;
 
-        if ($request->user()->isDirty('email')) {
-            $request->user()->email_verified_at = null;
-        }
+        abort_if(
+            $membership !== null && ! $user->isClubAdviser(),
+            403,
+            'CPF members and officers must submit an Information Change Request for Club Adviser approval to update their name or email.',
+        );
 
-        $request->user()->save();
+        DB::transaction(function () use ($request, $user, $membership): void {
+            $user->fill($request->validated());
+            $emailChanged = $user->isDirty('email');
+
+            if ($emailChanged) {
+                $isAdviserWithNonDeliveryMailer = $user->isClubAdviser()
+                    && in_array((string) config('mail.default', 'log'), ['log', 'array'], true);
+
+                if (! $isAdviserWithNonDeliveryMailer) {
+                    $user->email_verified_at = null;
+                }
+            }
+
+            $user->save();
+
+            if ($membership !== null && $user->isClubAdviser()) {
+                CampusMembership::query()
+                    ->whereKey($membership->id)
+                    ->update(['active_email' => $user->email]);
+            }
+        });
 
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Profile updated.')]);
 
@@ -163,7 +189,7 @@ class ProfileController extends Controller
             'mandatory_tour_enabled' => ['required', 'boolean'],
         ]);
 
-        \App\Models\Campus::query()
+        Campus::query()
             ->whereKey($membership->campus_id)
             ->update(['mandatory_tour_enabled' => (bool) $validated['mandatory_tour_enabled']]);
 

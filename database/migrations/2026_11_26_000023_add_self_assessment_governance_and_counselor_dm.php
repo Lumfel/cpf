@@ -60,7 +60,7 @@ return new class extends Migration
 
         Schema::table('guidance_referrals', function (Blueprint $table): void {
             if (! Schema::hasColumn('guidance_referrals', 'sla_alerted_at')) {
-                $table->timestamp('sla_alerted_at')->nullable()->after('counselor_confirmed_at');
+                $table->timestamp('sla_alerted_at')->nullable()->after('preferred_end_time');
             }
         });
 
@@ -68,6 +68,10 @@ return new class extends Migration
             if (! Schema::hasColumn('campus_events', 'reminder_sent_at')) {
                 $table->timestamp('reminder_sent_at')->nullable()->after('completed_at');
             }
+        });
+
+        Schema::table('campus_event_notifications', function (Blueprint $table): void {
+            $table->unsignedBigInteger('campus_event_id')->nullable()->change();
         });
     }
 

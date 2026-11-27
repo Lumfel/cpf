@@ -2,10 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\CpfRole;
 use App\Enums\MembershipStatus;
 use App\Enums\ReferralPriority;
 use App\Models\Campus;
 use App\Models\CampusCounselor;
+use App\Models\CampusMembership;
 use App\Models\CampusRoom;
 use App\Models\CounselorGcMessage;
 use App\Models\CounselorInvitation;
@@ -48,7 +50,7 @@ class CampusOperationsController extends Controller
             ->get(['id', 'code', 'name']);
 
         $campusId = $membership->campus_id;
-        $isOfficerOrAdviser = $user->verifiedRole()?->isOfficerOrAdviser() ?? false;
+        $isOfficerOrAdviser = $user->isActiveOfficerOrAdviser();
         $isClubAdviser = $user->isClubAdviser();
         $canCoordinateGuidance = $user->canCoordinateGuidance();
         $canReviewTestingRoom = $isOfficerOrAdviser || $canCoordinateGuidance;

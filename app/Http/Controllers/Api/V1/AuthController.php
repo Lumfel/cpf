@@ -111,6 +111,11 @@ class AuthController extends Controller
             'temporary_password_issued_at' => null,
         ])->save();
 
+        $currentTokenId = $user->currentAccessToken()?->id;
+        $user->tokens()
+            ->when($currentTokenId !== null, fn ($query) => $query->where('id', '!=', $currentTokenId))
+            ->delete();
+
         return response()->json($this->buildProfilePayload($user->fresh()));
     }
 
@@ -197,15 +202,17 @@ class AuthController extends Controller
             ],
             'verified_role' => $verifiedRole?->value,
             'verified_role_label' => $verifiedRole?->label() ?? $user->formerRoleLabel() ?? 'Ordinary Account',
+            'privileges_suspended' => $user->hasSuspendedOfficerPrivileges(),
             'is_alumni' => $isAlumni,
             'former_role' => $user->formerRole()?->value,
             'former_role_label' => $user->formerRoleLabel(),
             'permissions' => [
-                'is_officer_or_adviser' => $verifiedRole?->isOfficerOrAdviser() ?? false,
+                'is_officer_or_adviser' => $user->isActiveOfficerOrAdviser(),
                 'is_club_adviser' => $user->isClubAdviser(),
                 'can_propose_events' => $user->canProposeEvents(),
-                'can_scan_attendance' => $verifiedRole?->isOfficerOrAdviser() ?? false,
+                'can_scan_attendance' => $user->isActiveOfficerOrAdviser(),
                 'can_access_archive' => $user->canAccessAlumniArchive(),
+                'privileges_suspended' => $user->hasSuspendedOfficerPrivileges(),
             ],
             'campus' => $campus ? [
                 'id' => $campus->id,

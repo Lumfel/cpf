@@ -171,8 +171,18 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
         return $this->verifiedRole()?->canValidatePayments() ?? false;
     }
 
+    public function isActiveOfficerOrAdviser(): bool
+    {
+        return ! $this->hasSuspendedOfficerPrivileges()
+            && ($this->verifiedRole()?->isOfficerOrAdviser() ?? false);
+    }
+
     public function canAuditFinances(): bool
     {
+        if ($this->hasSuspendedOfficerPrivileges()) {
+            return false;
+        }
+
         return $this->verifiedRole()?->canAuditFinances() ?? false;
     }
 
@@ -188,11 +198,19 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
 
     public function canPublishAnnouncements(): bool
     {
+        if ($this->hasSuspendedOfficerPrivileges()) {
+            return false;
+        }
+
         return $this->verifiedRole()?->canPublishAnnouncements() ?? false;
     }
 
     public function canProposeEvents(): bool
     {
+        if ($this->hasSuspendedOfficerPrivileges()) {
+            return false;
+        }
+
         return $this->verifiedRole()?->canProposeEvents() ?? false;
     }
 

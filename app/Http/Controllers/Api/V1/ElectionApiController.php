@@ -12,6 +12,7 @@ use App\Models\ElectionCandidate;
 use App\Models\ElectionOptOut;
 use App\Models\ElectionVote;
 use App\Models\User;
+use App\Services\ProfanityFilterService;
 use App\Support\CpfElectionPositions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -74,14 +75,41 @@ class ElectionApiController extends Controller
                 Election::flushLiveChatCache((int) $election->id);
             }
 
+            /** @var Election|null $completedElection */
+            $completedElection = Election::query()
+                ->where('campus_id', $campus->id)
+                ->where('current_phase', 'completed')
+                ->latest('id')
+                ->first();
+
+            $completedResults = $completedElection?->position_results ?? [];
+            $seatsWithCompleted = array_map(function (array $seat) use ($completedResults): array {
+                $key = $seat['key'];
+
+                return [
+                    ...$seat,
+                    'is_current' => false,
+                    'result' => $completedResults[$key] ?? null,
+                ];
+            }, $seatsOrdered);
+
             return response()->json([
                 'campus' => [
                     'id' => $campus->id,
                     'code' => $campus->code,
                     'name' => $campus->name,
                 ],
-                'seats' => $seatsOrdered,
+                'seats' => $seatsWithCompleted,
                 'active_election' => null,
+                'completed_election' => $completedElection ? [
+                    'id' => $completedElection->id,
+                    'title' => $completedElection->title,
+                    'academic_year' => $completedElection->academic_year,
+                    'status' => $completedElection->status,
+                    'current_phase' => $completedElection->current_phase,
+                    'position_results' => $completedResults,
+                    'completed_at' => $completedElection->updated_at?->toIso8601String(),
+                ] : null,
             ]);
         }
 
@@ -215,6 +243,7 @@ class ElectionApiController extends Controller
                     'ttl_seconds' => self::LIVE_CHAT_TTL_SECONDS,
                 ],
             ],
+            'completed_election' => null,
         ]);
     }
 
@@ -227,6 +256,42 @@ class ElectionApiController extends Controller
         CpfV4Controller $v4Controller,
     ): JsonResponse {
         return $v4Controller->nominateCandidate($request, $election);
+    }
+
+    /**
+     * PATCH /api/v1/elections/{election}/candidates/{candidate}/respond
+     */
+    public function respondNomination(
+        Request $request,
+        Election $election,
+        ElectionCandidate $candidate,
+        CpfV4Controller $v4Controller,
+    ): JsonResponse {
+        $rawDecision = $request->input('decision');
+        if (is_string($rawDecision)) {
+            $normalized = match (strtolower(trim($rawDecision))) {
+                'accept' => 'accepted',
+                'decline' => 'declined',
+                default => $rawDecision,
+            };
+
+            if ($normalized !== $rawDecision) {
+                $request->merge(['decision' => $normalized]);
+            }
+        }
+
+        return $v4Controller->respondNomination($request, $election, $candidate);
+    }
+
+    /**
+     * POST /api/v1/elections/{election}/finalize-position
+     */
+    public function finalizePosition(
+        Request $request,
+        Election $election,
+        CpfV4Controller $v4Controller,
+    ): JsonResponse {
+        return $v4Controller->finalizePosition($request, $election);
     }
 
     /**
@@ -288,14 +353,11 @@ class ElectionApiController extends Controller
 
         $body = trim((string) $validated['message_body']);
         abort_if($body === '', 422, 'Message body cannot be empty.');
-        app(\App\Services\ProfanityFilterService::class)->assertClean($body, 'message_body');
+        app(ProfanityFilterService::class)->assertClean($body, 'message_body');
 
         $cache = Election::liveChatCache();
         $cacheKey = Election::liveChatCacheKey((int) $election->id);
-        $existing = $cache->get($cacheKey, []);
-        if (! is_array($existing)) {
-            $existing = [];
-        }
+        $lockKey = "election:{$election->id}:live_chat:lock";
 
         $newMessage = [
             'id' => (string) Str::uuid(),
@@ -308,25 +370,40 @@ class ElectionApiController extends Controller
             'sent_at' => now()->toIso8601String(),
         ];
 
-        $existing[] = $newMessage;
-        if (count($existing) > self::MAX_LIVE_CHAT_MESSAGES) {
-            $existing = array_slice($existing, -self::MAX_LIVE_CHAT_MESSAGES);
-        }
-        $existing = array_values($existing);
+        $messagesCount = $cache->lock($lockKey, 5)->block(3, function () use ($cache, $cacheKey, $newMessage, $election): int {
+            $freshElection = Election::query()->find($election->id);
+            if (! $freshElection || ! $freshElection->isSessionActive()) {
+                $cache->forget($cacheKey);
+                abort(422, 'No active election session is open for live chat.');
+            }
 
-        $expiresAt = now()->addSeconds(self::LIVE_CHAT_TTL_SECONDS);
-        if ($election->closes_at !== null && $election->closes_at->lt($expiresAt)) {
-            $expiresAt = $election->closes_at;
-        }
+            $existing = $cache->get($cacheKey, []);
+            if (! is_array($existing)) {
+                $existing = [];
+            }
 
-        $cache->put($cacheKey, $existing, $expiresAt);
+            $existing[] = $newMessage;
+            if (count($existing) > self::MAX_LIVE_CHAT_MESSAGES) {
+                $existing = array_slice($existing, -self::MAX_LIVE_CHAT_MESSAGES);
+            }
+            $existing = array_values($existing);
+
+            $expiresAt = now()->addSeconds(self::LIVE_CHAT_TTL_SECONDS);
+            if ($freshElection->closes_at !== null && $freshElection->closes_at->lt($expiresAt)) {
+                $expiresAt = $freshElection->closes_at;
+            }
+
+            $cache->put($cacheKey, $existing, $expiresAt);
+
+            return count($existing);
+        });
 
         return response()->json([
             'status' => 'sent',
             'ephemeral' => true,
             'ttl_seconds' => self::LIVE_CHAT_TTL_SECONDS,
             'message' => $newMessage,
-            'messages_count' => count($existing),
+            'messages_count' => $messagesCount,
         ], 201);
     }
 

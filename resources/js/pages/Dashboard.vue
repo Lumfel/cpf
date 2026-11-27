@@ -49,6 +49,22 @@ interface DuesRosterMember {
     dues_confirmer_name: string | null;
 }
 
+interface PaymentSubmissionQueueItem {
+    id: number;
+    user_id: number;
+    member_name: string;
+    course_year_section: string;
+    channel: string;
+    purpose: string;
+    amount: number;
+    reference_number: string;
+    has_receipt: boolean;
+    receipt_url: string | null;
+    status: 'pending' | 'validated' | 'rejected';
+    treasurer_notes: string | null;
+    created_at: string | null;
+}
+
 interface OfficerGcMessage {
     id: number;
     sender_user_id: number;
@@ -126,6 +142,7 @@ const props = withDefaults(
         canAuditFinances: boolean;
         isOfficerOrAdviser: boolean;
         duesRoster: DuesRosterMember[];
+        paymentValidationQueue?: PaymentSubmissionQueueItem[];
         campusEvents?: CampusEventSummary[];
         eventNotifications?: EventNotificationItem[];
         unreadEventNotificationsCount?: number;
@@ -152,6 +169,7 @@ const props = withDefaults(
         campusAnnouncements: () => [],
         myTenureSummary: null,
         qrPayload: null,
+        paymentValidationQueue: () => [],
         campusEvents: () => [],
         eventNotifications: () => [],
         unreadEventNotificationsCount: 0,
@@ -251,6 +269,36 @@ async function copyMyPasskey() {
 const paidDuesCount = computed(
     () => props.duesRoster.filter((member) => member.has_paid_dues).length,
 );
+const pendingPaymentsCount = computed(
+    () => props.paymentValidationQueue.filter((item) => item.status === 'pending').length,
+);
+const validatingPaymentId = ref<number | null>(null);
+const paymentQueueNotice = ref<string | null>(null);
+
+async function reviewPaymentSubmission(item: PaymentSubmissionQueueItem, status: 'validated' | 'rejected') {
+    if (!props.canConfirmDues || validatingPaymentId.value !== null) return;
+    validatingPaymentId.value = item.id;
+    paymentQueueNotice.value = null;
+
+    const { ok, data } = await apiRequest<{ message?: string }>(
+        `/payments/${item.id}/validate`,
+        'PATCH',
+        { status },
+    );
+
+    validatingPaymentId.value = null;
+
+    if (!ok) {
+        paymentQueueNotice.value = data.message ?? 'Unable to update payment submission.';
+        return;
+    }
+
+    paymentQueueNotice.value =
+        status === 'validated'
+            ? `Validated receipt #${item.reference_number} for ${item.member_name} and updated dues checklist.`
+            : `Marked receipt #${item.reference_number} for ${item.member_name} as rejected.`;
+    router.reload({ only: ['duesRoster', 'paymentValidationQueue'] });
+}
 
 // PIO + Secretary (+ Adviser) Templated Announcements Composer State
 const showAnnouncementComposer = ref(false);
@@ -880,6 +928,108 @@ function toggleDuesStatus(member: DuesRosterMember) {
                         <CheckCircle2 class="size-3.5" />
                         {{ member.has_paid_dues ? 'Audit Verified: Paid ✓' : 'Audit Pending: Unpaid' }}
                     </span>
+                </div>
+            </div>
+
+            <!-- Submitted Payment Receipts Queue (Treasurer, Adviser, Auditor) -->
+            <div v-if="paymentValidationQueue.length > 0" class="mt-6 border-t border-black/10 pt-5">
+                <div class="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                        <h3 class="text-sm font-bold text-slate-900">
+                            Submitted Payment Receipts Queue
+                            <span
+                                v-if="pendingPaymentsCount > 0"
+                                class="ml-1.5 rounded-full bg-[#FF8D06]/15 px-2 py-0.5 text-[11px] font-bold text-[#FF8D06]"
+                            >
+                                {{ pendingPaymentsCount }} pending
+                            </span>
+                        </h3>
+                        <p class="mt-0.5 text-xs text-slate-600">
+                            Review private payment receipts before confirming chapter dues. Validated receipts automatically update the dues roster and audit log.
+                        </p>
+                    </div>
+                </div>
+
+                <div
+                    v-if="paymentQueueNotice"
+                    class="mt-3 rounded-xl border border-[#0384C5]/30 bg-[#0384C5]/10 px-3 py-2 text-xs font-semibold text-[#0384C5]"
+                >
+                    {{ paymentQueueNotice }}
+                </div>
+
+                <div class="mt-3 flex flex-col gap-2.5">
+                    <div
+                        v-for="sub in paymentValidationQueue"
+                        :key="`pay-sub-${sub.id}`"
+                        class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-4 text-xs"
+                        :class="
+                            sub.status === 'validated'
+                                ? 'border-[#1A8F26]/30 bg-[#1A8F26]/5'
+                                : sub.status === 'rejected'
+                                  ? 'border-red-300 bg-red-50/50'
+                                  : 'border-amber-300/70 bg-[#FBF6EE]'
+                        "
+                    >
+                        <div>
+                            <div class="flex flex-wrap items-center gap-2">
+                                <span class="text-sm font-bold text-slate-900">{{ sub.member_name }}</span>
+                                <span class="rounded-full bg-[#0384C5]/10 px-2 py-0.5 text-[11px] font-semibold text-[#0384C5]">
+                                    {{ sub.channel }} • ₱{{ sub.amount.toFixed(2) }}
+                                </span>
+                                <span class="rounded-full bg-white px-2 py-0.5 font-mono text-[11px] text-slate-700">
+                                    Ref: {{ sub.reference_number }}
+                                </span>
+                            </div>
+                            <div class="mt-1 flex flex-wrap items-center gap-3 text-slate-600">
+                                <span>{{ sub.purpose }}</span>
+                                <span v-if="sub.created_at">• {{ sub.created_at }}</span>
+                                <a
+                                    v-if="sub.has_receipt && sub.receipt_url"
+                                    :href="sub.receipt_url"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    class="inline-flex items-center gap-1 font-semibold text-[#0384C5] underline hover:text-[#FF8D06]"
+                                >
+                                    View Private Receipt
+                                    <ExternalLink class="size-3" />
+                                </a>
+                            </div>
+                        </div>
+
+                        <div class="flex flex-wrap items-center gap-2">
+                            <template v-if="canConfirmDues && sub.status === 'pending'">
+                                <button
+                                    type="button"
+                                    :disabled="validatingPaymentId === sub.id"
+                                    @click="reviewPaymentSubmission(sub, 'validated')"
+                                    class="rounded-xl bg-[#1A8F26] px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-[#15751f] disabled:opacity-60"
+                                >
+                                    Validate &amp; Mark Paid
+                                </button>
+                                <button
+                                    type="button"
+                                    :disabled="validatingPaymentId === sub.id"
+                                    @click="reviewPaymentSubmission(sub, 'rejected')"
+                                    class="rounded-xl border border-red-300 bg-white px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-50 disabled:opacity-60"
+                                >
+                                    Reject
+                                </button>
+                            </template>
+                            <span
+                                v-else
+                                class="rounded-full px-3 py-1 text-[11px] font-bold uppercase"
+                                :class="
+                                    sub.status === 'validated'
+                                        ? 'bg-[#1A8F26]/15 text-[#1A8F26]'
+                                        : sub.status === 'rejected'
+                                          ? 'bg-red-100 text-red-700'
+                                          : 'bg-amber-100 text-amber-800'
+                                "
+                            >
+                                {{ sub.status }}
+                            </span>
+                        </div>
+                    </div>
                 </div>
             </div>
         </section>

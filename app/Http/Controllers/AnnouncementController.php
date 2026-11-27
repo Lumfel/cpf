@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Enums\CpfRole;
 use App\Models\CampusAnnouncement;
+use App\Services\ProfanityFilterService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Validation\Rule;
@@ -60,6 +61,16 @@ class AnnouncementController extends Controller
             'location' => ['nullable', 'string', 'max:140'],
             'is_pinned' => ['nullable', 'boolean'],
         ]);
+
+        $profanityFilter = app(ProfanityFilterService::class);
+        $profanityFilter->assertClean((string) $validated['title'], 'title');
+        $profanityFilter->assertClean((string) $validated['body'], 'body');
+        if (filled($validated['schedule_label'] ?? null)) {
+            $profanityFilter->assertClean((string) $validated['schedule_label'], 'schedule_label');
+        }
+        if (filled($validated['location'] ?? null)) {
+            $profanityFilter->assertClean((string) $validated['location'], 'location');
+        }
 
         $announcement = CampusAnnouncement::create([
             'campus_id' => $membership->campus_id,

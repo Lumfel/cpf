@@ -11,7 +11,13 @@ class CampusMembershipPolicy
 {
     public function viewRoster(User $user): bool
     {
-        return $user->verifiedRole()?->isOfficerOrAdviser() ?? false;
+        $actorMembership = $user->primaryMembership;
+
+        if ($actorMembership !== null && $actorMembership->isPrivilegesSuspended()) {
+            return false;
+        }
+
+        return $user->isActiveOfficerOrAdviser();
     }
 
     /**
@@ -21,7 +27,7 @@ class CampusMembershipPolicy
     {
         $actorMembership = $user->primaryMembership;
 
-        if (! $actorMembership || $actorMembership->status !== MembershipStatus::Approved) {
+        if (! $actorMembership || $actorMembership->status !== MembershipStatus::Approved || $actorMembership->isPrivilegesSuspended()) {
             return false;
         }
 
@@ -37,6 +43,10 @@ class CampusMembershipPolicy
             if ($target->status !== MembershipStatus::Pending) {
                 return false;
             }
+
+            if ($target->role !== CpfRole::Member || $target->section === 'Incoming Adviser') {
+                return false;
+            }
         }
 
         return true;
@@ -50,7 +60,7 @@ class CampusMembershipPolicy
     {
         $actorMembership = $user->primaryMembership;
 
-        if (! $actorMembership || $actorMembership->status !== MembershipStatus::Approved) {
+        if (! $actorMembership || $actorMembership->status !== MembershipStatus::Approved || $actorMembership->isPrivilegesSuspended()) {
             return false;
         }
 
@@ -82,7 +92,7 @@ class CampusMembershipPolicy
     {
         $actorMembership = $user->primaryMembership;
 
-        if (! $actorMembership || $actorMembership->status !== MembershipStatus::Approved) {
+        if (! $actorMembership || $actorMembership->status !== MembershipStatus::Approved || $actorMembership->isPrivilegesSuspended()) {
             return false;
         }
 
@@ -100,7 +110,7 @@ class CampusMembershipPolicy
     {
         $actorMembership = $user->primaryMembership;
 
-        if (! $actorMembership || $actorMembership->status !== MembershipStatus::Approved) {
+        if (! $actorMembership || $actorMembership->status !== MembershipStatus::Approved || $actorMembership->isPrivilegesSuspended()) {
             return false;
         }
 
@@ -118,7 +128,7 @@ class CampusMembershipPolicy
     {
         $actorMembership = $user->primaryMembership;
 
-        if (! $actorMembership || $actorMembership->status !== MembershipStatus::Approved) {
+        if (! $actorMembership || $actorMembership->status !== MembershipStatus::Approved || $actorMembership->isPrivilegesSuspended()) {
             return false;
         }
 

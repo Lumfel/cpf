@@ -3,6 +3,7 @@
 namespace App\Actions\Support;
 
 use App\Enums\ReferralPriority;
+use App\Models\CampusCounselor;
 use App\Models\CampusRoom;
 use App\Models\GuidanceReferral;
 use App\Models\ReferralAuditLog;
@@ -16,12 +17,47 @@ class SubmitGuidanceReferral
     public function handle(User $submitter, int $campusId, array $validated, ?string $ipAddress = null): GuidanceReferral
     {
         $priority = ReferralPriority::from((string) ($validated['suggested_priority'] ?? 'routine'));
+        $counselorId = ! empty($validated['counselor_id']) ? (int) $validated['counselor_id'] : null;
+        $preferredDate = $validated['preferred_date'] ?? null;
+        $preferredStart = $validated['preferred_start_time'] ?? null;
+        $preferredEnd = $validated['preferred_end_time'] ?? null;
 
-        return DB::transaction(function () use ($submitter, $campusId, $validated, $priority, $ipAddress): GuidanceReferral {
-            $counselorId = ! empty($validated['counselor_id']) ? (int) $validated['counselor_id'] : null;
-            $preferredDate = $validated['preferred_date'] ?? null;
-            $preferredStart = $validated['preferred_start_time'] ?? null;
-            $preferredEnd = $validated['preferred_end_time'] ?? null;
+        $counselor = null;
+        if ($counselorId !== null) {
+            $counselor = CampusCounselor::query()
+                ->where('id', $counselorId)
+                ->where('campus_id', $campusId)
+                ->where('is_active', true)
+                ->first();
+
+            if ($counselor === null) {
+                throw ValidationException::withMessages([
+                    'counselor_id' => ['Selected counselor does not belong to this campus or is inactive.'],
+                ]);
+            }
+        }
+
+        if ($preferredDate !== null && $preferredStart !== null && $preferredEnd !== null) {
+            CampusCounselor::assertBookingSlotRules(
+                (string) $preferredDate,
+                (string) $preferredStart,
+                (string) $preferredEnd,
+                $counselor,
+                'preferred_start_time',
+            );
+        }
+
+        return DB::transaction(function () use (
+            $submitter,
+            $campusId,
+            $validated,
+            $priority,
+            $ipAddress,
+            $counselorId,
+            $preferredDate,
+            $preferredStart,
+            $preferredEnd,
+        ): GuidanceReferral {
             $roomRequestId = null;
 
             if ($preferredDate !== null && $preferredStart !== null && $preferredEnd !== null) {
@@ -40,6 +76,36 @@ class SubmitGuidanceReferral
                 // Serialize concurrent Testing Room & referral slot checks on the same campus room
                 CampusRoom::query()->whereKey($room->id)->lockForUpdate()->firstOrFail();
 
+                $hasPendingToday = RoomRequest::query()
+                    ->where('campus_id', $campusId)
+                    ->where('requested_by_user_id', $submitter->id)
+                    ->whereDate('request_date', $preferredDate)
+                    ->where('status', 'pending')
+                    ->lockForUpdate()
+                    ->exists();
+
+                if ($hasPendingToday) {
+                    throw ValidationException::withMessages([
+                        'preferred_start_time' => 'You already have an active pending Testing Room booking for this date.',
+                    ]);
+                }
+
+                if (! $submitter->canCoordinateGuidance()) {
+                    $activeFuturePendingCount = RoomRequest::query()
+                        ->where('campus_id', $campusId)
+                        ->where('requested_by_user_id', $submitter->id)
+                        ->where('status', 'pending')
+                        ->whereDate('request_date', '>=', now()->toDateString())
+                        ->lockForUpdate()
+                        ->count();
+
+                    if ($activeFuturePendingCount >= 2) {
+                        throw ValidationException::withMessages([
+                            'preferred_start_time' => 'You may hold at most 2 active pending Testing Room reservations across all future dates.',
+                        ]);
+                    }
+                }
+
                 $roomOverlap = RoomRequest::query()
                     ->where('campus_id', $campusId)
                     ->whereDate('request_date', $preferredDate)
@@ -55,6 +121,10 @@ class SubmitGuidanceReferral
                     ->whereIn('feedback_status', ['pending', 'ongoing'])
                     ->where('preferred_start_time', '<', $preferredEnd)
                     ->where('preferred_end_time', '>', $preferredStart)
+                    ->where(function ($query): void {
+                        $query->whereNull('room_request_id')
+                            ->orWhereHas('roomRequest', fn ($rq) => $rq->where('status', '!=', 'rejected'));
+                    })
                     ->lockForUpdate()
                     ->exists();
 

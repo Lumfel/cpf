@@ -20,6 +20,7 @@ use App\Models\PaymentDestination;
 use App\Models\RoomRequest;
 use App\Models\SchoolYearArchive;
 use App\Models\User;
+use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Hash;
@@ -105,8 +106,8 @@ class RedTeamPrivacyArchiveBookingElectionTest extends TestCase
         [$member] = $this->createCampusUser(CpfRole::Member, 'Reyes, Katrina M.');
         [$otherMember] = $this->createCampusUser(CpfRole::Member, 'Santos, Paolo C.');
 
-        $counselorEntry = CampusCounselor::ensureDefaultCounselorsForCampus($this->alijis->id)->firstOrFail();
-        $slotDate = now()->addDays(2)->format('Y-m-d');
+        $counselorEntry = CampusCounselor::registerRealCounselor($this->alijis->id, 'Delos Santos, Clarissa R.');
+        $slotDate = now()->next(CarbonInterface::WEDNESDAY)->format('Y-m-d');
 
         // Peer submits referral with a Testing Room slot
         $refRes = $this->actingAs($member)->postJson('/referrals/submit', [

@@ -16,6 +16,7 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
     'gc_group_name',
     'is_active',
     'mandatory_tour_enabled',
+    'initialized_at',
 ])]
 class Campus extends Model
 {
@@ -24,6 +25,7 @@ class Campus extends Model
         return [
             'is_active' => 'boolean',
             'mandatory_tour_enabled' => 'boolean',
+            'initialized_at' => 'datetime',
         ];
     }
 

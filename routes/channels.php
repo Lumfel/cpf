@@ -3,14 +3,22 @@
 use Illuminate\Support\Facades\Broadcast;
 
 Broadcast::channel('campus.{campusId}.officers-gc.{academicYear}', function ($user, int $campusId, string $academicYear): bool {
+    if ($user->requiresPasswordChange()) {
+        return false;
+    }
+
     $membership = $user->primaryMembership;
 
     return $membership !== null
         && $membership->campus_id === $campusId
-        && ($user->verifiedRole()?->isOfficerOrAdviser() ?? false);
+        && $user->isActiveOfficerOrAdviser();
 });
 
 Broadcast::channel('campus.{campusId}.counselors-gc', function ($user, int $campusId): bool {
+    if ($user->requiresPasswordChange()) {
+        return false;
+    }
+
     $membership = $user->primaryMembership;
 
     return $membership !== null
@@ -19,6 +27,10 @@ Broadcast::channel('campus.{campusId}.counselors-gc', function ($user, int $camp
 });
 
 Broadcast::channel('campus.{campusId}.counselor-dm.{threadKey}', function ($user, int $campusId, string $threadKey): bool {
+    if ($user->requiresPasswordChange()) {
+        return false;
+    }
+
     $membership = $user->primaryMembership;
     if ($membership === null || $membership->campus_id !== $campusId || ! $user->canCoordinateGuidance()) {
         return false;

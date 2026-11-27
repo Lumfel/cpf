@@ -443,7 +443,7 @@ class RedTeamSecurityRegressionTest extends TestCase
             ->assertCreated();
 
         $handoverId = (int) $initRes->json('handover.id');
-        $code = (string) $initRes->json('handover.confirmation_code');
+        $code = (string) AdviserHandover::findOrFail($handoverId)->confirmation_code;
         $incomingUser = User::where('email', 'incoming.handover@chmsu.edu.ph')->firstOrFail();
         $incomingMembership = $incomingUser->primaryMembership;
 

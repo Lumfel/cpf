@@ -28,6 +28,7 @@ use App\Models\SchoolYearArchive;
 use App\Models\User;
 use App\Notifications\CounselorInviteOtpNotification;
 use App\Services\ClubTenureService;
+use Carbon\CarbonInterface;
 use Database\Seeders\BlankSystemSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Routing\Middleware\ThrottleRequests;
@@ -366,13 +367,13 @@ class Wave1SecurityPrivacyLockoutTest extends TestCase
         [$secretary] = $this->createCampusUser($campus, CpfRole::Secretary, 'Alvarez, Hannah G.');
         [$requester] = $this->createCampusUser($campus, CpfRole::Member, 'Reyes, Katrina M.');
 
-        $counselorSchedule = CampusCounselor::ensureDefaultCounselorsForCampus($campus->id)->firstOrFail();
+        $counselorSchedule = CampusCounselor::registerRealCounselor($campus->id, 'Delos Santos, Clarissa R.');
 
         $reqRes = $this->actingAs($requester)->postJson('/testing-room/request', [
             'campus_id' => $campus->id,
             'counselor_id' => $counselorSchedule->id,
             'purpose' => 'Direct Private Counseling Consultation',
-            'request_date' => now()->addDays(2)->format('Y-m-d'),
+            'request_date' => now()->next(CarbonInterface::WEDNESDAY)->format('Y-m-d'),
             'start_time' => '09:00',
             'end_time' => '10:00',
         ])->assertCreated();
@@ -658,10 +659,11 @@ class Wave1SecurityPrivacyLockoutTest extends TestCase
         $marco = User::where('email', 'marco.reinvite@chmsu.edu.ph')->firstOrFail();
         $marco->forceFill(['must_change_password' => false, 'temporary_password_issued_at' => null])->save();
 
+        $reInviteHandoverId = (int) $reInviteInit->json('handover.id');
         $this->actingAs($marco)
-            ->postJson('/adviser-handover/'.$reInviteInit->json('handover.id').'/respond', [
+            ->postJson("/adviser-handover/{$reInviteHandoverId}/respond", [
                 'decision' => 'accepted',
-                'confirmation_code' => $reInviteInit->json('handover.confirmation_code'),
+                'confirmation_code' => AdviserHandover::findOrFail($reInviteHandoverId)->confirmation_code,
             ])
             ->assertOk()
             ->assertJsonPath('status', 'accepted');
@@ -831,7 +833,7 @@ class Wave1SecurityPrivacyLockoutTest extends TestCase
             ->assertCreated();
 
         $handoverId = (int) $handoverRes->json('handover.id');
-        $realCode = (string) $handoverRes->json('handover.confirmation_code');
+        $realCode = (string) AdviserHandover::findOrFail($handoverId)->confirmation_code;
         $incoming = User::where('email', 'handover.lockout@chmsu.edu.ph')->firstOrFail();
         $incoming->forceFill(['must_change_password' => false, 'temporary_password_issued_at' => null])->save();
 

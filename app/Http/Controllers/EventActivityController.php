@@ -11,6 +11,7 @@ use App\Models\CampusEventReflection;
 use App\Models\CampusMembership;
 use App\Models\TimeCapsule;
 use App\Models\User;
+use App\Services\ProfanityFilterService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
@@ -56,7 +57,7 @@ class EventActivityController extends Controller
 
         $isClubAdviser = $user->isClubAdviser();
         $canProposeEvents = $user->canProposeEvents();
-        $isOfficerOrAdviser = $user->verifiedRole()?->isOfficerOrAdviser() ?? false;
+        $isOfficerOrAdviser = $user->isActiveOfficerOrAdviser();
         $isVerifiedMember = $user->verifiedRole() !== null;
 
         $events = collect();
@@ -231,6 +232,15 @@ class EventActivityController extends Controller
             'Events must be scheduled at least 1 day in advance.',
         );
 
+        $profanityFilter = app(ProfanityFilterService::class);
+        $profanityFilter->assertClean((string) $validated['title'], 'title');
+        if (filled($validated['description'] ?? null)) {
+            $profanityFilter->assertClean((string) $validated['description'], 'description');
+        }
+        if (filled($validated['location'] ?? null)) {
+            $profanityFilter->assertClean((string) $validated['location'], 'location');
+        }
+
         $isAdviser = $user->isClubAdviser();
         $wantsReflection = (bool) ($validated['allow_reflection'] ?? false);
 
@@ -390,6 +400,17 @@ class EventActivityController extends Controller
             'New event date must be at least 1 day in advance.',
         );
 
+        $profanityFilter = app(ProfanityFilterService::class);
+        if (filled($validated['title'] ?? null)) {
+            $profanityFilter->assertClean((string) $validated['title'], 'title');
+        }
+        if (filled($validated['description'] ?? null)) {
+            $profanityFilter->assertClean((string) $validated['description'], 'description');
+        }
+        if (filled($validated['location'] ?? null)) {
+            $profanityFilter->assertClean((string) $validated['location'], 'location');
+        }
+
         $event->update([
             'event_date' => $validated['event_date'],
             'start_time' => $startTime,
@@ -438,6 +459,10 @@ class EventActivityController extends Controller
         $reason = isset($validated['cancellation_reason']) && filled($validated['cancellation_reason'])
             ? trim((string) $validated['cancellation_reason'])
             : null;
+
+        if ($reason !== null) {
+            app(ProfanityFilterService::class)->assertClean($reason, 'cancellation_reason');
+        }
 
         $event->update([
             'status' => 'cancelled',
@@ -643,7 +668,7 @@ class EventActivityController extends Controller
         $role = $user?->verifiedRole();
 
         abort_unless(
-            $role && $role->isOfficerOrAdviser() && $membership?->campus_id === $event->campus_id,
+            $user?->isActiveOfficerOrAdviser() && $membership?->campus_id === $event->campus_id,
             403,
             'Only verified campus officers and the Club Adviser can use the attendance QR scanner.',
         );
@@ -673,7 +698,7 @@ class EventActivityController extends Controller
         $role = $user?->verifiedRole();
 
         abort_unless(
-            $role && $role->isOfficerOrAdviser() && $membership?->campus_id === $event->campus_id,
+            $user?->isActiveOfficerOrAdviser() && $membership?->campus_id === $event->campus_id,
             403,
             'Only verified campus officers and the Club Adviser can record manual attendance.',
         );
@@ -713,56 +738,68 @@ class EventActivityController extends Controller
         User $actor,
         string $scanType,
     ): JsonResponse {
-        $attendance = CampusEventAttendance::query()->firstOrNew([
-            'campus_event_id' => $event->id,
-            'user_id' => $targetMembership->user_id,
-        ]);
+        $result = DB::transaction(function () use ($event, $targetMembership, $actor, $scanType): array {
+            CampusEvent::query()->whereKey($event->id)->lockForUpdate()->firstOrFail();
 
-        if ($scanType === 'login') {
-            if ($attendance->logged_in_at !== null) {
-                return response()->json([
-                    'status' => 'already_logged_in',
-                    'member_name' => $targetMembership->full_name_last_first_mi,
-                    'course_year_section' => $targetMembership->course_year_section,
-                    'attendance' => $attendance,
-                ], 200);
+            $attendance = CampusEventAttendance::query()
+                ->where('campus_event_id', $event->id)
+                ->where('user_id', $targetMembership->user_id)
+                ->lockForUpdate()
+                ->first();
+
+            if ($scanType === 'login') {
+                if ($attendance !== null && $attendance->logged_in_at !== null) {
+                    return [
+                        'http_status' => 200,
+                        'status' => 'already_logged_in',
+                        'attendance' => $attendance,
+                    ];
+                }
+
+                $attendance ??= new CampusEventAttendance([
+                    'campus_event_id' => $event->id,
+                    'user_id' => $targetMembership->user_id,
+                ]);
+                $attendance->logged_in_at = now();
+                $attendance->logged_in_by_user_id = $actor->id;
+                $attendance->save();
+
+                return [
+                    'http_status' => 201,
+                    'status' => 'logged_in',
+                    'attendance' => $attendance->fresh(),
+                ];
             }
 
-            $attendance->logged_in_at = now();
-            $attendance->logged_in_by_user_id = $actor->id;
+            if ($attendance === null || $attendance->logged_in_at === null) {
+                abort(422, 'Member must complete Log-In scan at the start of the activity before Log-Out.');
+            }
+
+            if ($attendance->logged_out_at !== null) {
+                return [
+                    'http_status' => 200,
+                    'status' => 'already_logged_out',
+                    'attendance' => $attendance,
+                ];
+            }
+
+            $attendance->logged_out_at = now();
+            $attendance->logged_out_by_user_id = $actor->id;
             $attendance->save();
 
-            return response()->json([
-                'status' => 'logged_in',
-                'member_name' => $targetMembership->full_name_last_first_mi,
-                'course_year_section' => $targetMembership->course_year_section,
+            return [
+                'http_status' => 200,
+                'status' => 'logged_out',
                 'attendance' => $attendance->fresh(),
-            ], 201);
-        }
-
-        if (! $attendance->exists || $attendance->logged_in_at === null) {
-            abort(422, 'Member must complete Log-In scan at the start of the activity before Log-Out.');
-        }
-
-        if ($attendance->logged_out_at !== null) {
-            return response()->json([
-                'status' => 'already_logged_out',
-                'member_name' => $targetMembership->full_name_last_first_mi,
-                'course_year_section' => $targetMembership->course_year_section,
-                'attendance' => $attendance,
-            ], 200);
-        }
-
-        $attendance->logged_out_at = now();
-        $attendance->logged_out_by_user_id = $actor->id;
-        $attendance->save();
+            ];
+        });
 
         return response()->json([
-            'status' => 'logged_out',
+            'status' => $result['status'],
             'member_name' => $targetMembership->full_name_last_first_mi,
             'course_year_section' => $targetMembership->course_year_section,
-            'attendance' => $attendance->fresh(),
-        ], 200);
+            'attendance' => $result['attendance'],
+        ], $result['http_status']);
     }
 
     public function storeReflection(Request $request, CampusEvent $event): JsonResponse
@@ -792,29 +829,6 @@ class EventActivityController extends Controller
             'Post-event reflection is not enabled for this activity.',
         );
 
-        $attended = CampusEventAttendance::query()
-            ->where('campus_event_id', $event->id)
-            ->where('user_id', $user->id)
-            ->whereNotNull('logged_in_at')
-            ->exists();
-
-        abort_unless(
-            $attended,
-            422,
-            'Only members who checked in to this event can submit a post-event reflection.',
-        );
-
-        $alreadySubmitted = CampusEventReflection::query()
-            ->where('campus_event_id', $event->id)
-            ->where('user_id', $user->id)
-            ->exists();
-
-        abort_if(
-            $alreadySubmitted,
-            422,
-            'You have already added your reflection for this event to your Time Capsule.',
-        );
-
         $validated = $request->validate([
             'title' => ['nullable', 'string', 'max:160'],
             'letter_style' => ['nullable', 'string', Rule::in(['classic', 'letter_in_sunrise', 'joy_blobs', 'vice_dusk', 'twilight_calm'])],
@@ -822,13 +836,42 @@ class EventActivityController extends Controller
             'unlock_at' => ['required', 'date', 'after:now'],
         ]);
 
-        app(\App\Services\ProfanityFilterService::class)->assertClean((string) ($validated['reflection_message'] ?? ''), 'reflection_message');
+        $profanityFilter = app(ProfanityFilterService::class);
+        if (filled($validated['title'] ?? null)) {
+            $profanityFilter->assertClean((string) $validated['title'], 'title');
+        }
+        $profanityFilter->assertClean((string) ($validated['reflection_message'] ?? ''), 'reflection_message');
 
         $capsuleTitle = filled($validated['title'] ?? null)
             ? trim((string) $validated['title'])
             : Str::limit("Reflection: {$event->title}", 160, '');
 
         $reflection = DB::transaction(function () use ($event, $user, $capsuleTitle, $validated): CampusEventReflection {
+            $attendance = CampusEventAttendance::query()
+                ->where('campus_event_id', $event->id)
+                ->where('user_id', $user->id)
+                ->whereNotNull('logged_in_at')
+                ->lockForUpdate()
+                ->first();
+
+            abort_unless(
+                $attendance !== null,
+                422,
+                'Only members who checked in to this event can submit a post-event reflection.',
+            );
+
+            $alreadySubmitted = CampusEventReflection::query()
+                ->where('campus_event_id', $event->id)
+                ->where('user_id', $user->id)
+                ->lockForUpdate()
+                ->exists();
+
+            abort_if(
+                $alreadySubmitted,
+                422,
+                'You have already added your reflection for this event to your Time Capsule.',
+            );
+
             $capsule = TimeCapsule::create([
                 'campus_id' => $event->campus_id,
                 'user_id' => $user->id,

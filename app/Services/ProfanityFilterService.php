@@ -23,7 +23,7 @@ class ProfanityFilterService
         'dumbass', 'jackass', 'stfu', 'gtfo',
 
         // Spanish
-        'puta', 'puto', 'putamadre', 'pendejo', 'pendeja', 'cabron', 'chinga',
+        'puta', 'putamadre', 'pendejo', 'pendeja', 'cabron', 'chinga',
         'chingada', 'chingar', 'mierda', 'cojones', 'culero', 'maricon',
         'gilipollas', 'joder', 'verga', 'pinche', 'carajo', 'concha', 'malparido',
 
@@ -31,15 +31,15 @@ class ProfanityFilterService
         'putangina', 'putanginamo', 'tangina', 'tanginamo', 'punyeta', 'pakyu',
         'gago', 'gaga', 'ulol', 'tarantado', 'tarantada', 'leche', 'letse',
         'hayopka', 'bobo', 'tanga', 'inutil', 'kupal', 'hindot', 'kantot',
-        'jakol', 'pepe', 'tite', 'bayag', 'puki', 'puke', 'bwisit', 'hudas',
+        'jakol', 'tite', 'bayag', 'puki', 'puke', 'bwisit', 'hudas',
 
         // Hiligaynon / Ilonggo
         'yudiputa', 'yodiputa', 'diputa', 'linti', 'lintian', 'bilat', 'bilatibay',
-        'buray', 'burayni', 'buto', 'piste', 'pisti', 'pistingyawa', 'bwesit',
-        'udiputa', 'tunto', 'bigaon', 'iyot', 'kinanglan', 'bastoska',
+        'buray', 'burayni', 'piste', 'pisti', 'pistingyawa', 'bwesit',
+        'udiputa', 'tunto', 'bigaon', 'iyot', 'bastoska',
 
         // Cebuano / Bisaya
-        'yawa', 'yawaa', 'atay', 'ataya', 'piste', 'pisti', 'pistengyawa',
+        'yawa', 'yawaa', 'ataya', 'piste', 'pisti', 'pistengyawa',
         'giatay', 'buang', 'boang', 'animala', 'amaw', 'kayata', 'kayat',
         'oten', 'utin', 'bisong', 'bilat', 'bogo', 'bugo', 'kolera', 'koleraha',
         'hinampak', 'pakyu', 'lecheha',
@@ -47,21 +47,44 @@ class ProfanityFilterService
 
     /**
      * Terms that should match only as whole words (to prevent false positives
-     * like "assistant", "class", "hello", or "analysis").
+     * like "assistant", "class", "hello", "coaching a", "kaya't", or "Prof. Vergara").
      *
      * @var array<int, string>
      */
     private const WHOLE_WORD_ONLY = [
-        'ass', 'hell', 'crap', 'damn', 'buto', 'pepe', 'tite', 'oten', 'utin',
-        'atay', 'bobo', 'tanga', 'bogo', 'bugo', 'amaw', 'puto', 'puta',
+        'ass', 'hell', 'crap', 'damn', 'tite', 'oten', 'utin',
+        'bobo', 'tanga', 'bogo', 'bugo', 'amaw', 'puta',
         'gago', 'gaga', 'ulol', 'puki', 'puke', 'iyot', 'leche', 'letse',
         'linti', 'yawa', 'bilat', 'buray', 'piste', 'pisti', 'buang', 'boang',
         'fuck', 'shit', 'cunt', 'slut', 'stfu', 'gtfo',
+        'chinga', 'kayat', 'verga', 'concha', 'diputa', 'animala', 'pinche',
+    ];
+
+    /**
+     * Common Cyrillic and Greek homoglyph lookalikes mapped to ASCII Latin equivalents.
+     *
+     * @var array<string, string>
+     */
+    private const HOMOGLYPH_MAP = [
+        // Cyrillic lowercase
+        'а' => 'a', 'е' => 'e', 'о' => 'o', 'р' => 'p', 'с' => 'c',
+        'х' => 'x', 'у' => 'y', 'і' => 'i', 'ї' => 'i', 'ј' => 'j',
+        'к' => 'k', 'м' => 'm', 'н' => 'h', 'т' => 't', 'в' => 'b',
+        'ѕ' => 's', 'ԁ' => 'd', 'ɡ' => 'g', 'ѵ' => 'v', 'ԝ' => 'w',
+        // Greek lowercase
+        'α' => 'a', 'β' => 'b', 'ε' => 'e', 'ι' => 'i', 'κ' => 'k',
+        'ν' => 'v', 'ο' => 'o', 'ρ' => 'p', 'τ' => 't', 'υ' => 'u',
+        'χ' => 'x', 'η' => 'n', 'μ' => 'u', 'ω' => 'w',
     ];
 
     public function normalize(string $text): string
     {
-        $lower = mb_strtolower($text, 'UTF-8');
+        // Strip invisible / zero-width Unicode format characters and soft hyphens
+        $visible = (string) preg_replace('/[\p{Cf}\x{00AD}]+/u', '', $text);
+        $lower = mb_strtolower($visible, 'UTF-8');
+
+        // Map common Cyrillic/Greek lookalikes before ASCII transliteration
+        $lower = strtr($lower, self::HOMOGLYPH_MAP);
 
         // Strip accents / diacritics
         $transliterated = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $lower);
@@ -99,18 +122,28 @@ class ProfanityFilterService
             return null;
         }
 
-        // Also build a collapsed version with repeated letters squeezed (e.g., "fuuuuck" -> "fuck", "y a w a" -> "yawa")
+        // Squeeze 3+ repeats ("fuuuuck" -> "fuck") and deduplicate doubled letters ("fuuck" -> "fuck", "yaawa" -> "yawa")
         $squeezedWords = (string) preg_replace('/([a-z])\1{2,}/', '$1', $normalized);
+        $dedupedWords = (string) preg_replace('/([a-z])\1+/', '$1', $normalized);
         $compact = str_replace(' ', '', $squeezedWords);
 
         $wholeWordSet = array_flip(self::WHOLE_WORD_ONLY);
 
         foreach (self::BLOCKED_TERMS as $term) {
-            // Check exact word boundary in both normalized and squeezed-repeat forms
+            $quoted = preg_quote($term, '/');
+
+            // Check exact word boundary in normalized, squeezed-repeat, and deduplicated forms
             if (
-                preg_match('/\b'.preg_quote($term, '/').'\b/', $normalized) === 1
-                || preg_match('/\b'.preg_quote($term, '/').'\b/', $squeezedWords) === 1
+                preg_match('/\b'.$quoted.'\b/', $normalized) === 1
+                || preg_match('/\b'.$quoted.'\b/', $squeezedWords) === 1
+                || preg_match('/\b'.$quoted.'\b/', $dedupedWords) === 1
             ) {
+                return $term;
+            }
+
+            // Also catch doubled-letter evasion on multi-char terms that natively contain doubled letters (e.g., "bullshiit")
+            $dedupedTerm = (string) preg_replace('/([a-z])\1+/', '$1', $term);
+            if ($dedupedTerm !== $term && strlen($dedupedTerm) >= 6 && preg_match('/\b'.preg_quote($dedupedTerm, '/').'\b/', $dedupedWords) === 1) {
                 return $term;
             }
 

@@ -28,6 +28,7 @@ use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
@@ -118,6 +119,7 @@ class CampusMembershipController extends Controller
                 ->with(['user:id,name,email'])
                 ->where('campus_id', $activeCampus->id)
                 ->where('status', MembershipStatus::Pending->value)
+                ->where('role', CpfRole::Member->value)
                 ->alphabetical()
                 ->get();
 
@@ -279,6 +281,8 @@ class CampusMembershipController extends Controller
             'Only pending membership applications can be approved.',
         );
 
+        Gate::forUser($actor)->authorize('addOrApproveMember', $membership);
+
         $result = $action->approveApplication($actor, $membership, $request->input('remarks'));
         $approved = $result['membership'];
 
@@ -373,6 +377,9 @@ class CampusMembershipController extends Controller
 
         if ($suspend) {
             $membership->user?->tokens()->delete();
+            DB::table(config('session.table', 'sessions'))
+                ->where('user_id', $membership->user_id)
+                ->delete();
         }
 
         if ($request->expectsJson()) {
@@ -663,6 +670,23 @@ class CampusMembershipController extends Controller
                     }
                 }
 
+                if (isset($updates['active_email']) && filled($updates['active_email'])) {
+                    $normalizedEmail = strtolower(trim((string) $updates['active_email']));
+                    $updates['active_email'] = $normalizedEmail;
+
+                    Validator::make(
+                        ['active_email' => $normalizedEmail],
+                        [
+                            'active_email' => [
+                                'required',
+                                'email',
+                                'max:255',
+                                Rule::unique('users', 'email')->ignore($membership->user_id),
+                            ],
+                        ],
+                    )->validate();
+                }
+
                 $membership->fill($updates);
 
                 $membership->full_name_last_first_mi = CampusMembership::formatLastFirstMi(
@@ -677,13 +701,20 @@ class CampusMembershipController extends Controller
                 );
                 $membership->save();
 
-                if (
-                    $membership->user
-                    && (isset($updates['first_name']) || isset($updates['middle_name']) || isset($updates['last_name']))
-                ) {
-                    $membership->user->forceFill([
-                        'name' => $membership->full_name_last_first_mi,
-                    ])->save();
+                if ($membership->user) {
+                    $userUpdates = [];
+
+                    if (isset($updates['first_name']) || isset($updates['middle_name']) || isset($updates['last_name'])) {
+                        $userUpdates['name'] = $membership->full_name_last_first_mi;
+                    }
+
+                    if (isset($updates['active_email']) && filled($updates['active_email'])) {
+                        $userUpdates['email'] = $updates['active_email'];
+                    }
+
+                    if ($userUpdates !== []) {
+                        $membership->user->forceFill($userUpdates)->save();
+                    }
                 }
             }
 

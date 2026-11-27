@@ -2,6 +2,9 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\CpfRole;
+use App\Enums\MembershipStatus;
+use App\Models\CampusMembership;
 use App\Models\CounselorGcMessage;
 use App\Models\OfficerGcArchive;
 use App\Models\OfficerGcChannel;
@@ -15,7 +18,7 @@ class OfficersChatController extends Controller
     {
         $user = $request->user();
         $membership = $user->primaryMembership()->with('campus:id,code,name')->first();
-        $isOfficerOrAdviser = $user->verifiedRole()?->isOfficerOrAdviser() ?? false;
+        $isOfficerOrAdviser = $user->isActiveOfficerOrAdviser();
         $isClubAdviser = $user->isClubAdviser();
 
         abort_if(
@@ -84,11 +87,11 @@ class OfficersChatController extends Controller
 
         $counselorPeers = collect();
         if ($isClubAdviser) {
-            $counselorPeers = \App\Models\CampusMembership::query()
+            $counselorPeers = CampusMembership::query()
                 ->with('user:id,name')
                 ->where('campus_id', $campusId)
-                ->where('status', \App\Enums\MembershipStatus::Approved->value)
-                ->whereIn('role', [\App\Enums\CpfRole::Adviser->value, \App\Enums\CpfRole::GuidanceCounselor->value])
+                ->where('status', MembershipStatus::Approved->value)
+                ->whereIn('role', [CpfRole::Adviser->value, CpfRole::GuidanceCounselor->value])
                 ->where('user_id', '!=', $user->id)
                 ->alphabetical()
                 ->get()

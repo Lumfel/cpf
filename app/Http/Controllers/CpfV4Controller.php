@@ -6,6 +6,7 @@ use App\Actions\Gc\ArchiveAndResetOfficerGc;
 use App\Enums\CpfRole;
 use App\Enums\MembershipStatus;
 use App\Models\CampusMembership;
+use App\Models\DuesAuditLog;
 use App\Models\Election;
 use App\Models\ElectionCandidate;
 use App\Models\ElectionOptOut;
@@ -18,12 +19,15 @@ use App\Models\PeerQuote;
 use App\Models\TimeCapsule;
 use App\Models\User;
 use App\Services\ClubTenureService;
+use App\Services\ProfanityFilterService;
 use App\Support\CpfElectionPositions;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\Rule;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class CpfV4Controller extends Controller
 {
@@ -100,6 +104,10 @@ class CpfV4Controller extends Controller
             'Records must belong to your assigned campus chapter.',
         );
 
+        $profanityFilter = app(ProfanityFilterService::class);
+        $profanityFilter->assertClean((string) $validated['title'], 'title');
+        $profanityFilter->assertClean((string) $validated['message'], 'message');
+
         $capsule = TimeCapsule::create([
             'campus_id' => $membership->campus_id,
             'user_id' => $user->id,
@@ -163,6 +171,8 @@ class CpfV4Controller extends Controller
             'closes_at' => ['nullable', 'date', 'after_or_equal:opens_at'],
         ]);
 
+        app(ProfanityFilterService::class)->assertClean((string) $validated['title'], 'title');
+
         $targetStatus = $validated['status'] ?? 'open';
 
         $election = DB::transaction(function () use ($membership, $validated, $targetStatus, $user): Election {
@@ -214,6 +224,10 @@ class CpfV4Controller extends Controller
             'position' => ['required', Rule::in(CpfElectionPositions::keys())],
             'platform' => ['nullable', 'string', 'max:1000'],
         ]);
+
+        if (filled($validated['platform'] ?? null)) {
+            app(ProfanityFilterService::class)->assertClean((string) $validated['platform'], 'platform');
+        }
 
         $candidate = DB::transaction(function () use ($election, $validated, $user): ElectionCandidate {
             $lockedElection = Election::query()
@@ -274,6 +288,10 @@ class CpfV4Controller extends Controller
             'nominee_user_id' => ['required', 'integer', 'exists:users,id'],
             'platform' => ['nullable', 'string', 'max:1000'],
         ]);
+
+        if (filled($validated['platform'] ?? null)) {
+            app(ProfanityFilterService::class)->assertClean((string) $validated['platform'], 'platform');
+        }
 
         $result = DB::transaction(function () use ($election, $validated, $user): array {
             $lockedElection = Election::query()
@@ -1278,16 +1296,93 @@ class CpfV4Controller extends Controller
             'treasurer_notes' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $payment->update([
-            'status' => $validated['status'],
-            'validated_by_treasurer_id' => $user->id,
-            'validated_at' => now(),
-            'treasurer_notes' => $validated['treasurer_notes'] ?? null,
-        ]);
+        $updatedPayment = DB::transaction(function () use ($payment, $validated, $user): PaymentSubmission {
+            $lockedPayment = PaymentSubmission::query()
+                ->whereKey($payment->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            abort_unless(
+                $lockedPayment->status === 'pending',
+                422,
+                'Only pending payment submissions can be validated or rejected.',
+            );
+
+            $notes = isset($validated['treasurer_notes']) && filled($validated['treasurer_notes'])
+                ? trim((string) $validated['treasurer_notes'])
+                : null;
+
+            $lockedPayment->update([
+                'status' => $validated['status'],
+                'validated_by_treasurer_id' => $user->id,
+                'validated_at' => now(),
+                'treasurer_notes' => $notes,
+            ]);
+
+            if ($validated['status'] === 'validated') {
+                $submitterMembership = CampusMembership::query()
+                    ->where('campus_id', $lockedPayment->campus_id)
+                    ->where('user_id', $lockedPayment->user_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($submitterMembership !== null) {
+                    $oldStatus = (bool) $submitterMembership->has_paid_dues;
+
+                    $submitterMembership->update([
+                        'has_paid_dues' => true,
+                        'dues_confirmed_by' => $user->id,
+                        'dues_confirmed_at' => now(),
+                    ]);
+
+                    DuesAuditLog::create([
+                        'campus_id' => $lockedPayment->campus_id,
+                        'actor_user_id' => $user->id,
+                        'target_user_id' => $submitterMembership->user_id,
+                        'campus_membership_id' => $submitterMembership->id,
+                        'payment_submission_id' => $lockedPayment->id,
+                        'old_status' => $oldStatus,
+                        'new_status' => true,
+                        'reason' => $notes ?: "Validated payment submission #{$lockedPayment->id} ({$lockedPayment->reference_number})",
+                        'created_at' => now(),
+                    ]);
+                }
+            }
+
+            return $lockedPayment->fresh();
+        });
 
         return response()->json([
-            'status' => $payment->status,
-            'payment' => $this->formatPaymentResponse($payment->fresh()),
+            'status' => $updatedPayment->status,
+            'payment' => $this->formatPaymentResponse($updatedPayment),
+        ]);
+    }
+
+    public function streamReceipt(Request $request, PaymentSubmission $payment): StreamedResponse
+    {
+        $user = $request->user();
+        $membership = $user?->primaryMembership;
+
+        abort_unless(
+            $user !== null
+            && $user->verifiedRole() !== null
+            && $membership !== null
+            && $membership->status === MembershipStatus::Approved
+            && $membership->campus_id === $payment->campus_id
+            && ($payment->user_id === $user->id || $user->canAuditFinances()),
+            403,
+            'You are not authorized to view this payment receipt.',
+        );
+
+        $path = $payment->receipt_hdd_path;
+        abort_unless(
+            is_string($path) && $path !== '' && Storage::disk('local')->exists($path),
+            404,
+            'Payment receipt file not found.',
+        );
+
+        return Storage::disk('local')->response($path, basename($path), [
+            'Cache-Control' => 'private, no-store, max-age=0',
         ]);
     }
 
@@ -1349,7 +1444,14 @@ class CpfV4Controller extends Controller
             'mood_tag' => ['nullable', 'string', 'max:40'],
         ]);
 
-        app(\App\Services\ProfanityFilterService::class)->assertClean((string) $validated['quote_text'], 'quote_text');
+        $profanityFilter = app(ProfanityFilterService::class);
+        $profanityFilter->assertClean((string) $validated['quote_text'], 'quote_text');
+        if (filled($validated['author_name'] ?? null)) {
+            $profanityFilter->assertClean((string) $validated['author_name'], 'author_name');
+        }
+        if (filled($validated['mood_tag'] ?? null)) {
+            $profanityFilter->assertClean((string) $validated['mood_tag'], 'mood_tag');
+        }
 
         $quote = PeerQuote::create([
             'campus_id' => $membership->campus_id,
@@ -1357,7 +1459,7 @@ class CpfV4Controller extends Controller
             'quote_text' => trim($validated['quote_text']),
             'author_name' => trim((string) ($validated['author_name'] ?? 'CPF Peer Circle')),
             'mood_tag' => trim((string) ($validated['mood_tag'] ?? 'Calm')),
-            'is_approved' => $user->verifiedRole()?->isOfficerOrAdviser() ?? false,
+            'is_approved' => $user->isActiveOfficerOrAdviser(),
         ]);
 
         return response()->json(['status' => 'created', 'quote' => $quote], 201);

@@ -7,6 +7,7 @@ use App\Enums\MembershipStatus;
 use App\Models\CampusEventNotification;
 use App\Models\CampusMembership;
 use App\Models\DuesAuditLog;
+use App\Models\PaymentSubmission;
 use App\Models\User;
 use App\Services\ClubTenureService;
 use Illuminate\Support\Facades\DB;
@@ -43,6 +44,38 @@ class ToggleMessengerGcChecklist
     ): CampusMembership {
         return DB::transaction(function () use ($actor, $membership, $reason, $paymentSubmissionId): CampusMembership {
             $locked = CampusMembership::query()->whereKey($membership->id)->lockForUpdate()->firstOrFail();
+
+            $trimmedReason = $reason !== null ? trim($reason) : null;
+            if ($trimmedReason === '') {
+                $trimmedReason = null;
+            }
+
+            $hasReceiptBackedValidation = false;
+
+            if ($paymentSubmissionId !== null) {
+                $submission = PaymentSubmission::query()
+                    ->whereKey($paymentSubmissionId)
+                    ->where('campus_id', $locked->campus_id)
+                    ->where('user_id', $locked->user_id)
+                    ->where('status', 'validated')
+                    ->lockForUpdate()
+                    ->first();
+
+                abort_if(
+                    $submission === null,
+                    422,
+                    'The specified payment submission must be a validated submission belonging to this member on this campus.',
+                );
+
+                $hasReceiptBackedValidation = filled($submission->receipt_hdd_path);
+            } else {
+                abort_if(
+                    mb_strlen((string) $trimmedReason) < 5,
+                    422,
+                    'A manual dues reason of at least 5 characters is required when no validated payment submission is linked.',
+                );
+            }
+
             $oldState = (bool) $locked->has_paid_dues;
             $newState = ! $oldState;
 
@@ -60,12 +93,12 @@ class ToggleMessengerGcChecklist
                 'payment_submission_id' => $paymentSubmissionId,
                 'old_status' => $oldState,
                 'new_status' => $newState,
-                'reason' => $reason !== null ? trim($reason) : null,
+                'reason' => $trimmedReason,
                 'created_at' => now(),
             ]);
 
-            // Alert Club Adviser & Auditor when dues are toggled paid without a linked receipt
-            if ($newState && $paymentSubmissionId === null) {
+            // Alert Club Adviser & Auditor whenever dues are marked paid without a receipt-backed validated submission
+            if ($newState && ! $hasReceiptBackedValidation) {
                 $oversightUserIds = CampusMembership::query()
                     ->where('campus_id', $locked->campus_id)
                     ->where('status', MembershipStatus::Approved->value)
@@ -82,10 +115,10 @@ class ToggleMessengerGcChecklist
                         'type' => 'dues_manual_override_alert',
                         'title' => 'Manual Dues Override Recorded',
                         'message' => sprintf(
-                            '%s marked %s as Dues Paid without a linked receipt. Reason: %s',
+                            '%s marked %s as Dues Paid without a receipt-backed validated submission. Reason: %s',
                             $actor->name,
                             $locked->full_name_last_first_mi ?? 'Member',
-                            $reason ?: 'None supplied',
+                            $trimmedReason ?: 'None supplied',
                         ),
                         'read_at' => null,
                         'created_at' => $now,

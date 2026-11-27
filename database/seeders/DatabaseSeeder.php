@@ -5,15 +5,20 @@ namespace Database\Seeders;
 use App\Enums\CpfRole;
 use App\Enums\MembershipStatus;
 use App\Models\Campus;
+use App\Models\CampusAnnouncement;
 use App\Models\CampusCounselor;
+use App\Models\CampusEvent;
+use App\Models\CampusEventNotification;
 use App\Models\CampusMembership;
 use App\Models\CampusRoom;
+use App\Models\CounselorGcMessage;
 use App\Models\OfficerGcChannel;
 use App\Models\PasskeyIssuance;
 use App\Models\PaymentDestination;
 use App\Models\PeerQuote;
 use App\Models\RoomRequest;
 use App\Models\User;
+use App\Services\ClubTenureService;
 use Carbon\CarbonInterface;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Hash;
@@ -179,7 +184,7 @@ class DatabaseSeeder extends Seeder
             ],
         );
 
-        app(\App\Services\ClubTenureService::class)->openTenure($counselorMembership, $adviser);
+        app(ClubTenureService::class)->openTenure($counselorMembership, $adviser);
 
         // 2. President (Can add/approve members + confirm Messenger GC)
         $president = User::updateOrCreate(
@@ -643,7 +648,7 @@ class DatabaseSeeder extends Seeder
             ],
         );
 
-        \App\Models\CounselorGcMessage::firstOrCreate(
+        CounselorGcMessage::firstOrCreate(
             [
                 'campus_id' => $alijis->id,
                 'sender_user_id' => $adviser->id,
@@ -700,7 +705,55 @@ class DatabaseSeeder extends Seeder
             );
         }
 
-        // 10. 3 Sample Guidance Counselors (Mon–Fri Vacant Time) & Anonymous Calendar Bookings
+        // 10. 3 Sample Guidance Counselors (Demo-only Mon–Fri Vacant Time) & Anonymous Calendar Bookings
+        $demoCounselors = [
+            [
+                'name' => 'Dr. Elena V. Montemayor, RGC',
+                'title' => 'Lead Guidance Counselor & CPF Adviser',
+                'specialty' => 'Crisis Triage & Personal Wellness',
+                'weekly_vacant_slots' => [
+                    ['start' => '08:30', 'end' => '10:00', 'label' => '8:30 AM – 10:00 AM', 'days' => [1, 2, 3, 4, 5]],
+                    ['start' => '10:30', 'end' => '12:00', 'label' => '10:30 AM – 12:00 PM', 'days' => [1, 2, 3, 4, 5]],
+                    ['start' => '13:30', 'end' => '15:00', 'label' => '1:30 PM – 3:00 PM', 'days' => [1, 2, 3, 4, 5]],
+                ],
+            ],
+            [
+                'name' => 'Ms. Clarissa D. Soriano, RGC',
+                'title' => 'Academic & Career Counselor',
+                'specialty' => 'Academic Stress & Career Guidance',
+                'weekly_vacant_slots' => [
+                    ['start' => '09:00', 'end' => '10:30', 'label' => '9:00 AM – 10:30 AM', 'days' => [1, 2, 3, 4, 5]],
+                    ['start' => '11:00', 'end' => '12:00', 'label' => '11:00 AM – 12:00 PM', 'days' => [1, 2, 3, 4, 5]],
+                    ['start' => '14:00', 'end' => '16:00', 'label' => '2:00 PM – 4:00 PM', 'days' => [1, 2, 3, 4, 5]],
+                ],
+            ],
+            [
+                'name' => 'Mr. Nathaniel P. Mendoza, RPm',
+                'title' => 'Student Wellness & Peer Support Counselor',
+                'specialty' => 'Peer Facilitation & Emotional Support',
+                'weekly_vacant_slots' => [
+                    ['start' => '08:00', 'end' => '09:30', 'label' => '8:00 AM – 9:30 AM', 'days' => [1, 2, 3, 4, 5]],
+                    ['start' => '10:00', 'end' => '11:30', 'label' => '10:00 AM – 11:30 AM', 'days' => [1, 2, 3, 4, 5]],
+                    ['start' => '15:00', 'end' => '16:30', 'label' => '3:00 PM – 4:30 PM', 'days' => [1, 2, 3, 4, 5]],
+                ],
+            ],
+        ];
+
+        foreach ($demoCounselors as $demoData) {
+            CampusCounselor::query()->firstOrCreate(
+                [
+                    'campus_id' => $alijis->id,
+                    'name' => $demoData['name'],
+                ],
+                [
+                    'title' => $demoData['title'],
+                    'specialty' => $demoData['specialty'],
+                    'weekly_vacant_slots' => $demoData['weekly_vacant_slots'],
+                    'is_active' => true,
+                ],
+            );
+        }
+
         $alijisCounselors = CampusCounselor::ensureDefaultCounselorsForCampus($alijis->id);
         $alijisTestingRoom = CampusRoom::query()
             ->where('campus_id', $alijis->id)
@@ -752,7 +805,7 @@ class DatabaseSeeder extends Seeder
         $this->call(BlockchainCredentialsSeeder::class);
 
         // 11. Sample CHMSU Alijis Campus Events (Past Completed, Active Today, Future Pending Approval)
-        $completedEvent = \App\Models\CampusEvent::updateOrCreate(
+        $completedEvent = CampusEvent::updateOrCreate(
             [
                 'campus_id' => $alijis->id,
                 'title' => 'CPF Peer Listening & Psychological First Aid Workshop',
@@ -772,7 +825,7 @@ class DatabaseSeeder extends Seeder
             ],
         );
 
-        $activeEvent = \App\Models\CampusEvent::updateOrCreate(
+        $activeEvent = CampusEvent::updateOrCreate(
             [
                 'campus_id' => $alijis->id,
                 'title' => 'CHMSU Alijis Peer Wellness Drop-In & General Assembly',
@@ -792,7 +845,7 @@ class DatabaseSeeder extends Seeder
             ],
         );
 
-        \App\Models\CampusEvent::updateOrCreate(
+        CampusEvent::updateOrCreate(
             [
                 'campus_id' => $alijis->id,
                 'title' => 'Mental Health Awareness Week Kickoff & Booth Planning',
@@ -812,7 +865,7 @@ class DatabaseSeeder extends Seeder
             ],
         );
 
-        \App\Models\CampusAnnouncement::updateOrCreate(
+        CampusAnnouncement::updateOrCreate(
             [
                 'campus_id' => $alijis->id,
                 'title' => 'CPF Campus General Assembly Notice — AY 2026–2027',
@@ -829,7 +882,7 @@ class DatabaseSeeder extends Seeder
             ],
         );
 
-        \App\Models\CampusAnnouncement::updateOrCreate(
+        CampusAnnouncement::updateOrCreate(
             [
                 'campus_id' => $alijis->id,
                 'title' => 'Midterm Peer Wellness Check-in & Calm Drop-in Hours',
@@ -853,7 +906,7 @@ class DatabaseSeeder extends Seeder
             ->pluck('user_id');
 
         foreach ($alijisMemberIds as $recipientId) {
-            \App\Models\CampusEventNotification::firstOrCreate(
+            CampusEventNotification::firstOrCreate(
                 [
                     'campus_event_id' => $activeEvent->id,
                     'user_id' => $recipientId,

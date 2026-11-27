@@ -7,7 +7,9 @@ use App\Enums\MembershipStatus;
 use App\Models\CampusMembership;
 use App\Models\ClubServiceTenure;
 use App\Models\Election;
+use App\Models\RoomRequest;
 use App\Models\User;
+use App\Support\CpfElectionPositions;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\DB;
 
@@ -20,6 +22,7 @@ class ClubTenureService
         'stepped_down' => 'Stepped Down',
         'transferred' => 'Transferred Campus / Program',
         'role_change' => 'Role Transition',
+        'elected_year_rep' => 'Elected Year-Level Representative',
     ];
 
     public function openTenure(
@@ -91,8 +94,9 @@ class ClubTenureService
         ?User $actor = null,
         string $reason = 'role_change',
         ?string $newAcademicYear = null,
+        ?string $electedSeat = null,
     ): ClubServiceTenure {
-        return DB::transaction(function () use ($membership, $newRole, $actor, $reason, $newAcademicYear): ClubServiceTenure {
+        return DB::transaction(function () use ($membership, $newRole, $actor, $reason, $newAcademicYear, $electedSeat): ClubServiceTenure {
             $membership->loadMissing('campus:id,current_academic_year');
             $now = now();
             $currentRole = $membership->role instanceof CpfRole
@@ -141,6 +145,7 @@ class ClubTenureService
                 'campus_membership_id' => $membership->id,
                 'user_id' => $membership->user_id,
                 'role' => $newRole,
+                'elected_seat' => $electedSeat,
                 'academic_year' => $nextAcademicYear,
                 'started_at' => $now,
                 'ended_at' => null,
@@ -167,6 +172,8 @@ class ClubTenureService
         return DB::transaction(function () use ($election, $actor): array {
             $results = $election->position_results ?? [];
             $electedRolesByUserId = [];
+            $electedYearRepsByUserId = [];
+            $yearRepKeys = ['first_year_rep', 'second_year_rep', 'third_year_rep', 'fourth_year_rep'];
 
             foreach ($results as $positionKey => $entry) {
                 if (! is_array($entry) || ($entry['status'] ?? null) !== 'elected') {
@@ -175,6 +182,12 @@ class ClubTenureService
 
                 $winnerUserId = (int) ($entry['winner_user_id'] ?? 0);
                 if ($winnerUserId <= 0) {
+                    continue;
+                }
+
+                if (in_array((string) $positionKey, $yearRepKeys, true)) {
+                    $electedYearRepsByUserId[$winnerUserId] = (string) $positionKey;
+
                     continue;
                 }
 
@@ -226,9 +239,21 @@ class ClubTenureService
                     );
 
                     if ($officerMembership->role !== $newRole) {
-                        $officerMembership->update(['role' => $newRole]);
+                        $officerMembership->update([
+                            'role' => $newRole,
+                            'privileges_suspended_at' => null,
+                            'suspension_reason' => null,
+                            'suspended_by' => null,
+                        ]);
                         $promotedUserIds[] = $uid;
                     } else {
+                        if ($officerMembership->isPrivilegesSuspended()) {
+                            $officerMembership->update([
+                                'privileges_suspended_at' => null,
+                                'suspension_reason' => null,
+                                'suspended_by' => null,
+                            ]);
+                        }
                         $retainedUserIds[] = $uid;
                     }
                 } else {
@@ -239,7 +264,12 @@ class ClubTenureService
                         'term_completed',
                         $newTermAcademicYear,
                     );
-                    $officerMembership->update(['role' => CpfRole::Member]);
+                    $officerMembership->update([
+                        'role' => CpfRole::Member,
+                        'privileges_suspended_at' => null,
+                        'suspension_reason' => null,
+                        'suspended_by' => null,
+                    ]);
                     $demotedUserIds[] = $uid;
                 }
             }
@@ -269,8 +299,44 @@ class ClubTenureService
                         'role_change',
                         $newTermAcademicYear,
                     );
-                    $winnerMembership->update(['role' => $newRole]);
+                    $winnerMembership->update([
+                        'role' => $newRole,
+                        'privileges_suspended_at' => null,
+                        'suspension_reason' => null,
+                        'suspended_by' => null,
+                    ]);
                     $promotedUserIds[] = $uid;
+                }
+            }
+
+            $yearRepUserIds = [];
+            $repOnlyUserIds = array_values(array_diff(array_keys($electedYearRepsByUserId), array_keys($electedRolesByUserId)));
+            if ($repOnlyUserIds !== []) {
+                $repMemberships = CampusMembership::query()
+                    ->with('campus:id,current_academic_year')
+                    ->where('campus_id', $election->campus_id)
+                    ->where('status', MembershipStatus::Approved->value)
+                    ->whereIn('user_id', $repOnlyUserIds)
+                    ->lockForUpdate()
+                    ->get();
+
+                foreach ($repMemberships as $repMembership) {
+                    if (in_array($repMembership->role, [CpfRole::Adviser, CpfRole::GuidanceCounselor], true)) {
+                        continue;
+                    }
+
+                    $uid = (int) $repMembership->user_id;
+                    $seatKey = $electedYearRepsByUserId[$uid];
+
+                    $this->recordRoleTransition(
+                        $repMembership,
+                        CpfRole::Member,
+                        $actor,
+                        'elected_year_rep',
+                        $newTermAcademicYear,
+                        $seatKey,
+                    );
+                    $yearRepUserIds[] = $uid;
                 }
             }
 
@@ -278,6 +344,7 @@ class ClubTenureService
                 'promoted_user_ids' => $promotedUserIds,
                 'demoted_user_ids' => $demotedUserIds,
                 'retained_user_ids' => $retainedUserIds,
+                'year_rep_user_ids' => $yearRepUserIds,
             ];
         });
     }
@@ -349,6 +416,20 @@ class ClubTenureService
                 'alumni_reason' => $reason,
                 'alumni_transitioned_by' => $actor?->id,
             ]);
+
+            RoomRequest::query()
+                ->where('campus_id', $lockedMembership->campus_id)
+                ->where('requested_by_user_id', $lockedMembership->user_id)
+                ->where('status', 'pending')
+                ->whereDate('request_date', '>=', now()->toDateString())
+                ->lockForUpdate()
+                ->update([
+                    'status' => 'rejected',
+                    'reviewed_by_user_id' => $actor?->id,
+                    'review_notes' => 'Auto-released upon transition to Former / Alumni status.',
+                ]);
+
+            $lockedMembership->user?->tokens()->delete();
 
             return $lockedMembership->refresh();
         });
@@ -439,10 +520,13 @@ class ClubTenureService
             $segmentDays = max(0, (int) $segmentStart->copy()->startOfDay()->diffInDays($segmentEnd->copy()->startOfDay()));
             $totalDays += $segmentDays;
 
+            $seatMeta = $t->elected_seat ? CpfElectionPositions::find($t->elected_seat) : null;
+
             return [
                 'id' => $t->id,
                 'role' => $roleEnum->value,
-                'role_label' => $roleEnum->label(),
+                'elected_seat' => $t->elected_seat,
+                'role_label' => $seatMeta['label'] ?? $roleEnum->label(),
                 'academic_year' => $t->academic_year,
                 'started_at' => $segmentStart->format('M d, Y'),
                 'ended_at' => $t->ended_at ? $t->ended_at->format('M d, Y') : 'Present',

@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'campus_membership_id',
     'user_id',
     'role',
+    'elected_seat',
     'academic_year',
     'started_at',
     'ended_at',
@@ -56,10 +57,13 @@ class ClubServiceTenure extends Model
         $roleValue = $this->role instanceof CpfRole ? $this->role->value : (string) $this->role;
         $start = $this->started_at ? $this->started_at->copy()->utc()->toIso8601String() : '';
         $end = $this->ended_at ? $this->ended_at->copy()->utc()->toIso8601String() : 'ACTIVE';
+        $seatSuffix = is_string($this->elected_seat) && $this->elected_seat !== ''
+            ? "|{$this->elected_seat}"
+            : '';
 
         return hash_hmac(
             'sha256',
-            "TENURE|{$this->campus_id}|{$this->user_id}|{$roleValue}|{$this->academic_year}|{$start}|{$end}",
+            "TENURE|{$this->campus_id}|{$this->user_id}|{$roleValue}|{$this->academic_year}|{$start}|{$end}{$seatSuffix}",
             (string) config('app.key'),
         );
     }

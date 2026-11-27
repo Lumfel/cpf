@@ -21,16 +21,16 @@ if (app()->isProduction() || ! config('cpf.prototype.enabled')) {
 
 $prefix = trim((string) config('cpf.prototype.route_prefix', 'prototype'), '/');
 
-Route::get($prefix, [CpfPrototypeController::class, 'index'])->name('prototype.index');
+Route::middleware(['auth', 'verified'])->group(function () use ($prefix) {
+    Route::get($prefix, [CpfPrototypeController::class, 'index'])->name('prototype.index');
 
-Route::middleware(['auth', 'verified'])->prefix($prefix.'/demo-bots')->name('prototype.demo-bots.')->group(function () {
-    Route::get('/', [DemoBotController::class, 'index'])->name('index');
-    Route::post('/gc', [DemoBotController::class, 'runGcBot'])->name('gc');
-    Route::post('/election', [DemoBotController::class, 'runElectionBot'])->name('election');
-    Route::post('/awarding', [DemoBotController::class, 'runAwardingBot'])->name('awarding');
-    Route::post('/reset', [DemoBotController::class, 'reset'])->name('reset');
-});
+    Route::prefix($prefix.'/demo-bots')->name('prototype.demo-bots.')->group(function () {
+        Route::get('/', [DemoBotController::class, 'index'])->name('index');
+        Route::post('/gc', [DemoBotController::class, 'runGcBot'])->name('gc');
+        Route::post('/election', [DemoBotController::class, 'runElectionBot'])->name('election');
+        Route::post('/awarding', [DemoBotController::class, 'runAwardingBot'])->name('awarding');
+        Route::post('/reset', [DemoBotController::class, 'reset'])->name('reset');
+    });
 
-Route::middleware(['auth', 'verified'])->group(function () {
     Route::post('dev/switch-role/{role}', [DevRoleSwitcherController::class, 'switch'])->name('dev.switch-role');
 });

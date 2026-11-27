@@ -91,8 +91,7 @@ class BlockchainCredentialController extends Controller
      */
     public function storeAchievement(Request $request): JsonResponse
     {
-        $role = $request->user()?->verifiedRole();
-        abort_unless($role && $role->isOfficerOrAdviser(), 403, 'Only verified officers or the Club Adviser can anchor achievements.');
+        abort_unless($request->user()?->isActiveOfficerOrAdviser(), 403, 'Only verified officers or the Club Adviser can anchor achievements.');
 
         $validated = $request->validate([
             'campus_id' => ['required', 'integer', 'exists:campuses,id'],
@@ -138,8 +137,7 @@ class BlockchainCredentialController extends Controller
      */
     public function storeCertificate(Request $request): JsonResponse
     {
-        $role = $request->user()?->verifiedRole();
-        abort_unless($role && $role->isOfficerOrAdviser(), 403, 'Only verified officers or the Club Adviser can issue certificates.');
+        abort_unless($request->user()?->isActiveOfficerOrAdviser(), 403, 'Only verified officers or the Club Adviser can issue certificates.');
 
         $validated = $request->validate([
             'campus_id' => ['required', 'integer', 'exists:campuses,id'],
@@ -184,8 +182,7 @@ class BlockchainCredentialController extends Controller
      */
     public function storeAward(Request $request): JsonResponse
     {
-        $role = $request->user()?->verifiedRole();
-        abort_unless($role && $role->isOfficerOrAdviser(), 403, 'Only verified officers or the Club Adviser can issue awards.');
+        abort_unless($request->user()?->isActiveOfficerOrAdviser(), 403, 'Only verified officers or the Club Adviser can issue awards.');
 
         $validated = $request->validate([
             'campus_id' => ['required', 'integer', 'exists:campuses,id'],
@@ -233,8 +230,7 @@ class BlockchainCredentialController extends Controller
      */
     public function auditChain(Request $request): JsonResponse
     {
-        $role = $request->user()?->verifiedRole();
-        abort_unless($role && $role->isOfficerOrAdviser(), 403, 'Only verified officers or the Club Adviser can audit the ledger.');
+        abort_unless($request->user()?->isActiveOfficerOrAdviser(), 403, 'Only verified officers or the Club Adviser can audit the ledger.');
 
         return response()->json($this->blockchain->verifyChainIntegrity());
     }

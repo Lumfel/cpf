@@ -87,7 +87,10 @@ class AddOrApproveCampusMember
                 $existingProtected = CampusMembership::query()
                     ->where('user_id', $targetUser->id)
                     ->where(function ($query): void {
-                        $query->where('status', MembershipStatus::Approved->value)
+                        $query->whereIn('status', [
+                            MembershipStatus::Approved->value,
+                            MembershipStatus::Alumni->value,
+                        ])
                             ->orWhereIn('role', [
                                 CpfRole::Adviser->value,
                                 CpfRole::GuidanceCounselor->value,
@@ -98,15 +101,24 @@ class AddOrApproveCampusMember
 
                 if ($existingProtected) {
                     throw ValidationException::withMessages([
-                        'active_email' => 'This email already belongs to a verified member, Club Adviser, or Guidance Counselor and cannot be overwritten.',
+                        'active_email' => 'This email already belongs to a verified member, former member (alumni), Club Adviser, or Guidance Counselor and cannot be overwritten.',
                     ]);
                 }
+
+                $targetUser->tokens()->delete();
+                $targetUser->passkeys()->delete();
+                DB::table(config('session.table', 'sessions'))
+                    ->where('user_id', $targetUser->id)
+                    ->delete();
 
                 $targetUser->forceFill([
                     'name' => $formatted,
                     'email_verified_at' => $targetUser->email_verified_at ?? now(),
                     'must_change_password' => true,
                     'temporary_password_issued_at' => now(),
+                    'two_factor_secret' => null,
+                    'two_factor_recovery_codes' => null,
+                    'two_factor_confirmed_at' => null,
                 ])->save();
             }
 
@@ -183,6 +195,12 @@ class AddOrApproveCampusMember
                 $lockedMembership->status === MembershipStatus::Pending,
                 422,
                 'Only pending membership applications can be approved.',
+            );
+
+            abort_unless(
+                $lockedMembership->role === CpfRole::Member && $lockedMembership->section !== 'Incoming Adviser',
+                422,
+                'Only pending student member applications can be approved via member approval.',
             );
 
             $lockedMembership->update([

@@ -264,7 +264,7 @@ class CpfFunctionalRequirementsTest extends TestCase
             'is_single_allowed_room' => true,
         ]);
 
-        $date = now()->addDays(2)->format('Y-m-d');
+        $date = now()->next(CarbonInterface::WEDNESDAY)->format('Y-m-d');
 
         $reqRes = $this->actingAs($member)->postJson('/testing-room/request', [
             'campus_id' => $this->talisay->id,
@@ -504,7 +504,9 @@ class CpfFunctionalRequirementsTest extends TestCase
         // Same-campus Treasurer confirms dues paid on basic checklist
         $this->actingAs($treasurer)
             ->from('/membership')
-            ->patch("/membership/{$targetMembership->id}/toggle-dues")
+            ->patch("/membership/{$targetMembership->id}/toggle-dues", [
+                'reason' => 'Cash dues verified at chapter desk',
+            ])
             ->assertRedirect('/membership');
 
         $targetMembership->refresh();
@@ -514,13 +516,17 @@ class CpfFunctionalRequirementsTest extends TestCase
         // President and Vice President can also co-sign dues collections per Constitution guidelines
         $this->actingAs($president)
             ->from('/dashboard')
-            ->patch("/membership/{$targetMembership->id}/toggle-dues")
+            ->patch("/membership/{$targetMembership->id}/toggle-dues", [
+                'reason' => 'Reverting dues entry for audit check',
+            ])
             ->assertRedirect('/dashboard');
         $this->assertFalse((bool) $targetMembership->fresh()->has_paid_dues);
 
         $this->actingAs($vicePresident)
             ->from('/dashboard')
-            ->patch("/membership/{$targetMembership->id}/toggle-dues")
+            ->patch("/membership/{$targetMembership->id}/toggle-dues", [
+                'reason' => 'Co-signed cash dues collection',
+            ])
             ->assertRedirect('/dashboard');
         $this->assertTrue((bool) $targetMembership->fresh()->has_paid_dues);
 
@@ -536,7 +542,9 @@ class CpfFunctionalRequirementsTest extends TestCase
 
         $this->actingAs($adviser)
             ->from('/dashboard')
-            ->patch("/membership/{$targetMembership->id}/toggle-dues")
+            ->patch("/membership/{$targetMembership->id}/toggle-dues", [
+                'reason' => 'Adviser audit adjustment reset',
+            ])
             ->assertRedirect('/dashboard');
 
         $this->assertFalse((bool) $targetMembership->fresh()->has_paid_dues);
@@ -1127,14 +1135,14 @@ class CpfFunctionalRequirementsTest extends TestCase
 
     public function test_campus_hub_counselor_availability_and_anonymous_monthly_calendar_bookings(): void
     {
+        $chosenCounselor = CampusCounselor::registerRealCounselor($this->talisay->id, 'Montemayor, Elena V.');
         $counselors = CampusCounselor::ensureDefaultCounselorsForCampus($this->talisay->id);
-        $this->assertCount(3, $counselors);
+        $this->assertCount(1, $counselors);
 
         $katrina = $this->createMember($this->talisay, CpfRole::Member, 'Reyes, Katrina M.');
         $otherMember = $this->createMember($this->talisay, CpfRole::Member, 'Bautista, Miguel A.');
 
         $targetDate = now()->next(CarbonInterface::WEDNESDAY)->format('Y-m-d');
-        $chosenCounselor = $counselors->first();
 
         $this->actingAs($katrina)->postJson('/testing-room/request', [
             'campus_id' => $this->talisay->id,
@@ -1150,7 +1158,7 @@ class CpfFunctionalRequirementsTest extends TestCase
             ->assertOk()
             ->assertInertia(fn ($page) => $page
                 ->component('campus/Operations')
-                ->has('counselors', 3)
+                ->has('counselors', 1)
                 ->has('calendarBookings', 1)
                 ->where('calendarBookings.0.date', $targetDate)
                 ->where('calendarBookings.0.start_time', '08:30')

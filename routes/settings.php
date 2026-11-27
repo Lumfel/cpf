@@ -14,7 +14,7 @@ Route::middleware(['auth', EnsureTemporaryPasswordChanged::class])->group(functi
     Route::patch('settings/campus-tour', [ProfileController::class, 'updateCampusSettings'])->name('settings.campus-tour.update');
 });
 
-Route::middleware(['auth', 'verified', EnsureTemporaryPasswordChanged::class])->group(function () {
+Route::middleware(['auth', EnsureTemporaryPasswordChanged::class, 'verified'])->group(function () {
     Route::post('settings/profile/photo', [ProfileController::class, 'updatePhoto'])->name('profile.photo.update');
     Route::delete('settings/profile/photo', [ProfileController::class, 'destroyPhoto'])->name('profile.photo.destroy');
     Route::delete('settings/profile', [ProfileController::class, 'destroy'])->name('profile.destroy');

@@ -163,12 +163,21 @@ class AdviserHandoverController extends Controller
                         ]);
                     }
 
+                    $existingUser->tokens()->delete();
+                    $existingUser->passkeys()->delete();
+                    DB::table(config('session.table', 'sessions'))
+                        ->where('user_id', $existingUser->id)
+                        ->delete();
+
                     $existingUser->forceFill([
                         'name' => $fullName,
                         'password' => Hash::make((string) $validated['initial_password']),
-                        'email_verified_at' => $existingUser->email_verified_at ?? now(),
+                        'email_verified_at' => null,
                         'must_change_password' => true,
                         'temporary_password_issued_at' => now(),
+                        'two_factor_secret' => null,
+                        'two_factor_recovery_codes' => null,
+                        'two_factor_confirmed_at' => null,
                     ])->save();
 
                     $incomingUser = $existingUser;
@@ -180,7 +189,7 @@ class AdviserHandoverController extends Controller
                         'must_change_password' => true,
                         'temporary_password_issued_at' => now(),
                     ]);
-                    $incomingUser->email_verified_at = now();
+                    $incomingUser->email_verified_at = null;
                     $incomingUser->save();
                 }
 
@@ -240,16 +249,21 @@ class AdviserHandoverController extends Controller
             return [$handover, $targetMembership];
         });
 
+        $handoverPayload = [
+            'id' => $handover->id,
+            'outgoing_role' => $handover->outgoing_role,
+            'to_name' => $targetMembership->full_name_last_first_mi,
+            'to_email' => $targetMembership->user?->email ?? $targetMembership->active_email,
+            'expires_at' => $handover->expires_at->toDayDateTimeString(),
+        ];
+
+        if ($mode !== 'invite_new' || (string) config('mail.default', 'log') === 'log') {
+            $handoverPayload['confirmation_code'] = $handover->confirmation_code;
+        }
+
         return response()->json([
             'status' => 'pending',
-            'handover' => [
-                'id' => $handover->id,
-                'confirmation_code' => $handover->confirmation_code,
-                'outgoing_role' => $handover->outgoing_role,
-                'to_name' => $targetMembership->full_name_last_first_mi,
-                'to_email' => $targetMembership->user?->email ?? $targetMembership->active_email,
-                'expires_at' => $handover->expires_at->toDayDateTimeString(),
-            ],
+            'handover' => $handoverPayload,
         ], 201);
     }
 
@@ -361,7 +375,20 @@ class AdviserHandoverController extends Controller
                 'section' => 'Adviser',
                 'course_year_section' => 'Guidance Services / Adviser',
             ]);
+
+            if ($user->email_verified_at === null) {
+                $user->forceFill(['email_verified_at' => now()])->save();
+            }
+
             $this->tenureService->openTenure($incomingMembership->fresh(), $user);
+
+            CampusCounselor::registerRealCounselor(
+                campusId: $lockedHandover->campus_id,
+                name: $incomingMembership->full_name_last_first_mi,
+                title: 'Club Adviser & Guidance Counselor',
+                specialty: 'Peer Facilitation & Student Wellness',
+                slots: CampusCounselor::defaultAdviserWeeklyVacantSlots(),
+            );
 
             $outgoingRole = in_array($lockedHandover->outgoing_role, ['guidance_counselor', 'alumni'], true)
                 ? $lockedHandover->outgoing_role
@@ -384,21 +411,12 @@ class AdviserHandoverController extends Controller
                     'course_year_section' => 'Guidance Services / Guidance Counselor',
                 ]);
 
-                CampusCounselor::query()->firstOrCreate(
-                    [
-                        'campus_id' => $lockedHandover->campus_id,
-                        'name' => $outgoingMembership->full_name_last_first_mi,
-                    ],
-                    [
-                        'title' => 'Registered Guidance Counselor',
-                        'specialty' => 'Student Wellness & Peer Referral Triage',
-                        'weekly_vacant_slots' => [
-                            ['day' => 'Monday', 'start' => '09:00', 'end' => '11:30'],
-                            ['day' => 'Wednesday', 'start' => '13:30', 'end' => '16:00'],
-                            ['day' => 'Friday', 'start' => '09:00', 'end' => '11:30'],
-                        ],
-                        'is_active' => true,
-                    ],
+                CampusCounselor::registerRealCounselor(
+                    campusId: $lockedHandover->campus_id,
+                    name: $outgoingMembership->full_name_last_first_mi,
+                    title: 'Registered Guidance Counselor',
+                    specialty: 'Student Wellness & Peer Referral Triage',
+                    slots: CampusCounselor::defaultInvitedCounselorSlots(),
                 );
             }
 

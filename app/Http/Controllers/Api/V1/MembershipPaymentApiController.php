@@ -14,6 +14,7 @@ use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Gate;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class MembershipPaymentApiController extends Controller
 {
@@ -25,10 +26,9 @@ class MembershipPaymentApiController extends Controller
     {
         /** @var User $user */
         $user = $request->user();
-        $verifiedRole = $user->verifiedRole();
 
         abort_unless(
-            $verifiedRole !== null && $verifiedRole->isOfficerOrAdviser(),
+            $user->isActiveOfficerOrAdviser(),
             403,
             'Only verified campus officers and the Club Adviser can view the campus membership roster.',
         );
@@ -142,7 +142,17 @@ class MembershipPaymentApiController extends Controller
             'Membership dues confirmation is only available for approved campus members.',
         );
 
-        $updated = $action->toggleDues($actor, $membership);
+        $validated = $request->validate([
+            'reason' => ['nullable', 'string', 'max:255'],
+            'payment_submission_id' => ['nullable', 'integer', 'exists:payment_submissions,id'],
+        ]);
+
+        $updated = $action->toggleDues(
+            $actor,
+            $membership,
+            isset($validated['reason']) ? trim((string) $validated['reason']) : null,
+            isset($validated['payment_submission_id']) ? (int) $validated['payment_submission_id'] : null,
+        );
 
         return response()->json([
             'status' => 'updated',
@@ -289,6 +299,18 @@ class MembershipPaymentApiController extends Controller
     }
 
     /**
+     * GET /api/v1/payments/{payment}/receipt
+     * Streams private payment receipt from local disk for submitter or same-campus financial auditors.
+     */
+    public function streamReceipt(
+        Request $request,
+        PaymentSubmission $payment,
+        CpfV4Controller $v4Controller,
+    ): StreamedResponse {
+        return $v4Controller->streamReceipt($request, $payment);
+    }
+
+    /**
      * @return array<string, mixed>
      */
     private function formatPaymentSubmission(
@@ -309,6 +331,7 @@ class MembershipPaymentApiController extends Controller
             'amount' => (float) $sub->amount,
             'reference_number' => $sub->reference_number,
             'has_receipt' => filled($sub->receipt_hdd_path),
+            'receipt_url' => filled($sub->receipt_hdd_path) ? "/api/v1/payments/{$sub->id}/receipt" : null,
             'status' => $sub->status,
             'treasurer_notes' => $sub->treasurer_notes,
             'validated_by_treasurer_id' => $sub->validated_by_treasurer_id,

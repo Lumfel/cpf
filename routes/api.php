@@ -54,9 +54,14 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
         Route::middleware(EnsureTemporaryPasswordChanged::class)->group(function () {
             // Campus Events & Officer 2-Stage QR Attendance
             Route::get('events', [EventApiController::class, 'index'])->name('events.index');
+            Route::get('events/{event}/checklist', [EventApiController::class, 'checklist'])
+                ->name('events.checklist');
             Route::post('events/{event}/scan', [EventApiController::class, 'scan'])
                 ->middleware('throttle:60,1')
                 ->name('events.scan');
+            Route::post('events/{event}/manual-attendance', [EventApiController::class, 'manualAttendance'])
+                ->middleware('throttle:60,1')
+                ->name('events.manual-attendance');
 
             // Membership Roster, Messenger GC Checklist & Dues / Payments
             Route::get('membership/roster', [MembershipPaymentApiController::class, 'roster'])
@@ -75,6 +80,8 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::patch('payments/{payment}/validate', [MembershipPaymentApiController::class, 'validatePayment'])
                 ->middleware('throttle:30,1')
                 ->name('payments.validate');
+            Route::get('payments/{payment}/receipt', [MembershipPaymentApiController::class, 'streamReceipt'])
+                ->name('payments.receipt');
 
             // Referrals & Counselor Coordination (Privacy-Safe Peer Endpoints)
             Route::get('referrals/mine', [ReferralApiController::class, 'mine'])
@@ -89,6 +96,12 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
             Route::post('elections/{election}/nominate', [ElectionApiController::class, 'nominate'])
                 ->middleware('throttle:20,1')
                 ->name('elections.nominate');
+            Route::patch('elections/{election}/candidates/{candidate}/respond', [ElectionApiController::class, 'respondNomination'])
+                ->middleware('throttle:20,1')
+                ->name('elections.candidates.respond');
+            Route::post('elections/{election}/finalize-position', [ElectionApiController::class, 'finalizePosition'])
+                ->middleware('throttle:20,1')
+                ->name('elections.finalize-position');
             Route::post('elections/{election}/vote', [ElectionApiController::class, 'vote'])
                 ->middleware('throttle:10,1')
                 ->name('elections.vote');

@@ -14,6 +14,8 @@ use App\Models\MemberAchievement;
 use App\Models\MemberAward;
 use App\Models\OfficerGcChannel;
 use App\Models\PasskeyIssuance;
+use App\Models\PaymentDestination;
+use App\Models\PaymentSubmission;
 use App\Models\PeerQuote;
 use App\Services\ClubTenureService;
 use BaconQrCode\Renderer\Image\SvgImageBackEnd;
@@ -49,7 +51,7 @@ class DashboardController extends Controller
             $signature = substr(hash_hmac('sha256', $rawPayload, (string) config('app.key')), 0, 16);
             $qrPayload = "{$rawPayload}|sig:{$signature}";
 
-            $writer = new Writer(new ImageRenderer(new RendererStyle(180, 1), new SvgImageBackEnd()));
+            $writer = new Writer(new ImageRenderer(new RendererStyle(180, 1), new SvgImageBackEnd));
             $qrSvg = $writer->writeString($qrPayload);
             $memberIdCode = sprintf('CPF-%s-%s-%04d', $campusCode, now()->format('Y'), $user->id);
         }
@@ -75,16 +77,19 @@ class DashboardController extends Controller
 
         $canConfirmDues = $user->canValidatePayments();
         $canAuditFinances = $user->canAuditFinances();
-        $isOfficerOrAdviser = $user->verifiedRole()?->isOfficerOrAdviser() ?? false;
+        $isOfficerOrAdviser = $user->isActiveOfficerOrAdviser();
         $duesRoster = [];
+        $paymentValidationQueue = [];
 
         if (($canConfirmDues || $canAuditFinances) && $campusId !== null) {
-            $duesRoster = CampusMembership::query()
+            $duesRosterRaw = CampusMembership::query()
                 ->with(['duesConfirmer:id,name'])
                 ->where('campus_id', $campusId)
                 ->where('status', MembershipStatus::Approved->value)
                 ->alphabetical()
-                ->get()
+                ->get();
+
+            $duesRoster = $duesRosterRaw
                 ->map(fn (CampusMembership $m) => [
                     'id' => $m->id,
                     'full_name_last_first_mi' => $m->full_name_last_first_mi,
@@ -98,6 +103,40 @@ class DashboardController extends Controller
                     'dues_confirmed_at' => $m->dues_confirmed_at?->toDayDateTimeString(),
                     'dues_confirmer_name' => $m->duesConfirmer?->name,
                 ])
+                ->values();
+
+            $memberInfoByUser = $duesRosterRaw->keyBy('user_id');
+            $destinationsById = PaymentDestination::query()
+                ->where('campus_id', $campusId)
+                ->get(['id', 'channel', 'account_name'])
+                ->keyBy('id');
+
+            $paymentValidationQueue = PaymentSubmission::query()
+                ->where('campus_id', $campusId)
+                ->orderByRaw("CASE WHEN status = 'pending' THEN 0 ELSE 1 END")
+                ->latest('id')
+                ->limit(50)
+                ->get()
+                ->map(function (PaymentSubmission $sub) use ($memberInfoByUser, $destinationsById): array {
+                    $memberRow = $memberInfoByUser->get($sub->user_id);
+                    $dest = $destinationsById->get($sub->destination_id);
+
+                    return [
+                        'id' => $sub->id,
+                        'user_id' => $sub->user_id,
+                        'member_name' => $memberRow?->full_name_last_first_mi ?? 'CPF Member',
+                        'course_year_section' => $memberRow?->course_year_section ?? '',
+                        'channel' => $dest?->channel ?? 'Payment',
+                        'purpose' => $sub->purpose,
+                        'amount' => (float) $sub->amount,
+                        'reference_number' => $sub->reference_number,
+                        'has_receipt' => filled($sub->receipt_hdd_path),
+                        'receipt_url' => filled($sub->receipt_hdd_path) ? "/payments/{$sub->id}/receipt" : null,
+                        'status' => $sub->status,
+                        'treasurer_notes' => $sub->treasurer_notes,
+                        'created_at' => $sub->created_at?->toDayDateTimeString(),
+                    ];
+                })
                 ->values();
         }
 
@@ -241,6 +280,7 @@ class DashboardController extends Controller
             'canAuditFinances' => $canAuditFinances,
             'isOfficerOrAdviser' => $isOfficerOrAdviser,
             'duesRoster' => $duesRoster,
+            'paymentValidationQueue' => $paymentValidationQueue,
             'campusEvents' => $campusEvents,
             'eventNotifications' => $eventNotifications,
             'unreadEventNotificationsCount' => $unreadEventNotificationsCount,

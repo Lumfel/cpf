@@ -61,6 +61,8 @@ class SecurityController extends Controller
             'temporary_password_issued_at' => null,
         ]);
 
+        $request->user()->tokens()->delete();
+
         Inertia::flash('toast', ['type' => 'success', 'message' => __('Password updated.')]);
 
         return back();

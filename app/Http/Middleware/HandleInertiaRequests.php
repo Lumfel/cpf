@@ -143,7 +143,7 @@ class HandleInertiaRequests extends Middleware
                     }
 
                     $outgoing = AdviserHandover::query()
-                        ->with(['campus:id,code,name', 'toUser:id,name,email', 'toMembership:id,full_name_last_first_mi,course_year_section'])
+                        ->with(['campus:id,code,name', 'toUser:id,name,email', 'toMembership:id,full_name_last_first_mi,course_year_section,section'])
                         ->where('from_user_id', $user->id)
                         ->where('status', 'pending')
                         ->where('expires_at', '>', now())
@@ -151,17 +151,23 @@ class HandleInertiaRequests extends Middleware
                         ->first();
 
                     if ($outgoing) {
-                        $pendingAdviserHandover['outgoing'] = [
+                        $outgoingData = [
                             'id' => $outgoing->id,
                             'campus_name' => $outgoing->campus?->name ?? 'CPF Campus',
                             'to_name' => $outgoing->toMembership?->full_name_last_first_mi ?? $outgoing->toUser?->name ?? 'Successor',
                             'to_email' => $outgoing->toUser?->email ?? '',
                             'to_course_year_section' => $outgoing->toMembership?->course_year_section ?? '',
-                            'confirmation_code' => $outgoing->confirmation_code,
                             'handover_notes' => $outgoing->handover_notes,
                             'initiated_at' => $outgoing->initiated_at?->toDayDateTimeString(),
                             'expires_at' => $outgoing->expires_at?->toDayDateTimeString(),
                         ];
+
+                        $isInviteNew = $outgoing->toMembership?->section === 'Incoming Adviser';
+                        if (! $isInviteNew || (string) config('mail.default', 'log') === 'log') {
+                            $outgoingData['confirmation_code'] = $outgoing->confirmation_code;
+                        }
+
+                        $pendingAdviserHandover['outgoing'] = $outgoingData;
                     }
                 }
             } catch (\Throwable) {
@@ -239,7 +245,7 @@ class HandleInertiaRequests extends Middleware
                     'validatePayments' => $user ? $user->canValidatePayments() : false,
                     'auditFinances' => $user ? $user->canAuditFinances() : false,
                     'proposeEvents' => $user ? $user->canProposeEvents() : false,
-                    'isOfficerOrAdviser' => $user ? ($user->verifiedRole()?->isOfficerOrAdviser() ?? false) : false,
+                    'isOfficerOrAdviser' => $user ? $user->isActiveOfficerOrAdviser() : false,
                     'isClubAdviser' => $user ? $user->isClubAdviser() : false,
                     'canCoordinateGuidance' => $user ? $user->canCoordinateGuidance() : false,
                     'canPublishAnnouncements' => $user ? $user->canPublishAnnouncements() : false,

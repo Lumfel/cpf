@@ -3,10 +3,8 @@
 namespace App\Http\Controllers\Prototype;
 
 use App\Enums\CpfRole;
-use App\Enums\MembershipStatus;
 use App\Http\Controllers\Controller;
 use App\Models\Campus;
-use App\Models\CampusMembership;
 use App\Models\CounselorGcMessage;
 use App\Models\OfficerGcChannel;
 use App\Models\OfficerGcMessage;
@@ -26,18 +24,25 @@ class DemoBotController extends Controller
 {
     private const DEMO_TAG = '[DEMO-BOT]';
 
-    private function guardPrototype(): void
+    private function guardPrototype(Request $request): void
     {
         abort_if(
             app()->isProduction() || ! config('cpf.prototype.enabled'),
             404,
             'Prototype demo bots are disabled in production.',
         );
+
+        $user = $request->user();
+        abort_unless(
+            $user !== null && $user->isActiveOfficerOrAdviser(),
+            403,
+            'Only active verified officers or the Club Adviser may access prototype demo bots.',
+        );
     }
 
     public function index(Request $request): Response
     {
-        $this->guardPrototype();
+        $this->guardPrototype($request);
 
         $campus = $request->user()?->primaryMembership?->campus
             ?? Campus::query()->where('is_active', true)->first();
@@ -56,7 +61,7 @@ class DemoBotController extends Controller
 
     public function runGcBot(Request $request, ProfanityFilterService $profanityFilter): JsonResponse
     {
-        $this->guardPrototype();
+        $this->guardPrototype($request);
 
         $user = $request->user();
         $campusId = $user?->primaryMembership?->campus_id
@@ -87,6 +92,7 @@ class DemoBotController extends Controller
                     'status' => 'blocked_by_profanity_filter',
                     'note' => 'Blocked automatically by 5-language ProfanityFilterService (EN/ES/HIL/CEB/TL).',
                 ];
+
                 continue;
             }
 
@@ -125,7 +131,7 @@ class DemoBotController extends Controller
 
     public function runElectionBot(Request $request): JsonResponse
     {
-        $this->guardPrototype();
+        $this->guardPrototype($request);
 
         $campusId = $request->user()?->primaryMembership?->campus_id
             ?? Campus::query()->where('is_active', true)->value('id')
@@ -166,7 +172,7 @@ class DemoBotController extends Controller
 
     public function runAwardingBot(Request $request): JsonResponse
     {
-        $this->guardPrototype();
+        $this->guardPrototype($request);
 
         $campusId = $request->user()?->primaryMembership?->campus_id
             ?? Campus::query()->where('is_active', true)->value('id')
@@ -201,7 +207,7 @@ class DemoBotController extends Controller
 
     public function reset(Request $request): JsonResponse
     {
-        $this->guardPrototype();
+        $this->guardPrototype($request);
 
         $campusId = $request->user()?->primaryMembership?->campus_id
             ?? Campus::query()->where('is_active', true)->value('id')

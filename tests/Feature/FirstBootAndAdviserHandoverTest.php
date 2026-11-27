@@ -109,10 +109,14 @@ class FirstBootAndAdviserHandoverTest extends TestCase
         $this->assertAuthenticatedAs($adviser);
         $this->assertSame(CpfRole::Adviser, $adviser->verifiedRole());
 
-        // Campus room, 3 default counselors, Officers GC channel, and calming quote are ready immediately
+        // Campus room, 1 real Adviser counselor record (zero fictional demo counselors), Officers GC channel, and calming quote are ready immediately
         $this->assertSame('Montemayor, Elena V.', $alijis->fresh()->adviser_name);
         $this->assertSame(1, CampusRoom::where('campus_id', $alijis->id)->where('is_single_allowed_room', true)->count());
-        $this->assertSame(3, CampusCounselor::where('campus_id', $alijis->id)->count());
+        $this->assertSame(1, CampusCounselor::where('campus_id', $alijis->id)->count());
+        $this->assertDatabaseHas('campus_counselors', [
+            'campus_id' => $alijis->id,
+            'name' => 'Montemayor, Elena V.',
+        ]);
         $this->assertSame(1, OfficerGcChannel::where('campus_id', $alijis->id)->where('is_active', true)->count());
         $this->assertGreaterThanOrEqual(1, PeerQuote::where('is_approved', true)->count());
 
@@ -218,7 +222,7 @@ class FirstBootAndAdviserHandoverTest extends TestCase
             ->assertJsonPath('status', 'pending');
 
         $handoverId = $initRes->json('handover.id');
-        $code = $initRes->json('handover.confirmation_code');
+        $code = AdviserHandover::findOrFail($handoverId)->confirmation_code;
         $this->assertSame(6, strlen($code));
 
         $counselor = User::query()->where('email', 'elena.navarro.adviser@chmsu.edu.ph')->firstOrFail();

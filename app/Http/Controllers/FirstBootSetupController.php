@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Validation\Rule;
 
 class FirstBootSetupController extends Controller
@@ -25,6 +26,10 @@ class FirstBootSetupController extends Controller
     public static function needsAdviserSetup(): bool
     {
         try {
+            if (Schema::hasColumn('campuses', 'initialized_at') && Campus::query()->whereNotNull('initialized_at')->exists()) {
+                return false;
+            }
+
             return CampusMembership::query()
                 ->where('role', CpfRole::Adviser->value)
                 ->where('status', MembershipStatus::Approved->value)
@@ -41,6 +46,16 @@ class FirstBootSetupController extends Controller
             403,
             'First-boot setup is permanently locked because the portal has already been initialized.',
         );
+
+        $configuredSecret = trim((string) config('cpf.first_boot_secret', ''));
+        if ($configuredSecret !== '') {
+            $providedSecret = (string) ($request->input('first_boot_secret') ?? $request->header('X-CPF-First-Boot-Secret', ''));
+            abort_unless(
+                $providedSecret !== '' && hash_equals($configuredSecret, $providedSecret),
+                403,
+                'Invalid or missing first-boot setup secret.',
+            );
+        }
 
         $validated = $request->validate([
             'campus_id' => ['nullable', 'integer', Rule::exists('campuses', 'id')->where('is_active', true)],
@@ -98,6 +113,7 @@ class FirstBootSetupController extends Controller
                     'current_academic_year' => $academicYear,
                     'gc_group_name' => $campus->gc_group_name ?: "CPF {$campus->code} Official Peer GC (AY {$academicYear})",
                     'is_active' => true,
+                    'initialized_at' => $campus->initialized_at ?? now(),
                 ]);
 
                 CampusRoom::updateOrCreate(
@@ -112,7 +128,13 @@ class FirstBootSetupController extends Controller
                     ],
                 );
 
-                CampusCounselor::ensureDefaultCounselorsForCampus($campus->id);
+                CampusCounselor::registerRealCounselor(
+                    campusId: $campus->id,
+                    name: $fullName,
+                    title: 'Club Adviser & Guidance Counselor',
+                    specialty: 'Peer Facilitation & Student Wellness',
+                    slots: CampusCounselor::defaultAdviserWeeklyVacantSlots(),
+                );
 
                 OfficerGcChannel::updateOrCreate(
                     [

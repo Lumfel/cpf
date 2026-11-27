@@ -12,17 +12,18 @@ use App\Enums\ReferralPriority;
 use App\Events\CounselorDmMessageSent;
 use App\Events\CounselorGcMessageSent;
 use App\Events\OfficerGcMessageSent;
-use App\Models\CounselorDirectMessage;
-use App\Services\ProfanityFilterService;
 use App\Models\CampusCounselor;
 use App\Models\CampusMembership;
 use App\Models\CampusRoom;
+use App\Models\CounselorDirectMessage;
 use App\Models\CounselorGcMessage;
 use App\Models\GuidanceReferral;
 use App\Models\OfficerGcChannel;
 use App\Models\OfficerGcMessage;
 use App\Models\ReferralAuditLog;
 use App\Models\RoomRequest;
+use App\Models\User;
+use App\Services\ProfanityFilterService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -105,6 +106,8 @@ class CpfFeatureController extends Controller
             'end_time' => ['required', 'date_format:H:i', 'after:start_time'],
         ]);
 
+        app(ProfanityFilterService::class)->assertClean((string) $validated['purpose'], 'purpose');
+
         $campusId = $validated['campus_id'] ?? $membership->campus_id;
         abort_unless(
             (int) $campusId === $membership->campus_id,
@@ -147,7 +150,7 @@ class CpfFeatureController extends Controller
             );
         } else {
             abort_unless(
-                $role && ($role->isOfficerOrAdviser() || $role->canCoordinateGuidance()) && $membership && $membership->campus_id === $roomRequest->campus_id,
+                ($user?->isActiveOfficerOrAdviser() || $user?->canCoordinateGuidance()) && $membership && $membership->campus_id === $roomRequest->campus_id,
                 403,
                 'Only verified campus officers, Guidance Counselors, or the Club Adviser can review Testing Room requests.',
             );
@@ -157,6 +160,10 @@ class CpfFeatureController extends Controller
             'status' => ['required', 'in:approved,rejected'],
             'review_notes' => ['nullable', 'string', 'max:255'],
         ]);
+
+        if (filled($validated['review_notes'] ?? null)) {
+            app(ProfanityFilterService::class)->assertClean((string) $validated['review_notes'], 'review_notes');
+        }
 
         $updated = DB::transaction(function () use ($roomRequest, $validated, $user, $role): RoomRequest {
             $lockedRequest = RoomRequest::query()
@@ -349,8 +356,7 @@ class CpfFeatureController extends Controller
                 if ($pendingRoomRequest !== null && $pendingRoomRequest->status === 'pending') {
                     $pendingRoomRequest->update([
                         'status' => 'rejected',
-                        'reviewed_by' => $user->id,
-                        'reviewed_at' => now(),
+                        'reviewed_by_user_id' => $user->id,
                         'review_notes' => 'Auto-released upon direct referral completion.',
                     ]);
                 }
@@ -417,7 +423,7 @@ class CpfFeatureController extends Controller
         $membership = $user?->primaryMembership;
 
         abort_unless(
-            $role && $role->isOfficerOrAdviser() && $membership && $membership->campus_id === $channel->campus_id,
+            $user?->isActiveOfficerOrAdviser() && $membership && $membership->campus_id === $channel->campus_id,
             403,
             'Only active campus Officers and the Club Adviser may read this Officers Private GC.',
         );
@@ -456,7 +462,7 @@ class CpfFeatureController extends Controller
         );
 
         abort_unless(
-            $role && $role->isOfficerOrAdviser() && $membership && $membership->campus_id === $channel->campus_id,
+            $user?->isActiveOfficerOrAdviser() && $membership && $membership->campus_id === $channel->campus_id,
             403,
             'Only active campus Officers and the Club Adviser may message this Officers Private GC.',
         );
@@ -613,7 +619,7 @@ class CpfFeatureController extends Controller
         ], 201);
     }
 
-    public function fetchCounselorDmMessages(Request $request, \App\Models\User $peerUser): JsonResponse
+    public function fetchCounselorDmMessages(Request $request, User $peerUser): JsonResponse
     {
         $user = $request->user();
         $membership = $user?->primaryMembership;
@@ -657,7 +663,7 @@ class CpfFeatureController extends Controller
         return response()->json(['thread_key' => $threadKey, 'messages' => $messages]);
     }
 
-    public function sendCounselorDmMessage(Request $request, \App\Models\User $peerUser, ProfanityFilterService $profanityFilter): JsonResponse
+    public function sendCounselorDmMessage(Request $request, User $peerUser, ProfanityFilterService $profanityFilter): JsonResponse
     {
         $user = $request->user();
         $role = $user?->verifiedRole();

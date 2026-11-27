@@ -20,6 +20,7 @@ use App\Models\PaymentDestination;
 use App\Models\RoomRequest;
 use App\Models\User;
 use App\Notifications\CounselorInviteOtpNotification;
+use Carbon\CarbonInterface;
 use Database\Seeders\BlankSystemSeeder;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -133,7 +134,7 @@ class GuidanceCounselorReferralAndAnnouncementsTest extends TestCase
         $roomRes = $this->actingAs($member)->postJson('/testing-room/request', [
             'campus_id' => $this->campus->id,
             'purpose' => 'Peer Drop-in Check',
-            'request_date' => now()->addDays(2)->format('Y-m-d'),
+            'request_date' => now()->next(CarbonInterface::WEDNESDAY)->format('Y-m-d'),
             'start_time' => '13:00',
             'end_time' => '14:00',
         ])->assertCreated();
@@ -461,8 +462,8 @@ class GuidanceCounselorReferralAndAnnouncementsTest extends TestCase
         $counselorUser = $this->createCampusUser(CpfRole::GuidanceCounselor, 'Delos Santos, Clarissa R.');
         $peerMember = $this->createCampusUser(CpfRole::Member, 'Reyes, Katrina M.');
 
-        $counselorSchedule = CampusCounselor::ensureDefaultCounselorsForCampus($this->campus->id)->firstOrFail();
-        $slotDate = now()->addDays(3)->format('Y-m-d');
+        $counselorSchedule = CampusCounselor::registerRealCounselor($this->campus->id, 'Delos Santos, Clarissa R.');
+        $slotDate = now()->next(CarbonInterface::WEDNESDAY)->format('Y-m-d');
 
         // 1. Existing Testing Room booking blocks overlapping referral slot with 422
         RoomRequest::create([

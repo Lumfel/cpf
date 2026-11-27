@@ -222,7 +222,14 @@ class MobileApiV1Test extends TestCase
 
         app(ClubTenureService::class)->transitionToAlumni($membership, $adviser, 'graduated');
 
+        // Existing mobile tokens are immediately revoked upon Alumni transition
         $this->bearer((string) $passkeyRes->json('token'))
+            ->getJson('/api/v1/auth/me')
+            ->assertUnauthorized();
+
+        // Re-authenticating as Alumni returns the read-only Former profile
+        $alumniToken = $member->createToken('Alumni Phone')->plainTextToken;
+        $this->bearer($alumniToken)
             ->getJson('/api/v1/auth/me')
             ->assertOk()
             ->assertJsonPath('is_alumni', true)
@@ -430,7 +437,9 @@ class MobileApiV1Test extends TestCase
             ->assertForbidden();
 
         $this->bearer($treasurerToken)
-            ->patchJson("/api/v1/membership/{$memberMembership->id}/toggle-dues")
+            ->patchJson("/api/v1/membership/{$memberMembership->id}/toggle-dues", [
+                'reason' => 'Cash dues paid at chapter booth',
+            ])
             ->assertOk()
             ->assertJsonPath('has_paid_dues', true);
 
@@ -490,8 +499,8 @@ class MobileApiV1Test extends TestCase
         [$counselorUser] = $this->createVerifiedMember($this->alijis, CpfRole::GuidanceCounselor, 'Soriano, Clarissa D.');
         [$peer] = $this->createVerifiedMember($this->alijis, CpfRole::Member, 'Reyes, Katrina M.');
 
-        $counselor = CampusCounselor::ensureDefaultCounselorsForCampus($this->alijis->id)->firstOrFail();
-        // Default first counselor has vacant windows: 08:30-10:00, 10:30-12:00, 13:30-15:00 on Mon-Fri (days 1..5).
+        $counselor = CampusCounselor::registerRealCounselor($this->alijis->id, 'Soriano, Clarissa D.');
+        // Registered counselor has vacant windows: 08:30-10:00, 10:30-12:00, 13:30-15:00 on Mon-Fri (days 1..5).
         $nextWeekday = now()->addDay();
         while ($nextWeekday->isWeekend()) {
             $nextWeekday = $nextWeekday->addDay();

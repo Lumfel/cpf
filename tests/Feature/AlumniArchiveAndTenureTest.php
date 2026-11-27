@@ -199,7 +199,7 @@ class AlumniArchiveAndTenureTest extends TestCase
             ->assertCreated();
 
         $handoverId = $handoverRes->json('handover.id');
-        $code = $handoverRes->json('handover.confirmation_code');
+        $code = \App\Models\AdviserHandover::findOrFail($handoverId)->confirmation_code;
         $successor = User::query()->where('email', 'elena.successor@chmsu.edu.ph')->firstOrFail();
         $successor->forceFill(['must_change_password' => false])->save();
 

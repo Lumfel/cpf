@@ -1,5 +1,7 @@
 <?php
 
+namespace Tests\Feature;
+
 use App\Enums\CpfRole;
 use App\Enums\MembershipStatus;
 use App\Models\Campus;
@@ -9,169 +11,175 @@ use App\Models\OfficerGcChannel;
 use App\Models\User;
 use App\Services\ProfanityFilterService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
 
-uses(RefreshDatabase::class);
-
-function makeApprovedMember(Campus $campus, CpfRole $role, string $name, string $email): array
+class SelfAssessmentGovernanceAndChatTest extends TestCase
 {
-    $user = User::factory()->create([
-        'name' => $name,
-        'email' => $email,
-        'email_verified_at' => now(),
-        'must_change_password' => false,
-    ]);
+    use RefreshDatabase;
 
-    $membership = CampusMembership::create([
-        'user_id' => $user->id,
-        'campus_id' => $campus->id,
-        'role' => $role,
-        'status' => MembershipStatus::Approved,
-        'enrollment_source' => 'manual',
-        'recorded_email' => $email,
-        'active_email' => $email,
-        'first_name' => $name,
-        'last_name' => 'CHMSU',
-        'full_name_last_first_mi' => "CHMSU, {$name}",
-        'approved_at' => now(),
-    ]);
+    private function makeApprovedMember(Campus $campus, CpfRole $role, string $name, string $email): array
+    {
+        $user = User::factory()->create([
+            'name' => $name,
+            'email' => $email,
+            'email_verified_at' => now(),
+            'must_change_password' => false,
+        ]);
 
-    return [$user, $membership];
+        $membership = CampusMembership::create([
+            'user_id' => $user->id,
+            'campus_id' => $campus->id,
+            'role' => $role,
+            'status' => MembershipStatus::Approved,
+            'enrollment_source' => 'manual',
+            'recorded_email' => $email,
+            'active_email' => $email,
+            'first_name' => $name,
+            'last_name' => 'CHMSU',
+            'full_name_last_first_mi' => "CHMSU, {$name}",
+            'course_year_section' => 'BSIT 2-A',
+            'sex' => 'Female',
+            'birthdate' => '2004-05-15',
+            'facebook_profile_url' => 'https://facebook.com/chmsu.peer',
+            'active_fb_account' => $name,
+            'cellphone_number' => '09171234567',
+            'approved_at' => now(),
+        ]);
+
+        return [$user, $membership];
+    }
+
+    public function test_multilingual_profanity_filter_blocks_en_es_hil_ceb_tl_including_leetspeak_and_passes_clean_text(): void
+    {
+        $filter = app(ProfanityFilterService::class);
+
+        $this->assertTrue($filter->containsProfanity('What the f u c k is going on'));
+        $this->assertTrue($filter->containsProfanity('Eres un pendejo cabron'));
+        $this->assertTrue($filter->containsProfanity('Grabe ka g@go putangina'));
+        $this->assertTrue($filter->containsProfanity('Yudiputa linti ka gid'));
+        $this->assertTrue($filter->containsProfanity('Pisti y@wa atay ni'));
+
+        $this->assertFalse($filter->containsProfanity('Good morning class! Please assist the Guidance Counselor at the Testing Room.'));
+        $this->assertFalse($filter->containsProfanity('Maayong aga mga peer facilitators sa CHMSU Alijis!'));
+    }
+
+    public function test_only_club_adviser_can_toggle_campus_mandatory_tour_enabled_setting(): void
+    {
+        $campus = Campus::create([
+            'code' => 'ALIJIS',
+            'name' => 'CHMSU Alijis Campus',
+            'slug' => 'alijis',
+            'current_academic_year' => '2026-2027',
+            'is_active' => true,
+            'mandatory_tour_enabled' => true,
+        ]);
+
+        [$adviser] = $this->makeApprovedMember($campus, CpfRole::Adviser, 'Adviser', 'adviser@chmsu.edu.ph');
+        [$president] = $this->makeApprovedMember($campus, CpfRole::President, 'President', 'pres@chmsu.edu.ph');
+
+        $this->actingAs($president)
+            ->patch('/settings/campus-tour', ['mandatory_tour_enabled' => false])
+            ->assertStatus(403);
+
+        $this->actingAs($adviser)
+            ->patch('/settings/campus-tour', ['mandatory_tour_enabled' => false])
+            ->assertRedirect();
+
+        $this->assertFalse($campus->fresh()->mandatory_tour_enabled);
+    }
+
+    public function test_guidance_counselor_is_blocked_from_officers_gc_but_can_use_counselors_gc_and_1_on_1_counselor_dm_with_profanity_guard(): void
+    {
+        $campus = Campus::create([
+            'code' => 'ALIJIS',
+            'name' => 'CHMSU Alijis Campus',
+            'slug' => 'alijis',
+            'current_academic_year' => '2026-2027',
+            'is_active' => true,
+        ]);
+
+        [$adviser] = $this->makeApprovedMember($campus, CpfRole::Adviser, 'Adviser', 'adviser@chmsu.edu.ph');
+        [$rgc] = $this->makeApprovedMember($campus, CpfRole::GuidanceCounselor, 'Counselor A', 'rgc@chmsu.edu.ph');
+
+        $channel = OfficerGcChannel::create([
+            'campus_id' => $campus->id,
+            'academic_year' => '2026-2027',
+            'channel_key' => "campus.{$campus->id}.officers-gc.2026-2027",
+            'is_active' => true,
+        ]);
+
+        $this->actingAs($rgc)
+            ->postJson("/officers-gc/{$channel->id}/messages", ['message_body' => 'Hello officers'])
+            ->assertStatus(403);
+
+        $this->actingAs($rgc)
+            ->postJson('/counselors-gc/messages', ['message_body' => 'Testing Room slot confirmed for 10 AM.'])
+            ->assertStatus(201);
+
+        $this->actingAs($rgc)
+            ->postJson("/counselors-dm/{$adviser->id}/messages", ['message_body' => 'Quick check-in on Tier 2 referral.'])
+            ->assertStatus(201);
+
+        $this->actingAs($adviser)
+            ->getJson("/counselors-dm/{$rgc->id}/messages")
+            ->assertOk()
+            ->assertJsonCount(1, 'messages');
+
+        $this->actingAs($rgc)
+            ->postJson("/counselors-dm/{$adviser->id}/messages", ['message_body' => 'This is yawa gago'])
+            ->assertStatus(422);
+    }
+
+    public function test_dues_toggle_writes_immutable_dues_audit_log_and_adviser_privilege_suspension_blocks_rogue_officer_and_revokes_tokens(): void
+    {
+        $campus = Campus::create([
+            'code' => 'ALIJIS',
+            'name' => 'CHMSU Alijis Campus',
+            'slug' => 'alijis',
+            'current_academic_year' => '2026-2027',
+            'is_active' => true,
+        ]);
+
+        [$adviser] = $this->makeApprovedMember($campus, CpfRole::Adviser, 'Adviser', 'adviser@chmsu.edu.ph');
+        [$treasurer, $treasurerMembership] = $this->makeApprovedMember($campus, CpfRole::Treasurer, 'Treasurer', 'treasurer@chmsu.edu.ph');
+        [$auditor] = $this->makeApprovedMember($campus, CpfRole::Auditor, 'Auditor', 'auditor@chmsu.edu.ph');
+        [, $memberMembership] = $this->makeApprovedMember($campus, CpfRole::Member, 'Student', 'student@chmsu.edu.ph');
+
+        $treasurer->createToken('mobile-test');
+        $this->assertSame(1, $treasurer->tokens()->count());
+
+        $this->actingAs($treasurer)
+            ->patch("/membership/{$memberMembership->id}/toggle-dues", ['reason' => 'Cash paid during orientation'])
+            ->assertRedirect();
+
+        $this->assertSame(1, DuesAuditLog::count());
+
+        $this->actingAs($auditor)
+            ->getJson('/membership/dues-audit-logs')
+            ->assertOk()
+            ->assertJsonCount(1, 'logs');
+
+        $this->actingAs($adviser)
+            ->patchJson("/membership/{$treasurerMembership->id}/suspend-privileges", [
+                'suspend' => true,
+                'reason' => 'Financial audit review in progress',
+            ])
+            ->assertOk()
+            ->assertJson(['status' => 'suspended']);
+
+        $this->assertSame(0, $treasurer->fresh()->tokens()->count());
+        $this->assertFalse($treasurer->fresh()->canValidatePayments());
+
+        $this->actingAs($treasurer->fresh())
+            ->patch("/membership/{$memberMembership->id}/toggle-dues", ['reason' => 'Attempt while suspended'])
+            ->assertStatus(403);
+    }
+
+    public function test_new_low_end_server_scheduled_automation_commands_execute_cleanly(): void
+    {
+        $this->artisan('cpf:purge-expired-election-chat')->assertSuccessful();
+        $this->artisan('cpf:alert-stale-referrals')->assertSuccessful();
+        $this->artisan('cpf:expire-stale-invites')->assertSuccessful();
+        $this->artisan('cpf:remind-upcoming-events')->assertSuccessful();
+    }
 }
-
-test('multilingual profanity filter blocks EN/ES/HIL/CEB/TL including leetspeak and passes clean text', function () {
-    $filter = app(ProfanityFilterService::class);
-
-    // Restricted terms across all 5 languages + obfuscation
-    expect($filter->containsProfanity('What the f u c k is going on'))->toBeTrue();
-    expect($filter->containsProfanity('Eres un pendejo cabron'))->toBeTrue();
-    expect($filter->containsProfanity('Grabe ka g@go putangina'))->toBeTrue();
-    expect($filter->containsProfanity('Yudiputa linti ka gid'))->toBeTrue();
-    expect($filter->containsProfanity('Pisti y@wa atay ni'))->toBeTrue();
-
-    // Clean academic/campus phrases must not false-positive
-    expect($filter->containsProfanity('Good morning class! Please assist the Guidance Counselor at the Testing Room.'))->toBeFalse();
-    expect($filter->containsProfanity('Maayong aga mga peer facilitators sa CHMSU Alijis!'))->toBeFalse();
-});
-
-test('only Club Adviser can toggle campus mandatory_tour_enabled setting', function () {
-    $campus = Campus::create([
-        'code' => 'ALIJIS',
-        'name' => 'CHMSU Alijis Campus',
-        'slug' => 'alijis',
-        'current_academic_year' => '2026-2027',
-        'is_active' => true,
-        'mandatory_tour_enabled' => true,
-    ]);
-
-    [$adviser] = makeApprovedMember($campus, CpfRole::Adviser, 'Adviser', 'adviser@chmsu.edu.ph');
-    [$president] = makeApprovedMember($campus, CpfRole::President, 'President', 'pres@chmsu.edu.ph');
-
-    $this->actingAs($president)
-        ->patch('/settings/campus-tour', ['mandatory_tour_enabled' => false])
-        ->assertStatus(403);
-
-    $this->actingAs($adviser)
-        ->patch('/settings/campus-tour', ['mandatory_tour_enabled' => false])
-        ->assertRedirect();
-
-    expect($campus->fresh()->mandatory_tour_enabled)->toBeFalse();
-});
-
-test('guidance counselor is blocked from Officers GC but can use Counselors GC and 1-on-1 Counselor DM with profanity guard', function () {
-    $campus = Campus::create([
-        'code' => 'ALIJIS',
-        'name' => 'CHMSU Alijis Campus',
-        'slug' => 'alijis',
-        'current_academic_year' => '2026-2027',
-        'is_active' => true,
-    ]);
-
-    [$adviser] = makeApprovedMember($campus, CpfRole::Adviser, 'Adviser', 'adviser@chmsu.edu.ph');
-    [$rgc] = makeApprovedMember($campus, CpfRole::GuidanceCounselor, 'Counselor A', 'rgc@chmsu.edu.ph');
-
-    $channel = OfficerGcChannel::create([
-        'campus_id' => $campus->id,
-        'academic_year' => '2026-2027',
-        'channel_key' => "campus.{$campus->id}.officers-gc.2026-2027",
-        'is_active' => true,
-    ]);
-
-    // Blocked from Officers GC
-    $this->actingAs($rgc)
-        ->postJson("/officers-gc/{$channel->id}/messages", ['message_body' => 'Hello officers'])
-        ->assertStatus(403);
-
-    // Allowed in Counselors GC & 1-on-1 DM
-    $this->actingAs($rgc)
-        ->postJson('/counselors-gc/messages', ['message_body' => 'Testing Room slot confirmed for 10 AM.'])
-        ->assertStatus(201);
-
-    $this->actingAs($rgc)
-        ->postJson("/counselors-dm/{$adviser->id}/messages", ['message_body' => 'Quick check-in on Tier 2 referral.'])
-        ->assertStatus(201);
-
-    $this->actingAs($adviser)
-        ->getJson("/counselors-dm/{$rgc->id}/messages")
-        ->assertOk()
-        ->assertJsonCount(1, 'messages');
-
-    // Profanity blocked in Counselor DM
-    $this->actingAs($rgc)
-        ->postJson("/counselors-dm/{$adviser->id}/messages", ['message_body' => 'This is yawa gago'])
-        ->assertStatus(422);
-});
-
-test('dues toggle writes immutable DuesAuditLog and Adviser privilege suspension blocks rogue officer and revokes tokens', function () {
-    $campus = Campus::create([
-        'code' => 'ALIJIS',
-        'name' => 'CHMSU Alijis Campus',
-        'slug' => 'alijis',
-        'current_academic_year' => '2026-2027',
-        'is_active' => true,
-    ]);
-
-    [$adviser] = makeApprovedMember($campus, CpfRole::Adviser, 'Adviser', 'adviser@chmsu.edu.ph');
-    [$treasurer, $treasurerMembership] = makeApprovedMember($campus, CpfRole::Treasurer, 'Treasurer', 'treasurer@chmsu.edu.ph');
-    [$auditor] = makeApprovedMember($campus, CpfRole::Auditor, 'Auditor', 'auditor@chmsu.edu.ph');
-    [, $memberMembership] = makeApprovedMember($campus, CpfRole::Member, 'Student', 'student@chmsu.edu.ph');
-
-    $treasurer->createToken('mobile-test');
-    expect($treasurer->tokens()->count())->toBe(1);
-
-    // Treasurer toggles dues -> creates immutable DuesAuditLog
-    $this->actingAs($treasurer)
-        ->patch("/membership/{$memberMembership->id}/toggle-dues", ['reason' => 'Cash paid during orientation'])
-        ->assertRedirect();
-
-    expect(DuesAuditLog::count())->toBe(1);
-
-    // Auditor can inspect immutable dues audit trail
-    $this->actingAs($auditor)
-        ->getJson('/membership/dues-audit-logs')
-        ->assertOk()
-        ->assertJsonCount(1, 'logs');
-
-    // Adviser triggers Conflict Freeze (Suspend Officer Privileges)
-    $this->actingAs($adviser)
-        ->patchJson("/membership/{$treasurerMembership->id}/suspend-privileges", [
-            'suspend' => true,
-            'reason' => 'Financial audit review in progress',
-        ])
-        ->assertOk()
-        ->assertJson(['status' => 'suspended']);
-
-    expect($treasurer->fresh()->tokens()->count())->toBe(0);
-    expect($treasurer->fresh()->canValidatePayments())->toBeFalse();
-
-    // Suspended Treasurer is now blocked (403) from toggling dues
-    $this->actingAs($treasurer->fresh())
-        ->patch("/membership/{$memberMembership->id}/toggle-dues", ['reason' => 'Attempt while suspended'])
-        ->assertStatus(403);
-});
-
-test('new low-end-server scheduled automation commands execute cleanly', function () {
-    $this->artisan('cpf:purge-expired-election-chat')->assertSuccessful();
-    $this->artisan('cpf:alert-stale-referrals')->assertSuccessful();
-    $this->artisan('cpf:expire-stale-invites')->assertSuccessful();
-    $this->artisan('cpf:remind-upcoming-events')->assertSuccessful();
-});
