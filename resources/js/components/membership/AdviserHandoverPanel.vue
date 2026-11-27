@@ -189,16 +189,16 @@ async function copyCode() {
 </script>
 
 <template>
-    <div v-if="incoming || (outgoing && isClubAdviser) || (showInitiateForm && isClubAdviser)" class="flex flex-col gap-4">
+    <div v-if="incoming || (outgoing && isClubAdviser) || (showInitiateForm && isClubAdviser)" class="flex flex-col gap-3.5">
         <div
             v-if="notice"
-            class="rounded-2xl border border-[#1A8F26]/30 bg-[#1A8F26]/10 px-4 py-3 text-xs font-semibold text-[#1A8F26]"
+            class="rounded-xl border border-[#1A8F26]/30 bg-[#1A8F26]/10 px-3.5 py-2.5 text-sm font-semibold text-[#1A8F26]"
         >
             {{ notice }}
         </div>
         <div
             v-if="errorText"
-            class="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-xs font-semibold text-red-700"
+            class="rounded-xl border border-red-300 bg-red-50 px-3.5 py-2.5 text-sm font-semibold text-red-700"
         >
             {{ errorText }}
         </div>
@@ -206,31 +206,31 @@ async function copyCode() {
         <!-- 1. INCOMING HANDOVER INVITATION CARD (SHOWN TO SUCCESSOR) -->
         <section
             v-if="incoming"
-            class="rounded-3xl border-2 border-[#0384C5]/45 bg-[#FFF9EF] p-5 text-xs text-slate-900 shadow-sm"
+            class="bento border-2 border-primary/45 p-4 text-sm text-foreground"
         >
-            <div class="flex flex-wrap items-start justify-between gap-3 border-b border-black/10 pb-3">
+            <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-3">
                 <div>
-                    <span class="inline-flex items-center gap-1.5 rounded-full bg-[#0384C5]/12 px-3 py-1 text-[11px] font-bold text-[#0384C5]">
+                    <span class="inline-flex items-center gap-1.5 rounded-full bg-primary/12 px-2.5 py-0.5 text-xs font-bold text-primary">
                         <ArrowRightLeft class="size-3.5" />
                         Pending Club Adviser Role Handover
                     </span>
-                    <h2 class="font-editorial mt-2 text-lg font-bold text-slate-900">
+                    <h2 class="font-editorial mt-1.5 text-base font-bold text-foreground">
                         Accept Club Adviser Authority for {{ incoming.campus_name }}
                     </h2>
-                    <p class="mt-0.5 text-slate-600">
-                        Initiated by current Club Adviser <strong>{{ incoming.from_name }}</strong>
+                    <p class="mt-0.5 text-muted-foreground">
+                        Initiated by current Club Adviser <strong class="text-foreground">{{ incoming.from_name }}</strong>
                         <span v-if="incoming.expires_at"> • Expires {{ incoming.expires_at }}</span>
                     </p>
                 </div>
             </div>
 
-            <p v-if="incoming.handover_notes" class="mt-3 rounded-xl border border-black/10 bg-white p-3 text-slate-700">
+            <p v-if="incoming.handover_notes" class="mt-3 rounded-xl border border-border bg-card p-3 text-foreground">
                 <strong>Handover Notes:</strong> {{ incoming.handover_notes }}
             </p>
 
-            <form class="mt-4 flex flex-wrap items-end gap-3" @submit.prevent="respondHandover('accepted')">
+            <form class="mt-3.5 flex flex-wrap items-end gap-3" @submit.prevent="respondHandover('accepted')">
                 <div class="min-w-[220px] flex-1">
-                    <label class="mb-1 block font-bold text-slate-800">
+                    <label class="mb-1 block font-bold text-foreground">
                         Enter 6-Character Handover Verification Code *
                     </label>
                     <input
@@ -238,14 +238,14 @@ async function copyCode() {
                         required
                         maxlength="12"
                         placeholder="e.g. A7K9P2"
-                        class="w-full rounded-xl border border-[#0384C5]/40 bg-white px-3 py-2 font-mono text-sm font-extrabold tracking-widest text-[#0384C5] uppercase"
+                        class="w-full rounded-lg border border-primary/40 bg-card px-3 py-2 font-mono text-sm font-extrabold tracking-widest text-primary uppercase"
                     />
                 </div>
 
                 <button
                     type="submit"
                     :disabled="busy || !verificationCode.trim()"
-                    class="inline-flex items-center gap-1.5 rounded-xl bg-[#1A8F26] px-4 py-2.5 font-bold text-white hover:bg-[#15741f] disabled:opacity-50"
+                    class="inline-flex items-center gap-1.5 rounded-lg bg-[#1A8F26] px-3.5 py-2 text-sm font-bold text-white hover:bg-[#15741f] disabled:opacity-50"
                 >
                     <CheckCircle2 class="size-4" />
                     Accept &amp; Assume Club Adviser Role
@@ -254,7 +254,7 @@ async function copyCode() {
                     type="button"
                     :disabled="busy"
                     @click="respondHandover('declined')"
-                    class="inline-flex items-center gap-1.5 rounded-xl border border-red-300 bg-white px-4 py-2.5 font-bold text-red-700 hover:bg-red-50"
+                    class="inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-card px-3.5 py-2 text-sm font-bold text-red-700 hover:bg-red-50"
                 >
                     <XCircle class="size-4" />
                     Decline
@@ -265,18 +265,18 @@ async function copyCode() {
         <!-- 2. OUTGOING PENDING HANDOVER CARD (SHOWN TO CURRENT ADVISER) -->
         <section
             v-if="outgoing && isClubAdviser"
-            class="bento p-5 text-xs text-slate-900"
+            class="bento p-4 text-sm text-foreground"
         >
-            <div class="flex flex-wrap items-start justify-between gap-3 border-b border-black/10 pb-3">
+            <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-3">
                 <div>
-                    <span class="inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 px-3 py-1 text-[11px] font-bold text-amber-900">
+                    <span class="inline-flex items-center gap-1.5 rounded-full bg-amber-500/20 px-2.5 py-0.5 text-xs font-bold text-amber-900">
                         <KeyRound class="size-3.5" />
                         Handover Pending Successor Confirmation
                     </span>
-                    <h2 class="font-editorial mt-2 text-lg font-bold text-slate-900">
+                    <h2 class="font-editorial mt-1.5 text-base font-bold text-foreground">
                         Incoming Adviser: {{ outgoing.to_name }}
                     </h2>
-                    <p class="mt-0.5 text-slate-600">
+                    <p class="mt-0.5 text-muted-foreground">
                         {{ outgoing.to_email }}
                         <span v-if="outgoing.to_course_year_section"> • {{ outgoing.to_course_year_section }}</span>
                         <span v-if="outgoing.expires_at"> • Valid until {{ outgoing.expires_at }}</span>
@@ -287,29 +287,29 @@ async function copyCode() {
                     type="button"
                     :disabled="busy"
                     @click="cancelHandover"
-                    class="inline-flex items-center gap-1.5 rounded-xl border border-red-300 bg-white px-3 py-2 font-bold text-red-700 hover:bg-red-50"
+                    class="inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-card px-3 py-1.5 text-sm font-bold text-red-700 hover:bg-red-50"
                 >
                     <XCircle class="size-4" />
                     Cancel Pending Handover
                 </button>
             </div>
 
-            <div class="mt-4 flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-[#0384C5]/30 bg-[#FBF6EE] p-4">
+            <div class="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/30 bg-background/80 p-3.5">
                 <div>
-                    <div class="font-bold text-slate-800">Share this 6-Character Handover Code with your Successor:</div>
-                    <p class="mt-0.5 text-[11px] text-slate-600">
+                    <div class="font-bold text-foreground">Share this 6-Character Handover Code with your Successor:</div>
+                    <p class="mt-0.5 text-xs text-muted-foreground">
                         You remain full Club Adviser until {{ outgoing.to_name }} signs in and confirms this code.
                     </p>
                 </div>
 
                 <div class="flex items-center gap-2">
-                    <code class="rounded-xl border border-[#0384C5]/40 bg-white px-4 py-2 font-mono text-lg font-extrabold tracking-widest text-[#0384C5]">
+                    <code class="rounded-lg border border-primary/40 bg-card px-3.5 py-1.5 font-mono text-base font-extrabold tracking-widest text-primary">
                         {{ outgoing.confirmation_code }}
                     </code>
                     <button
                         type="button"
                         @click="copyCode"
-                        class="inline-flex items-center gap-1 rounded-xl border border-black/15 bg-white px-3 py-2 font-semibold text-slate-700 hover:border-[#0384C5]"
+                        class="inline-flex items-center gap-1 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-semibold text-foreground hover:border-primary"
                     >
                         <Copy class="size-3.5" />
                         {{ codeCopied ? 'Copied ✓' : 'Copy' }}
@@ -321,18 +321,18 @@ async function copyCode() {
         <!-- 3. INITIATE ADVISER ROLE SHIFT FORM -->
         <section
             v-if="showInitiateForm && isClubAdviser && !outgoing"
-            class="bento p-6 text-xs text-slate-900"
+            class="bento p-4 text-sm text-foreground"
         >
-            <div class="flex flex-wrap items-start justify-between gap-3 border-b border-black/10 pb-4">
+            <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-3">
                 <div>
-                    <span class="inline-flex items-center gap-1.5 rounded-full bg-[#0384C5]/10 px-3 py-1 text-[11px] font-bold text-[#0384C5]">
+                    <span class="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-bold text-primary">
                         <ShieldCheck class="size-3.5" />
                         Club Adviser Succession &amp; Role Shift Process
                     </span>
-                    <h2 class="font-editorial mt-2 text-lg font-bold text-slate-900">
+                    <h2 class="font-editorial mt-1.5 text-base font-bold text-foreground">
                         Transfer Club Adviser Authority to Incoming Guidance Counselor
                     </h2>
-                    <p class="mt-1 text-slate-600">
+                    <p class="mt-0.5 text-muted-foreground">
                         Select a registered campus Guidance Counselor or invite/create a new Counselor account as fallback. Authority transfers atomically only after your successor confirms the 6-character handover code.
                     </p>
                 </div>
@@ -342,11 +342,11 @@ async function copyCode() {
                         type="button"
                         :disabled="availableCounselors.length === 0"
                         @click="handoverMode = 'existing_counselor'"
-                        class="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition disabled:cursor-not-allowed disabled:opacity-50"
+                        class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-bold transition disabled:cursor-not-allowed disabled:opacity-50"
                         :class="
                             handoverMode === 'existing_counselor'
-                                ? 'bg-[#0384C5] text-white'
-                                : 'border border-black/15 bg-white text-slate-700'
+                                ? 'bg-primary text-primary-foreground'
+                                : 'border border-border bg-card text-foreground'
                         "
                     >
                         <UserCheck class="size-3.5" />
@@ -355,11 +355,11 @@ async function copyCode() {
                     <button
                         type="button"
                         @click="handoverMode = 'invite_new'"
-                        class="inline-flex items-center gap-1.5 rounded-xl px-3 py-1.5 text-xs font-bold transition"
+                        class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-bold transition"
                         :class="
                             handoverMode === 'invite_new'
                                 ? 'bg-[#FF8D06] text-white'
-                                : 'border border-black/15 bg-white text-slate-700'
+                                : 'border border-border bg-card text-foreground'
                         "
                     >
                         <UserPlus class="size-3.5" />
@@ -368,18 +368,18 @@ async function copyCode() {
                 </div>
             </div>
 
-            <form class="mt-4 grid gap-3" @submit.prevent="initiateHandover">
+            <form class="mt-3.5 grid gap-3" @submit.prevent="initiateHandover">
                 <div
                     v-if="handoverMode === 'existing_counselor' && availableCounselors.length > 0"
-                    class="grid gap-2 rounded-2xl border border-[#0384C5]/25 bg-[#FBF6EE] p-4"
+                    class="grid gap-2 rounded-xl border border-primary/25 bg-background/80 p-3.5"
                 >
-                    <label class="block font-bold text-slate-800">
+                    <label class="block font-bold text-foreground">
                         Select Registered Campus Guidance Counselor *
                     </label>
                     <select
                         v-model="selectedMembershipId"
                         required
-                        class="w-full rounded-xl border border-black/15 bg-white px-3 py-2 text-slate-900"
+                        class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
                     >
                         <option
                             v-for="counselor in availableCounselors"
@@ -389,72 +389,72 @@ async function copyCode() {
                             {{ counselor.full_name }} ({{ counselor.email }})
                         </option>
                     </select>
-                    <p class="text-[11px] text-slate-600">
+                    <p class="text-xs text-muted-foreground">
                         Only verified Guidance Counselors on your campus appear here — student officers and members are excluded.
                     </p>
                 </div>
 
-                <div v-else class="grid gap-3 rounded-2xl border border-black/10 bg-[#FBF6EE] p-4">
+                <div v-else class="grid gap-3 rounded-xl border border-border bg-background/80 p-3.5">
                     <div class="grid gap-3 sm:grid-cols-3">
                         <div>
-                            <label class="mb-1 block font-bold text-slate-800">First Name *</label>
-                            <input v-model="newFirstName" required placeholder="e.g. Marco" class="w-full rounded-xl border border-black/15 bg-white px-3 py-2" />
+                            <label class="mb-1 block font-bold text-foreground">First Name *</label>
+                            <input v-model="newFirstName" required placeholder="e.g. Marco" class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground" />
                         </div>
                         <div>
-                            <label class="mb-1 block font-bold text-slate-800">Middle Initial</label>
-                            <input v-model="newMiddleName" placeholder="e.g. L." class="w-full rounded-xl border border-black/15 bg-white px-3 py-2" />
+                            <label class="mb-1 block font-bold text-foreground">Middle Initial</label>
+                            <input v-model="newMiddleName" placeholder="e.g. L." class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground" />
                         </div>
                         <div>
-                            <label class="mb-1 block font-bold text-slate-800">Last Name *</label>
-                            <input v-model="newLastName" required placeholder="e.g. Villanueva" class="w-full rounded-xl border border-black/15 bg-white px-3 py-2" />
+                            <label class="mb-1 block font-bold text-foreground">Last Name *</label>
+                            <input v-model="newLastName" required placeholder="e.g. Villanueva" class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground" />
                         </div>
                     </div>
                     <div class="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         <div>
-                            <label class="mb-1 block font-bold text-slate-800">Counselor Email *</label>
-                            <input v-model="newEmail" type="email" required placeholder="counselor@chmsu.edu.ph" class="w-full rounded-xl border border-black/15 bg-white px-3 py-2" />
+                            <label class="mb-1 block font-bold text-foreground">Counselor Email *</label>
+                            <input v-model="newEmail" type="email" required placeholder="counselor@chmsu.edu.ph" class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground" />
                         </div>
                         <div>
-                            <label class="mb-1 block font-bold text-slate-800">Sex *</label>
-                            <select v-model="newSex" required class="w-full rounded-xl border border-black/15 bg-white px-3 py-2">
+                            <label class="mb-1 block font-bold text-foreground">Sex *</label>
+                            <select v-model="newSex" required class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground">
                                 <option value="" disabled>Select sex...</option>
                                 <option value="Female">Female</option>
                                 <option value="Male">Male</option>
                             </select>
                         </div>
                         <div>
-                            <label class="mb-1 block font-bold text-slate-800">Cellphone No.</label>
-                            <input v-model="newPhone" type="tel" placeholder="0917-555-0200" class="w-full rounded-xl border border-black/15 bg-white px-3 py-2" />
+                            <label class="mb-1 block font-bold text-foreground">Cellphone No.</label>
+                            <input v-model="newPhone" type="tel" placeholder="0917-555-0200" class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground" />
                         </div>
                         <div>
-                            <label class="mb-1 block font-bold text-slate-800">Initial Sign-In Password * (min 8)</label>
-                            <input v-model="newInitialPassword" type="password" minlength="8" required class="w-full rounded-xl border border-black/15 bg-white px-3 py-2" />
+                            <label class="mb-1 block font-bold text-foreground">Initial Sign-In Password * (min 8)</label>
+                            <input v-model="newInitialPassword" type="password" minlength="8" required class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground" />
                         </div>
                     </div>
                 </div>
 
                 <div class="grid gap-3 sm:grid-cols-2">
                     <div>
-                        <label class="mb-1 block font-bold text-slate-800">Your Current Adviser Password * (Authorize Transfer)</label>
+                        <label class="mb-1 block font-bold text-foreground">Your Current Adviser Password * (Authorize Transfer)</label>
                         <input
                             v-model="currentPassword"
                             type="password"
                             required
                             placeholder="Verify your password..."
-                            class="w-full rounded-xl border border-black/15 bg-white px-3 py-2"
+                            class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
                         />
                     </div>
                     <div>
-                        <label class="mb-1 block font-bold text-slate-800">Handover Notes (Optional)</label>
+                        <label class="mb-1 block font-bold text-foreground">Handover Notes (Optional)</label>
                         <input
                             v-model="handoverNotes"
                             placeholder="e.g. Turnover for AY 2026–2027..."
-                            class="w-full rounded-xl border border-black/15 bg-white px-3 py-2"
+                            class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
                         />
                     </div>
                 </div>
 
-                <div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-300/60 bg-amber-50 p-3 text-[11px] text-amber-900">
+                <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-300/60 bg-amber-50 p-3 text-xs text-amber-900">
                     <span class="inline-flex items-center gap-1.5">
                         <ShieldAlert class="size-4 shrink-0 text-amber-700" />
                         Once your successor accepts with the 6-character code, your account transitions to Former Club Adviser with read-only access to Awards, Time Capsules, and Archived GCs, and zero active system control.

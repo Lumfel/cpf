@@ -501,23 +501,23 @@ function printDocument() {
 <template>
     <Head title="Policy & By-Laws — CPF Constitution" />
 
-    <div class="flex min-h-full flex-1 flex-col gap-6 bg-[#FBF6EE] p-4 text-slate-900 md:p-6">
+    <div class="flex min-h-full w-full max-w-none flex-1 flex-col gap-3.5 bg-background p-3 text-foreground md:p-4">
         <!-- Header Card -->
-        <section class="bento p-6">
-            <div class="flex flex-wrap items-start justify-between gap-4">
-                <div class="flex items-start gap-4">
-                    <div class="cpf-logo-badge size-14 shrink-0 overflow-hidden rounded-full border border-[#0384C5]/30 bg-white shadow-xs">
+        <section class="bento p-4">
+            <div class="flex flex-wrap items-start justify-between gap-3">
+                <div class="flex items-start gap-3">
+                    <div class="cpf-logo-badge size-12 shrink-0 overflow-hidden rounded-full border border-primary/30 bg-white shadow-xs">
                         <img src="/cpf_logo.png" alt="Circle of Peer Facilitators Emblem" class="size-full object-cover" />
                     </div>
                     <div>
-                        <span class="inline-flex items-center gap-1.5 rounded-full bg-[#0384C5]/10 px-3 py-1 text-xs font-bold text-[#0384C5]">
+                        <span class="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-bold text-primary">
                             <ScrollText class="size-3.5" />
                             Official Governing Document • Amended November 23, 2023
                         </span>
-                        <h1 class="font-editorial mt-2 text-2xl font-bold text-slate-900">
+                        <h1 class="font-editorial mt-1 text-xl font-bold text-foreground md:text-2xl">
                             Constitution and By-Laws — Circle of Peer Facilitators (CPF)
                         </h1>
-                        <p class="mt-0.5 text-xs text-slate-600">
+                        <p class="mt-0.5 text-sm text-muted-foreground">
                             Carlos Hilado Memorial State University (CHMSU) — Alijis Campus, Bacolod City, Negros Occidental
                         </p>
                     </div>
@@ -525,18 +525,18 @@ function printDocument() {
 
                 <div class="flex flex-wrap items-center gap-2 print:hidden">
                     <div class="relative">
-                        <Search class="pointer-events-none absolute top-2.5 left-3 size-3.5 text-slate-400" />
+                        <Search class="pointer-events-none absolute top-2.5 left-3 size-3.5 text-muted-foreground" />
                         <input
                             v-model="searchQuery"
                             type="text"
                             placeholder="Search articles, roles, sections..."
-                            class="w-60 rounded-xl border border-black/15 bg-white py-2 pr-3 pl-8 text-xs text-slate-900 focus:border-[#0384C5] focus:outline-none"
+                            class="w-60 rounded-lg border border-border bg-card py-1.5 pr-3 pl-8 text-sm text-foreground focus:border-primary focus:outline-none"
                         />
                     </div>
                     <button
                         type="button"
                         @click="printDocument"
-                        class="inline-flex items-center gap-1.5 rounded-xl border border-[#0384C5]/35 bg-[#0384C5]/10 px-3.5 py-2 text-xs font-bold text-[#0384C5] hover:bg-[#0384C5] hover:text-white"
+                        class="inline-flex items-center gap-1.5 rounded-lg border border-primary/35 bg-primary/10 px-3 py-1.5 text-sm font-bold text-primary hover:bg-primary hover:text-primary-foreground"
                     >
                         <Printer class="size-3.5" />
                         Print / Save PDF
@@ -544,23 +544,23 @@ function printDocument() {
                 </div>
             </div>
 
-            <div class="mt-4 rounded-2xl border border-[#FF8D06]/30 bg-[#FFF8EC] px-4 py-3 text-center text-xs font-semibold text-slate-800 italic">
+            <div class="mt-3 rounded-xl border border-[#FF8D06]/30 bg-background/80 px-3.5 py-2.5 text-center text-sm font-semibold text-foreground italic">
                 “A Person is of More Value Than the Whole World”
             </div>
         </section>
 
         <!-- 2-Column Index & Full Constitution Text -->
-        <div class="grid gap-6 lg:grid-cols-[260px_1fr]">
+        <div class="grid gap-3.5 lg:grid-cols-[240px_1fr]">
             <!-- Sticky Table of Contents -->
-            <aside class="bento hidden h-fit p-4 lg:sticky lg:top-4 lg:block print:hidden">
-                <div class="flex items-center gap-2 border-b border-black/10 pb-2.5 text-xs font-bold text-slate-900 uppercase">
-                    <BookOpen class="size-3.5 text-[#0384C5]" />
+            <aside class="bento hidden h-fit p-3.5 lg:sticky lg:top-4 lg:block print:hidden">
+                <div class="flex items-center gap-2 border-b border-border pb-2 text-xs font-bold text-foreground uppercase">
+                    <BookOpen class="size-3.5 text-primary" />
                     Articles Index
                 </div>
-                <nav class="mt-2.5 flex max-h-[70vh] flex-col gap-1 overflow-y-auto pr-1 text-xs">
+                <nav class="mt-2 flex max-h-[72vh] flex-col gap-0.5 overflow-y-auto pr-1 text-sm">
                     <a
                         href="#preamble"
-                        class="rounded-lg px-2.5 py-1.5 font-semibold text-slate-700 hover:bg-[#0384C5]/10 hover:text-[#0384C5]"
+                        class="rounded-lg px-2.5 py-1.5 font-semibold text-foreground hover:bg-primary/10 hover:text-primary"
                     >
                         Preamble
                     </a>
@@ -568,26 +568,26 @@ function printDocument() {
                         v-for="art in articles"
                         :key="`toc-${art.id}`"
                         :href="`#${art.id}`"
-                        class="rounded-lg px-2.5 py-1.5 text-slate-700 hover:bg-[#0384C5]/10 hover:text-[#0384C5]"
+                        class="rounded-lg px-2.5 py-1.5 text-foreground hover:bg-primary/10 hover:text-primary"
                     >
-                        <span class="font-bold text-[#0384C5]">{{ art.article }}</span>
-                        <span class="block truncate text-[11px] text-slate-500">{{ art.title }}</span>
+                        <span class="font-bold text-primary">{{ art.article }}</span>
+                        <span class="block truncate text-xs text-muted-foreground">{{ art.title }}</span>
                     </a>
                 </nav>
             </aside>
 
             <!-- Document Body -->
-            <div class="flex flex-col gap-5">
+            <div class="flex flex-col gap-3.5">
                 <!-- Preamble -->
                 <article
                     v-if="showPreamble"
                     id="preamble"
-                    class="bento scroll-mt-4 p-6"
+                    class="bento scroll-mt-4 p-4"
                 >
-                    <h2 class="font-editorial text-lg font-bold tracking-wide text-[#0384C5]">
+                    <h2 class="font-editorial text-base font-bold tracking-wide text-primary">
                         PREAMBLE
                     </h2>
-                    <p class="mt-3 text-sm leading-relaxed text-slate-800">
+                    <p class="mt-2 text-sm leading-relaxed text-foreground">
                         {{ preamble.text }}
                     </p>
                 </article>
@@ -595,7 +595,7 @@ function printDocument() {
                 <!-- Articles I through XVII -->
                 <div
                     v-if="!showPreamble && filteredArticles.length === 0"
-                    class="bento p-8 text-center text-xs text-slate-500"
+                    class="bento p-6 text-center text-sm text-muted-foreground"
                 >
                     No matching Constitution articles or sections found for “{{ searchQuery }}”.
                 </div>
@@ -604,46 +604,46 @@ function printDocument() {
                     v-for="art in filteredArticles"
                     :key="art.id"
                     :id="art.id"
-                    class="bento scroll-mt-4 p-6"
+                    class="bento scroll-mt-4 p-4"
                 >
-                    <div class="border-b border-black/10 pb-3">
-                        <div class="text-xs font-extrabold tracking-widest text-[#0384C5] uppercase">
+                    <div class="border-b border-border pb-2.5">
+                        <div class="text-xs font-extrabold tracking-widest text-primary uppercase">
                             {{ art.article }}
                         </div>
-                        <h2 class="font-editorial mt-1 text-lg font-bold text-slate-900">
+                        <h2 class="font-editorial mt-0.5 text-base font-bold text-foreground">
                             {{ art.title }}
                         </h2>
                     </div>
 
-                    <div class="mt-4 space-y-4 text-sm leading-relaxed text-slate-800">
+                    <div class="mt-3 space-y-3 text-sm leading-relaxed text-foreground">
                         <div
                             v-for="(sec, sIdx) in art.sections"
                             :key="`${art.id}-sec-${sIdx}`"
                             class="space-y-1.5"
                         >
-                            <h3 v-if="sec.heading" class="font-bold text-slate-900">
+                            <h3 v-if="sec.heading" class="font-bold text-foreground">
                                 {{ sec.heading }}
                             </h3>
-                            <p v-if="sec.body" class="text-slate-700">
+                            <p v-if="sec.body" class="text-muted-foreground">
                                 {{ sec.body }}
                             </p>
                             <template v-if="sec.paragraphs">
                                 <p
                                     v-for="(para, pIdx) in sec.paragraphs"
                                     :key="`${art.id}-p-${sIdx}-${pIdx}`"
-                                    class="text-slate-700"
-                                    :class="pIdx === sec.paragraphs.length - 1 && art.id === 'article-xvii' ? 'pt-3 font-bold text-slate-900' : ''"
+                                    class="text-muted-foreground"
+                                    :class="pIdx === sec.paragraphs.length - 1 && art.id === 'article-xvii' ? 'pt-2 font-bold text-foreground' : ''"
                                 >
                                     {{ para }}
                                 </p>
                             </template>
-                            <ul v-if="sec.items" class="mt-1.5 space-y-1.5 pl-4 text-slate-700">
+                            <ul v-if="sec.items" class="mt-1.5 space-y-1.5 pl-4 text-muted-foreground">
                                 <li
                                     v-for="(item, iIdx) in sec.items"
                                     :key="`${art.id}-item-${sIdx}-${iIdx}`"
                                     class="flex gap-2"
                                 >
-                                    <span class="shrink-0 font-bold text-[#0384C5]">{{ item.label }}</span>
+                                    <span class="shrink-0 font-bold text-primary">{{ item.label }}</span>
                                     <span>{{ item.text }}</span>
                                 </li>
                             </ul>

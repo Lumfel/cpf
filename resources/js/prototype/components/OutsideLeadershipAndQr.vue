@@ -63,7 +63,7 @@ const counselors = [
                     :key="off.name"
                     class="rounded-2xl border border-black/10 bg-white p-4 transition hover:-translate-y-0.5 hover:shadow-sm"
                 >
-                    <span class="rounded-full bg-[#FF8D06]/15 px-2.5 py-0.5 text-[11px] font-bold text-[#FF8D06]">
+                    <span class="rounded-full bg-[#FF8D06]/15 px-2.5 py-0.5 text-xs font-bold text-[#FF8D06]">
                         {{ off.role }}
                     </span>
                     <h3 class="mt-2 text-sm font-bold text-slate-900">{{ off.name }}</h3>
@@ -108,7 +108,7 @@ const counselors = [
                     class="flex flex-col items-center rounded-3xl border border-black/15 bg-white p-6 text-center shadow-sm transition-all"
                     :class="qrDeviceMode === 'mobile' ? 'w-full max-w-[300px]' : 'w-full max-w-md'"
                 >
-                    <span class="rounded-full bg-[#1A8F26]/10 px-3 py-1 text-[11px] font-bold text-[#1A8F26]">
+                    <span class="rounded-full bg-[#1A8F26]/10 px-3 py-1 text-xs font-bold text-[#1A8F26]">
                         CHMSU Talisay • Verified Peer ID
                     </span>
                     <h3 class="mt-2 text-base font-bold text-slate-900">Reyes, Katrina M.</h3>
@@ -119,7 +119,7 @@ const counselors = [
                         <QrCode class="size-28 text-slate-900" />
                     </div>
 
-                    <p class="text-[11px] text-slate-500">
+                    <p class="text-xs text-slate-500">
                         Present this centered QR code at CPF events or Drop-In Lounge shifts for offline/online scanning.
                     </p>
                 </div>

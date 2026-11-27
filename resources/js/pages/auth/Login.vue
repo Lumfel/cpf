@@ -17,7 +17,7 @@ import {
 } from '@/components/ui/input-otp';
 import { Label } from '@/components/ui/label';
 import { Spinner } from '@/components/ui/spinner';
-import { register } from '@/routes';
+import { home } from '@/routes';
 import { store } from '@/routes/login';
 import { request } from '@/routes/password';
 
@@ -173,8 +173,8 @@ function submitPasskeyCode() {
 
             <div class="text-center text-xs text-muted-foreground">
                 New to Circle of Peer Facilitators?
-                <TextLink :href="register()" :tabindex="5" class="font-semibold text-[#0384C5] dark:text-[#4AA8D8]">
-                    Create an account
+                <TextLink :href="home()" :tabindex="5" class="font-semibold text-[#0384C5] dark:text-[#4AA8D8]">
+                    Apply for membership
                 </TextLink>
             </div>
         </Form>
@@ -197,7 +197,7 @@ function submitPasskeyCode() {
 
         <div class="grid gap-2">
             <Label for="passkey_code_otp">12-Character Passkey Code</Label>
-            <p class="text-[11px] text-muted-foreground">
+            <p class="text-xs text-muted-foreground">
                 First time signing in with an officer-issued passkey code? Enter it below (e.g. <span class="font-mono font-semibold">TQ2Z-R5WZ-VIDD</span>) — you&apos;ll create your own personal password right after.
             </p>
             <div class="flex justify-center pt-1">

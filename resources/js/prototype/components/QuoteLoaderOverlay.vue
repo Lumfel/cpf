@@ -65,7 +65,7 @@ onMounted(() => {
                     <Sparkles class="size-5" />
                 </div>
 
-                <p class="mt-3 text-[11px] font-bold tracking-widest text-[#0384C5] uppercase">
+                <p class="mt-3 text-xs font-bold tracking-widest text-[#0384C5] uppercase">
                     Loading CPF Workspace
                 </p>
 

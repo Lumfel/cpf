@@ -166,7 +166,7 @@ const fallbackPending: CampusMembershipRecord[] = props.pendingApplications.leng
                         <h1 class="text-sm font-bold tracking-tight text-slate-900 md:text-base">
                             Circle of Peer Facilitators
                         </h1>
-                        <p class="text-[11px] text-slate-600">
+                        <p class="text-xs text-slate-600">
                             {{ fallbackCampus.name }} • Open Vue 3 Prototype (No Login)
                         </p>
                     </div>

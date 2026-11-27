@@ -84,7 +84,7 @@
   -webkit-backdrop-filter: blur(28px) saturate(160%);
   border: 1px solid var(--cpf-glass-border);
   box-shadow: var(--cpf-shadow-backdrop);
-  border-radius: 26px;
+  border-radius: 14px;
   transition: border-color 0.28s ease, box-shadow 0.36s var(--ease-spring), transform 0.36s var(--ease-spring);
 }
 .bento:hover,
@@ -100,7 +100,7 @@
 
 .bento-btn {
   background: var(--cpf-orange); color: #FFFFFF; border: 1.5px solid var(--cpf-orange);
-  border-radius: 999px; padding: 10px 20px; font-size: 12px; font-weight: 700; cursor: pointer;
+  border-radius: 10px; padding: 7px 14px; font-size: 13.5px; line-height: 1.35; font-weight: 700; cursor: pointer;
   display: inline-flex; align-items: center; justify-content: center; gap: 6px;
   transition: background-color 0.2s ease, color 0.2s ease, transform 0.28s var(--ease-spring);
 }
@@ -113,7 +113,7 @@
   background: rgba(255, 255, 255, 0.90);
   backdrop-filter: blur(18px);
   border: 1px solid rgba(15, 23, 42, 0.08);
-  border-radius: 22px;
+  border-radius: 14px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -705,16 +705,8 @@ html.cpf-theme-fallback-transition .cpf-bento {
   }
 }
 
-/* Balanced visual scale: keep body/chat legible and prevent oversized chrome */
+/* Balanced visual scale: enforce 14px body floor and 12.8px (12.5–13px) caption/badge floor */
 .cpf-soft-cream {
   font-size: 14px;
   line-height: 1.5;
-}
-.cpf-soft-cream .text-\[10px\] {
-  font-size: 0.72rem;
-  line-height: 1.35;
-}
-.cpf-soft-cream .text-\[11px\] {
-  font-size: 0.78rem;
-  line-height: 1.4;
 }

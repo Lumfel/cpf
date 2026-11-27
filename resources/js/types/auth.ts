@@ -93,6 +93,8 @@ export type AuthPermissions = {
 
 export type SystemBootstrapState = {
     needsAdviserSetup: boolean;
+    mandatoryTourEnabled?: boolean;
+    exemptFromMandatoryTour?: boolean;
     activeCampus: CampusSummary | null;
     campuses: Array<{
         id: number;

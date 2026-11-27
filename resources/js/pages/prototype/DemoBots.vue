@@ -64,14 +64,14 @@ async function runBot(kind: 'gc' | 'election' | 'awarding' | 'reset') {
 <template>
     <Head title="Prototype Demo Bots" />
 
-    <div class="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 md:p-6">
-        <div class="bento flex flex-wrap items-center justify-between gap-4 p-5">
+    <div class="flex w-full max-w-none flex-col gap-3.5 p-3 md:p-4">
+        <div class="bento flex flex-wrap items-center justify-between gap-3.5 p-4">
             <div>
                 <div class="inline-flex items-center gap-2 rounded-full bg-amber-500/15 px-3 py-1 text-xs font-bold text-amber-600 dark:text-amber-300">
                     <ShieldAlert class="size-3.5" />
                     DEV-ONLY PROTOTYPE SANDBOX • DISABLED IN PRODUCTION
                 </div>
-                <h1 class="mt-2 font-editorial text-2xl font-bold text-foreground">
+                <h1 class="mt-1.5 font-editorial text-xl font-bold text-foreground md:text-2xl">
                     CPF Interactive Demo Bot Runner — {{ campusName }}
                 </h1>
                 <p class="mt-1 text-sm text-muted-foreground">
@@ -82,7 +82,7 @@ async function runBot(kind: 'gc' | 'election' | 'awarding' | 'reset') {
             <div class="flex items-center gap-2">
                 <Link
                     href="/dashboard"
-                    class="rounded-xl border border-border bg-card px-3.5 py-2 text-xs font-semibold text-foreground transition hover:border-primary/40"
+                    class="rounded-xl border border-border bg-card px-3.5 py-2 text-sm font-semibold text-foreground transition hover:border-primary/40"
                 >
                     Back to Dashboard
                 </Link>
@@ -90,7 +90,7 @@ async function runBot(kind: 'gc' | 'election' | 'awarding' | 'reset') {
                     type="button"
                     :disabled="busy !== null"
                     @click="runBot('reset')"
-                    class="inline-flex items-center gap-1.5 rounded-xl border border-destructive/30 bg-destructive/10 px-3.5 py-2 text-xs font-semibold text-destructive transition hover:bg-destructive hover:text-white disabled:opacity-50"
+                    class="inline-flex items-center gap-1.5 rounded-xl border border-destructive/30 bg-destructive/10 px-3.5 py-2 text-sm font-semibold text-destructive transition hover:bg-destructive hover:text-white disabled:opacity-50"
                 >
                     <RotateCcw class="size-3.5" />
                     Reset Demo Data
@@ -100,14 +100,14 @@ async function runBot(kind: 'gc' | 'election' | 'awarding' | 'reset') {
 
         <div
             v-if="banner"
-            class="rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm font-medium text-foreground"
+            class="rounded-xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm font-medium text-foreground"
         >
             {{ banner }}
         </div>
 
-        <div class="grid gap-5 lg:grid-cols-3">
+        <div class="grid gap-4 lg:grid-cols-3">
             <!-- 1. GC Bot -->
-            <section class="bento flex flex-col justify-between gap-4 p-5">
+            <section class="bento flex flex-col justify-between gap-4 p-4">
                 <div>
                     <div class="flex items-center gap-2 text-base font-bold text-foreground">
                         <MessageSquare class="size-5 text-[#0384C5]" />
@@ -147,7 +147,7 @@ async function runBot(kind: 'gc' | 'election' | 'awarding' | 'reset') {
             </section>
 
             <!-- 2. Election Bot -->
-            <section class="bento flex flex-col justify-between gap-4 p-5">
+            <section class="bento flex flex-col justify-between gap-4 p-4">
                 <div>
                     <div class="flex items-center gap-2 text-base font-bold text-foreground">
                         <Vote class="size-5 text-[#FF8D06]" />
@@ -181,14 +181,14 @@ async function runBot(kind: 'gc' | 'election' | 'awarding' | 'reset') {
             </section>
 
             <!-- 3. Awarding Preview Bot -->
-            <section class="bento flex flex-col justify-between gap-4 p-5">
+            <section class="bento flex flex-col justify-between gap-4 p-4">
                 <div>
                     <div class="flex items-center justify-between gap-2">
                         <div class="flex items-center gap-2 text-base font-bold text-foreground">
                             <Award class="size-5 text-[#1A8F26]" />
                             3. Awarding Preview
                         </div>
-                        <span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-bold text-amber-600 dark:text-amber-300">
+                        <span class="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-bold text-amber-600 dark:text-amber-300">
                             DEFERRED PREVIEW
                         </span>
                     </div>

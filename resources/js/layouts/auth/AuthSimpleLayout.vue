@@ -74,15 +74,15 @@ const themeChoices = [
         </div>
 
         <!-- Centered Frosted CPF Bento Auth Card -->
-        <div class="bento relative z-10 w-full max-w-md p-7 sm:p-8">
-            <div class="flex flex-col gap-7">
-                <div class="flex flex-col items-center gap-3 text-center">
+        <div class="bento relative z-10 w-full max-w-md p-5 sm:p-6">
+            <div class="flex flex-col gap-5">
+                <div class="flex flex-col items-center gap-2.5 text-center">
                     <Link
                         :href="home()"
                         class="group flex flex-col items-center gap-2"
                     >
                         <div
-                            class="cpf-logo-badge size-16 overflow-hidden rounded-full border-2 border-[#0384C5]/35 bg-white p-0.5 shadow-sm transition duration-300 group-hover:scale-105 dark:border-[#56B4E3]/45"
+                            class="cpf-logo-badge size-14 overflow-hidden rounded-full border-2 border-[#0384C5]/35 bg-white p-0.5 shadow-sm transition duration-300 group-hover:scale-105 dark:border-[#56B4E3]/45"
                         >
                             <img
                                 src="/cpf_logo.png"
@@ -91,14 +91,14 @@ const themeChoices = [
                             />
                         </div>
                         <span
-                            class="rounded-full bg-[#0384C5]/10 px-3 py-0.5 text-[11px] font-bold tracking-wide text-[#0384C5] dark:bg-[#4AA8D8]/15 dark:text-[#4AA8D8]"
+                            class="rounded-full bg-[#0384C5]/10 px-3 py-0.5 text-xs font-bold tracking-wide text-[#0384C5] dark:bg-[#4AA8D8]/15 dark:text-[#4AA8D8]"
                         >
                             Circle of Peer Facilitators
                         </span>
                     </Link>
 
-                    <div class="space-y-1.5">
-                        <h1 class="font-editorial text-2xl font-bold tracking-tight text-foreground">
+                    <div class="space-y-1">
+                        <h1 class="font-editorial text-xl font-bold tracking-tight text-foreground md:text-2xl">
                             {{ title }}
                         </h1>
                         <p class="text-sm text-muted-foreground">

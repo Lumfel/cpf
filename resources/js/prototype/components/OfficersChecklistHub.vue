@@ -340,20 +340,19 @@ function updateRole(member: CampusMembershipRecord, role: string) {
                     >
                         <div class="flex items-center gap-3">
                             <div
-                                class="flex size-9 shrink-0 flex-col items-center justify-center rounded-xl text-xs font-bold"
+                                class="flex size-9 shrink-0 items-center justify-center rounded-xl text-xs font-bold"
                                 :class="m.is_in_messenger_gc ? 'bg-[#1A8F26] text-white' : 'bg-[#F3EBDD] text-slate-800'"
                             >
-                                {{ m.full_name_last_first_mi.charAt(0).toUpperCase() }}
-                                <span class="text-[9px] opacity-75">#{{ idx + 1 }}</span>
+                                #{{ idx + 1 }}
                             </div>
                             <div>
                                 <div class="flex flex-wrap items-center gap-1.5">
                                     <span class="text-sm font-bold text-slate-900">{{ m.full_name_last_first_mi }}</span>
-                                    <span class="rounded-full bg-[#0384C5]/10 px-2 py-0.5 text-[10px] font-bold text-[#0384C5] uppercase">
+                                    <span class="rounded-full bg-[#0384C5]/10 px-2 py-0.5 text-xs font-bold text-[#0384C5] uppercase">
                                         {{ m.role }}
                                     </span>
                                 </div>
-                                <div class="text-xs text-slate-600">
+                                <div class="text-sm text-slate-600">
                                     {{ m.course_year_section }} • <strong>FB:</strong> {{ m.active_fb_account }}
                                 </div>
                             </div>
@@ -364,7 +363,7 @@ function updateRole(member: CampusMembershipRecord, role: string) {
                                 v-if="isAdviser"
                                 :value="m.role"
                                 @change="updateRole(m, ($event.target as HTMLSelectElement).value)"
-                                class="rounded-xl border border-black/15 bg-white px-2 py-1 text-[11px] font-semibold"
+                                class="rounded-xl border border-black/15 bg-white px-2.5 py-1.5 text-xs font-semibold"
                             >
                                 <option value="adviser">Adviser</option>
                                 <option value="president">President</option>

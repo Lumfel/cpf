@@ -18,14 +18,15 @@ const { isCurrentUrl } = useCurrentUrl();
 </script>
 
 <template>
-    <SidebarGroup class="px-2 py-0">
-        <SidebarGroupLabel>Platform</SidebarGroupLabel>
-        <SidebarMenu>
+    <SidebarGroup class="px-1.5 py-0">
+        <SidebarGroupLabel class="h-7 px-2 text-xs font-semibold">Platform</SidebarGroupLabel>
+        <SidebarMenu class="gap-0.5">
             <SidebarMenuItem v-for="item in items" :key="item.title">
                 <SidebarMenuButton
                     as-child
                     :is-active="isCurrentUrl(item.href)"
                     :tooltip="item.title"
+                    class="h-8 px-2.5 py-1.5 text-sm"
                 >
                     <Link :href="item.href">
                         <component :is="item.icon" />

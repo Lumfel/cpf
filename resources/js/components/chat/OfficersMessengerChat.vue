@@ -401,55 +401,55 @@ async function sendMessage() {
 </script>
 
 <template>
-    <div class="overflow-hidden rounded-2xl border border-black/10 bg-white/95 shadow-sm backdrop-blur-md">
-        <div class="grid min-h-[460px] md:grid-cols-[270px_1fr]">
+    <div class="overflow-hidden rounded-[14px] border border-border bg-card text-foreground shadow-sm backdrop-blur-md">
+        <div class="grid h-[calc(100vh-8.5rem)] min-h-[480px] md:grid-cols-[240px_1fr]">
             <!-- LEFT SIDEBAR: MESSENGER CHAT THREADS LIST -->
-            <aside class="flex flex-col border-b border-black/10 bg-[#FBF6EE]/75 md:border-r md:border-b-0">
-                <div class="border-b border-black/10 p-4">
+            <aside class="flex min-h-0 flex-col border-b border-border bg-muted/40 md:border-r md:border-b-0">
+                <div class="border-b border-border p-3">
                     <div class="flex items-center justify-between gap-2">
                         <div class="flex items-center gap-2">
-                            <MessageCircle class="size-5 text-[#0384C5]" />
-                            <h2 class="text-base font-bold text-slate-900">Chats</h2>
+                            <MessageCircle class="size-4 text-primary" />
+                            <h2 class="text-base font-bold text-foreground">Chats</h2>
                         </div>
-                        <span class="rounded-full bg-[#1A8F26]/12 px-2 py-0.5 text-[10px] font-bold text-[#1A8F26]">
+                        <span class="rounded-full bg-[#1A8F26]/12 px-2 py-0.5 text-xs font-bold text-[#1A8F26]">
                             Alijis Active
                         </span>
                     </div>
 
                     <!-- Messenger-style Thread Search -->
-                    <div class="relative mt-3">
-                        <Search class="pointer-events-none absolute top-2.5 left-3 size-3.5 text-slate-400" />
+                    <div class="relative mt-2.5">
+                        <Search class="pointer-events-none absolute top-2.5 left-2.5 size-3.5 text-muted-foreground" />
                         <input
                             v-model="threadSearch"
                             type="text"
-                            placeholder="Search campus groups..."
-                            class="w-full rounded-full border border-black/10 bg-white py-1.5 pr-3 pl-8 text-xs text-slate-800 focus:border-[#0384C5] focus:outline-none"
+                            placeholder="Search groups..."
+                            class="w-full rounded-lg border border-border bg-card py-1.5 pr-2.5 pl-8 text-sm text-foreground focus:border-primary focus:outline-none"
                         />
                     </div>
                 </div>
 
-                <div class="flex-1 space-y-1 p-2.5">
+                <div class="flex-1 space-y-1 overflow-y-auto p-2">
                     <!-- ACTIVE THREAD 1: MAIN OFFICERS GC (ALIJIS) -->
                     <button
                         v-if="!hideOfficersGc"
                         type="button"
                         @click="switchThread('officers')"
-                        class="flex w-full items-center gap-3 rounded-xl p-2.5 text-left transition"
-                        :class="activeThread === 'officers' ? 'bg-[#0384C5]/12' : 'hover:bg-black/5'"
+                        class="flex w-full items-center gap-2.5 rounded-xl p-2 text-left transition"
+                        :class="activeThread === 'officers' ? 'bg-primary/12' : 'hover:bg-accent/60'"
                     >
-                        <div class="relative flex size-11 shrink-0 items-center justify-center rounded-full bg-[#0384C5] text-xs font-extrabold text-white shadow-xs">
+                        <div class="relative flex size-9 shrink-0 items-center justify-center rounded-full bg-[#0384C5] text-xs font-extrabold text-white shadow-xs">
                             <span>AL</span>
-                            <span class="absolute right-0 bottom-0 size-3 rounded-full border-2 border-white bg-[#1A8F26]" />
+                            <span class="absolute right-0 bottom-0 size-2.5 rounded-full border-2 border-card bg-[#1A8F26]" />
                         </div>
                         <div class="min-w-0 flex-1">
                             <div class="flex items-center justify-between gap-1">
-                                <span class="truncate text-xs font-bold text-slate-900">Main Officers GC</span>
-                                <span class="shrink-0 text-[10px] font-bold text-[#1A8F26]">Active</span>
+                                <span class="truncate text-sm font-bold text-foreground">Main Officers GC</span>
+                                <span class="shrink-0 text-xs font-bold text-[#1A8F26]">Active</span>
                             </div>
-                            <div class="text-[10px] font-semibold text-[#0384C5]">
+                            <div class="truncate text-xs font-semibold text-primary">
                                 {{ campusName }}
                             </div>
-                            <p class="mt-0.5 truncate text-[11px] text-slate-500">
+                            <p class="mt-0.5 truncate text-xs text-muted-foreground">
                                 {{ latestOfficerPreview }}
                             </p>
                         </div>
@@ -459,41 +459,41 @@ async function sendMessage() {
                     <button
                         type="button"
                         @click="switchThread('counselors')"
-                        class="flex w-full items-center gap-3 rounded-xl p-2.5 text-left transition"
+                        class="flex w-full items-center gap-2.5 rounded-xl p-2 text-left transition"
                         :class="[
                             activeThread === 'counselors'
-                                ? 'bg-[#1A8F26]/12'
+                                ? 'bg-[#1A8F26]/14'
                                 : canAccessCounselorGc
-                                  ? 'hover:bg-black/5'
-                                  : 'opacity-70 hover:bg-black/5',
+                                  ? 'hover:bg-accent/60'
+                                  : 'opacity-70 hover:bg-accent/60',
                         ]"
                     >
                         <div
-                            class="relative flex size-11 shrink-0 items-center justify-center rounded-full text-xs font-extrabold shadow-xs"
-                            :class="canAccessCounselorGc ? 'bg-[#1A8F26] text-white' : 'bg-slate-200 text-slate-600'"
+                            class="relative flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-extrabold shadow-xs"
+                            :class="canAccessCounselorGc ? 'bg-[#1A8F26] text-white' : 'bg-muted text-muted-foreground'"
                         >
-                            <HeartHandshake class="size-5" />
+                            <HeartHandshake class="size-4" />
                             <span
                                 v-if="!canAccessCounselorGc"
-                                class="absolute -right-0.5 -bottom-0.5 flex size-4 items-center justify-center rounded-full bg-white shadow-xs"
+                                class="absolute -right-0.5 -bottom-0.5 flex size-4 items-center justify-center rounded-full bg-card shadow-xs"
                             >
-                                <Lock class="size-2.5 text-slate-500" />
+                                <Lock class="size-2.5 text-muted-foreground" />
                             </span>
                         </div>
                         <div class="min-w-0 flex-1">
                             <div class="flex items-center justify-between gap-1">
-                                <span class="truncate text-xs font-bold text-slate-900">Counselors Private GC</span>
+                                <span class="truncate text-sm font-bold text-foreground">Counselors Private GC</span>
                                 <span
                                     v-if="canAccessCounselorGc"
-                                    class="shrink-0 text-[10px] font-bold text-[#1A8F26]"
+                                    class="shrink-0 text-xs font-bold text-[#1A8F26]"
                                 >
                                     Active
                                 </span>
                             </div>
-                            <div class="text-[10px] font-semibold text-[#1A8F26]">
+                            <div class="truncate text-xs font-semibold text-[#1A8F26]">
                                 {{ campusName }} Guidance
                             </div>
-                            <p class="mt-0.5 truncate text-[11px] text-slate-500">
+                            <p class="mt-0.5 truncate text-xs text-muted-foreground">
                                 {{ latestCounselorPreview }}
                             </p>
                         </div>
@@ -501,7 +501,7 @@ async function sendMessage() {
 
                     <!-- AUTOMATIC 1-ON-1 COUNSELOR DIRECT CHATS -->
                     <template v-if="canAccessCounselorGc && counselorPeers.length > 0">
-                        <div class="px-2 pt-3 pb-1 text-xs font-bold tracking-wider text-slate-500 uppercase">
+                        <div class="px-2 pt-2.5 pb-1 text-xs font-bold tracking-wider text-muted-foreground uppercase">
                             Direct Counselor Chats
                         </div>
                         <button
@@ -509,24 +509,24 @@ async function sendMessage() {
                             :key="`dm-${peer.user_id}`"
                             type="button"
                             @click="openCounselorDm(peer.user_id)"
-                            class="flex w-full items-center gap-3 rounded-xl p-2.5 text-left transition"
-                            :class="activeThread === 'counselor_dm' && activeDmPeerId === peer.user_id ? 'bg-[#1A8F26]/14' : 'hover:bg-black/5'"
+                            class="flex w-full items-center gap-2.5 rounded-xl p-2 text-left transition"
+                            :class="activeThread === 'counselor_dm' && activeDmPeerId === peer.user_id ? 'bg-[#1A8F26]/14' : 'hover:bg-accent/60'"
                         >
-                            <div class="relative flex size-10 shrink-0 items-center justify-center rounded-full bg-[#1A8F26]/85 text-xs font-extrabold text-white">
+                            <div class="relative flex size-9 shrink-0 items-center justify-center rounded-full bg-[#1A8F26]/85 text-xs font-extrabold text-white">
                                 <span>{{ getInitials(peer.name) }}</span>
-                                <span class="absolute right-0 bottom-0 size-2.5 rounded-full border-2 border-white bg-[#1A8F26]" />
+                                <span class="absolute right-0 bottom-0 size-2.5 rounded-full border-2 border-card bg-[#1A8F26]" />
                             </div>
                             <div class="min-w-0 flex-1">
-                                <div class="truncate text-xs font-bold text-slate-900">{{ peer.name }}</div>
-                                <div class="truncate text-[11px] font-medium text-[#1A8F26]">{{ peer.role_label }}</div>
+                                <div class="truncate text-sm font-bold text-foreground">{{ peer.name }}</div>
+                                <div class="truncate text-xs font-medium text-[#1A8F26]">{{ peer.role_label }}</div>
                             </div>
                         </button>
                     </template>
 
                     <!-- COMING SOON CAMPUS CHANNELS (Hidden for Guidance Counselors) -->
                     <template v-if="!hideOfficersGc">
-                    <div class="px-2 pt-3 pb-1 text-[10px] font-bold tracking-wider text-slate-400 uppercase">
-                        Other Campus Groups (Coming Soon)
+                    <div class="px-2 pt-2.5 pb-1 text-xs font-bold tracking-wider text-muted-foreground uppercase">
+                        Other Campuses
                     </div>
 
                     <button
@@ -534,19 +534,19 @@ async function sendMessage() {
                         :key="group.code"
                         type="button"
                         @click="selectComingSoon(group.title)"
-                        class="flex w-full items-center gap-3 rounded-xl p-2.5 text-left opacity-70 transition hover:bg-black/5 hover:opacity-90"
+                        class="flex w-full items-center gap-2.5 rounded-xl p-2 text-left opacity-75 transition hover:bg-accent/60 hover:opacity-95"
                     >
-                        <div class="relative flex size-10 shrink-0 items-center justify-center rounded-full bg-slate-200 text-xs font-bold text-slate-600">
+                        <div class="relative flex size-9 shrink-0 items-center justify-center rounded-full bg-muted text-xs font-bold text-muted-foreground">
                             <span>{{ group.initials }}</span>
-                            <span class="absolute -right-0.5 -bottom-0.5 flex size-4 items-center justify-center rounded-full bg-white shadow-xs">
-                                <Lock class="size-2.5 text-slate-500" />
+                            <span class="absolute -right-0.5 -bottom-0.5 flex size-4 items-center justify-center rounded-full bg-card shadow-xs">
+                                <Lock class="size-2.5 text-muted-foreground" />
                             </span>
                         </div>
                         <div class="min-w-0 flex-1">
                             <div class="flex items-center justify-between gap-1">
-                                <span class="truncate text-xs font-semibold text-slate-700">{{ group.title }}</span>
+                                <span class="truncate text-sm font-semibold text-foreground">{{ group.title }}</span>
                             </div>
-                            <div class="mt-0.5 flex items-center gap-1 text-[10px] font-medium text-amber-700">
+                            <div class="mt-0.5 flex items-center gap-1 text-xs font-medium text-amber-700 dark:text-amber-300">
                                 <span>Coming Soon</span>
                                 <span>•</span>
                                 <span>On Hold</span>
@@ -558,21 +558,21 @@ async function sendMessage() {
             </aside>
 
             <!-- RIGHT PANE: ACTIVE MESSENGER CONVERSATION -->
-            <div class="flex flex-col bg-white">
+            <div class="flex min-h-0 flex-col bg-card">
                 <!-- Chat Top Header -->
-                <header class="flex flex-wrap items-center justify-between gap-3 border-b border-black/10 px-4 py-3">
-                    <div class="flex items-center gap-3">
+                <header class="flex flex-wrap items-center justify-between gap-2.5 border-b border-border px-4 py-2.5">
+                    <div class="flex items-center gap-2.5">
                         <div
-                            class="relative flex size-10 shrink-0 items-center justify-center rounded-full text-xs font-extrabold text-white"
+                            class="relative flex size-9 shrink-0 items-center justify-center rounded-full text-xs font-extrabold text-white"
                             :class="activeThread === 'counselors' ? 'bg-[#1A8F26]' : 'bg-[#0384C5]'"
                         >
                             <HeartHandshake v-if="activeThread === 'counselors'" class="size-4" />
                             <Users v-else class="size-4" />
-                            <span class="absolute right-0 bottom-0 size-2.5 rounded-full border-2 border-white bg-[#1A8F26]" />
+                            <span class="absolute right-0 bottom-0 size-2.5 rounded-full border-2 border-card bg-[#1A8F26]" />
                         </div>
                         <div>
                             <div class="flex flex-wrap items-center gap-2">
-                                <h3 class="text-sm font-bold text-slate-900">
+                                <h3 class="text-base font-bold text-foreground">
                                     {{
                                         activeThread === 'counselors'
                                             ? `Counselors Private GC — ${campusName}`
@@ -583,12 +583,12 @@ async function sendMessage() {
                                 </h3>
                                 <span
                                     v-if="activeThread === 'officers' && channel?.academic_year"
-                                    class="rounded-full bg-[#F3EBDD] px-2 py-0.5 text-[10px] font-semibold text-slate-700"
+                                    class="rounded-full bg-secondary px-2 py-0.5 text-xs font-semibold text-secondary-foreground"
                                 >
                                     AY {{ channel.academic_year }}
                                 </span>
                             </div>
-                            <p class="text-[11px] text-slate-500">
+                            <p class="text-xs text-muted-foreground">
                                 {{
                                     activeThread === 'counselors'
                                         ? 'Campus Guidance Counselors & Club Adviser confidential channel'
@@ -602,16 +602,16 @@ async function sendMessage() {
                         <Link
                             v-if="showCampusOpsLink"
                             href="/officers-chat"
-                            class="inline-flex items-center gap-1.5 rounded-full border border-[#0384C5]/30 bg-[#FBF6EE] px-3 py-1.5 text-[11px] font-semibold text-[#0384C5] transition hover:bg-[#0384C5] hover:text-white"
+                            class="inline-flex items-center gap-1.5 rounded-lg border border-primary/30 bg-background px-3 py-1.5 text-xs font-semibold text-primary transition hover:bg-primary hover:text-primary-foreground"
                         >
                             <span>Full Officers Chat</span>
-                            <ExternalLink class="size-3" />
+                            <ExternalLink class="size-3.5" />
                         </Link>
                         <button
                             v-if="activeThread === 'officers' && canArchive && channel?.is_active !== false"
                             type="button"
                             @click="requestArchiveConfirmation('officers')"
-                            class="inline-flex items-center gap-1.5 rounded-full border border-red-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-red-700 transition hover:bg-red-50"
+                            class="inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-card px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-50"
                         >
                             <Archive class="size-3.5" />
                             Archive ZIP &amp; Reset
@@ -620,7 +620,7 @@ async function sendMessage() {
                             v-if="activeThread === 'counselors' && canAccessCounselorGc"
                             type="button"
                             @click="requestArchiveConfirmation('counselors')"
-                            class="inline-flex items-center gap-1.5 rounded-full border border-red-300 bg-white px-3 py-1.5 text-[11px] font-semibold text-red-700 transition hover:bg-red-50"
+                            class="inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-card px-3 py-1.5 text-xs font-semibold text-red-700 transition hover:bg-red-50"
                         >
                             <Archive class="size-3.5" />
                             Archive ZIP &amp; Clear
@@ -631,7 +631,7 @@ async function sendMessage() {
                 <!-- Archive Success Banner -->
                 <div
                     v-if="archiveNotice"
-                    class="flex items-center gap-1.5 border-b border-[#1A8F26]/25 bg-[#1A8F26]/10 px-4 py-2 text-[11px] font-semibold text-[#1A8F26]"
+                    class="flex items-center gap-1.5 border-b border-[#1A8F26]/25 bg-[#1A8F26]/10 px-4 py-2 text-xs font-semibold text-[#1A8F26]"
                 >
                     <CheckCircle2 class="size-3.5 shrink-0" />
                     <span>{{ archiveNotice }}</span>
@@ -640,28 +640,28 @@ async function sendMessage() {
                 <!-- Coming Soon Toast Banner -->
                 <div
                     v-if="comingSoonNotice"
-                    class="border-b border-amber-300/60 bg-amber-50 px-4 py-2 text-[11px] font-semibold text-amber-900"
+                    class="border-b border-amber-300/60 bg-amber-50 px-4 py-2 text-xs font-semibold text-amber-900"
                 >
-                    <Lock class="mr-1 inline size-3" />
+                    <Lock class="mr-1 inline size-3.5" />
                     {{ comingSoonNotice }}
                 </div>
 
                 <!-- Scrollable Messenger Bubbles -->
                 <div
                     ref="scrollContainer"
-                    class="flex h-80 flex-1 flex-col gap-3 overflow-y-auto bg-[#FBF6EE]/45 px-4 py-4"
+                    class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto bg-background/55 px-4 py-3.5"
                 >
                     <div
                         v-if="displayedMessages.length === 0"
-                        class="m-auto flex max-w-xs flex-col items-center text-center text-xs text-slate-500"
+                        class="m-auto flex max-w-xs flex-col items-center text-center text-sm text-muted-foreground"
                     >
-                        <div class="mb-2 flex size-12 items-center justify-center rounded-full bg-[#0384C5]/10 text-[#0384C5]">
+                        <div class="mb-2 flex size-12 items-center justify-center rounded-full bg-primary/10 text-primary">
                             <MessageCircle class="size-6" />
                         </div>
-                        <p class="font-bold text-slate-800">
+                        <p class="font-bold text-foreground">
                             {{ activeThread === 'counselors' ? `Counselors GC (${campusName})` : `Main Officers GC (${campusName})` }}
                         </p>
-                        <p class="mt-1 text-[11px] leading-relaxed">
+                        <p class="mt-1 text-xs leading-relaxed">
                             No messages yet. Say hello to start coordinating.
                         </p>
                     </div>
@@ -669,13 +669,13 @@ async function sendMessage() {
                     <div
                         v-for="msg in displayedMessages"
                         :key="`messenger-${activeThread}-${msg.id}`"
-                        class="flex items-end gap-2"
+                        class="flex items-end gap-2.5"
                         :class="isMine(msg) ? 'justify-end' : 'justify-start'"
                     >
                         <!-- Other Avatar -->
                         <div
                             v-if="!isMine(msg)"
-                            class="flex size-7 shrink-0 items-center justify-center rounded-full bg-[#0384C5]/15 text-[10px] font-bold text-[#0384C5]"
+                            class="flex size-8 shrink-0 items-center justify-center rounded-full bg-primary/15 text-xs font-bold text-primary"
                         >
                             {{ getInitials(getSenderName(msg)) }}
                         </div>
@@ -686,26 +686,26 @@ async function sendMessage() {
                         >
                             <div
                                 v-if="!isMine(msg)"
-                                class="mb-0.5 flex flex-wrap items-center gap-1.5 px-1"
+                                class="mb-1 flex flex-wrap items-center gap-1.5 px-1"
                             >
-                                <span class="text-[11px] font-bold text-slate-800">{{ getSenderName(msg) }}</span>
-                                <span class="rounded-full bg-[#0384C5]/10 px-1.5 py-0.5 text-[9px] font-bold text-[#0384C5] uppercase">
+                                <span class="text-xs font-bold text-foreground">{{ getSenderName(msg) }}</span>
+                                <span class="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-bold text-primary uppercase">
                                     {{ msg.sender_role.replace(/_/g, ' ') }}
                                 </span>
                             </div>
 
                             <div
-                                class="whitespace-pre-wrap break-words px-3.5 py-2 text-xs leading-relaxed shadow-2xs"
+                                class="whitespace-pre-wrap break-words px-3.5 py-2 text-sm leading-relaxed shadow-2xs"
                                 :class="
                                     isMine(msg)
-                                        ? 'rounded-2xl rounded-br-sm bg-[#0384C5] text-white'
-                                        : 'rounded-2xl rounded-bl-sm border border-black/10 bg-white text-slate-800'
+                                        ? 'rounded-2xl rounded-br-sm bg-primary text-primary-foreground'
+                                        : 'rounded-2xl rounded-bl-sm border border-border bg-card text-foreground'
                                 "
                             >
                                 {{ msg.message_body }}
                             </div>
 
-                            <span v-if="msg.created_at" class="mt-0.5 px-1 text-[10px] text-slate-400">
+                            <span v-if="msg.created_at" class="mt-0.5 px-1 text-xs text-muted-foreground">
                                 {{ msg.created_at }}
                             </span>
                         </div>
@@ -724,7 +724,7 @@ async function sendMessage() {
                 <form
                     v-if="canSendInCurrentThread"
                     @submit.prevent="sendMessage"
-                    class="flex items-end gap-2 border-t border-black/10 bg-white px-4 py-3"
+                    class="flex items-end gap-2 border-t border-border bg-card px-3.5 py-2.5"
                 >
                     <textarea
                         ref="composerRef"
@@ -738,18 +738,18 @@ async function sendMessage() {
                         "
                         @input="autoResizeComposer"
                         @keydown.enter.exact.prevent="sendMessage"
-                        class="max-h-36 min-w-0 flex-1 resize-none overflow-y-auto rounded-2xl border border-black/15 bg-[#FBF6EE] px-4 py-2 text-xs leading-relaxed text-slate-900 focus:border-[#0384C5] focus:outline-none"
+                        class="max-h-36 min-w-0 flex-1 resize-none overflow-y-auto rounded-xl border border-border bg-background px-3.5 py-2 text-sm leading-relaxed text-foreground focus:border-primary focus:outline-none"
                     />
                     <button
                         type="submit"
                         :disabled="sending || !draft.trim()"
                         aria-label="Send message"
-                        class="inline-flex size-9 shrink-0 items-center justify-center rounded-full bg-[#0384C5] text-white transition hover:bg-[#026da3] disabled:opacity-45"
+                        class="inline-flex size-9 shrink-0 items-center justify-center rounded-xl bg-primary text-primary-foreground transition hover:opacity-90 disabled:opacity-45"
                     >
                         <Send class="size-4" />
                     </button>
                 </form>
-                <div v-else class="border-t border-black/10 bg-[#FBF6EE] px-4 py-3 text-center text-xs text-slate-500">
+                <div v-else class="border-t border-border bg-muted/40 px-4 py-2.5 text-center text-sm text-muted-foreground">
                     No active channel is currently open for messaging.
                 </div>
             </div>
@@ -761,9 +761,9 @@ async function sendMessage() {
             class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/45 p-4 backdrop-blur-sm"
             @click.self="confirmArchiveTarget = null"
         >
-            <div class="w-full max-w-md rounded-2xl border border-black/10 bg-white p-6 text-xs shadow-xl">
-                <div class="flex items-start justify-between gap-3 border-b border-black/10 pb-3">
-                    <div class="flex items-center gap-2 text-sm font-bold text-red-700">
+            <div class="w-full max-w-md rounded-[14px] border border-border bg-card p-4 text-sm text-foreground shadow-xl">
+                <div class="flex items-start justify-between gap-3 border-b border-border pb-2.5">
+                    <div class="flex items-center gap-2 text-base font-bold text-red-700">
                         <AlertTriangle class="size-4 shrink-0" />
                         <span>
                             {{
@@ -776,28 +776,28 @@ async function sendMessage() {
                     <button
                         type="button"
                         @click="confirmArchiveTarget = null"
-                        class="rounded-lg border border-black/10 bg-white p-1 text-slate-600 hover:bg-slate-50"
+                        class="rounded-lg border border-border bg-background p-1 text-muted-foreground hover:text-foreground"
                         aria-label="Close confirmation modal"
                     >
                         <X class="size-4" />
                     </button>
                 </div>
 
-                <p class="mt-3 leading-relaxed text-slate-700">
+                <p class="mt-3 text-sm leading-relaxed text-muted-foreground">
                     <template v-if="confirmArchiveTarget === 'counselors'">
-                        Are you sure? All current messages in <strong>Counselors Private GC</strong> will be exported into a SHA-256 verified ZIP archive and cleared from the live thread.
+                        Are you sure? All current messages in <strong class="text-foreground">Counselors Private GC</strong> will be exported into a SHA-256 verified ZIP archive and cleared from the live thread.
                     </template>
                     <template v-else>
-                        Are you sure? All messages in <strong>Main Officers GC ({{ channel?.academic_year ?? 'Current Term' }})</strong> will be exported into a SHA-256 verified ZIP archive, cleared, and a fresh active channel will immediately open for the next term.
+                        Are you sure? All messages in <strong class="text-foreground">Main Officers GC ({{ channel?.academic_year ?? 'Current Term' }})</strong> will be exported into a SHA-256 verified ZIP archive, cleared, and a fresh active channel will immediately open for the next term.
                     </template>
                 </p>
 
-                <div class="mt-5 flex justify-end gap-2">
+                <div class="mt-4 flex justify-end gap-2">
                     <button
                         type="button"
                         :disabled="archiving"
                         @click="confirmArchiveTarget = null"
-                        class="rounded-xl border border-black/15 bg-white px-4 py-2 font-semibold text-slate-700 hover:bg-slate-50"
+                        class="rounded-lg border border-border bg-background px-3.5 py-2 text-sm font-semibold text-foreground hover:bg-muted"
                     >
                         Cancel
                     </button>
@@ -805,7 +805,7 @@ async function sendMessage() {
                         type="button"
                         :disabled="archiving"
                         @click="confirmArchiveAction"
-                        class="inline-flex items-center gap-1.5 rounded-xl bg-red-600 px-4 py-2 font-bold text-white transition hover:bg-red-700 disabled:opacity-50"
+                        class="inline-flex items-center gap-1.5 rounded-lg bg-red-600 px-3.5 py-2 text-sm font-bold text-white transition hover:bg-red-700 disabled:opacity-50"
                     >
                         <Archive class="size-3.5" />
                         {{

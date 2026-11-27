@@ -31,23 +31,23 @@ function isCurrentUrl(href: NavItem['href']): boolean {
 
 <template>
     <SidebarGroup
-        :class="`group-data-[collapsible=icon]:p-0 ${$props.class || ''}`"
+        :class="`px-1.5 py-0 group-data-[collapsible=icon]:p-0 ${$props.class || ''}`"
     >
         <SidebarGroupContent>
-            <SidebarMenu>
+            <SidebarMenu class="gap-0.5">
                 <SidebarMenuItem v-for="item in items" :key="item.title">
                     <SidebarMenuButton
                         v-if="item.disabled"
                         type="button"
                         disabled
                         aria-disabled="true"
-                        class="cursor-not-allowed text-muted-foreground opacity-80"
+                        class="h-8 cursor-not-allowed px-2.5 py-1.5 text-sm text-muted-foreground opacity-80"
                     >
                         <component :is="item.icon" />
                         <span class="flex-1 truncate">{{ item.title }}</span>
                         <span
                             v-if="item.badge"
-                            class="rounded-full bg-[#0384C5]/10 px-2 py-0.5 text-[10px] font-semibold text-[#0384C5] dark:bg-[#4AA8D8]/15 dark:text-[#4AA8D8]"
+                            class="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-semibold text-primary"
                         >
                             {{ item.badge }}
                         </span>
@@ -57,6 +57,7 @@ function isCurrentUrl(href: NavItem['href']): boolean {
                         :is-active="isCurrentUrl(item.href)"
                         :tooltip="item.title"
                         as-child
+                        class="h-8 px-2.5 py-1.5 text-sm"
                     >
                         <Link :href="item.href">
                             <component :is="item.icon" />
@@ -65,7 +66,7 @@ function isCurrentUrl(href: NavItem['href']): boolean {
                     </SidebarMenuButton>
                     <SidebarMenuButton
                         v-else
-                        class="text-neutral-600 hover:text-neutral-800 dark:text-neutral-300 dark:hover:text-neutral-100"
+                        class="h-8 px-2.5 py-1.5 text-sm text-muted-foreground hover:text-foreground"
                         as-child
                     >
                         <a

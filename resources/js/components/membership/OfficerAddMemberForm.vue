@@ -75,28 +75,28 @@ function submitOfficerAdd() {
 
 <template>
     <div
-        class="mx-auto w-full max-w-3xl rounded-2xl border border-black/10 bg-white p-6 shadow-sm"
+        class="bento w-full max-w-none p-4"
     >
-        <div class="border-b border-black/10 pb-4">
-            <span class="rounded-full bg-[#FF8D06]/15 px-3 py-1 text-xs font-bold text-[#FF8D06]">
+        <div class="border-b border-border pb-3">
+            <span class="rounded-full bg-[#FF8D06]/15 px-2.5 py-0.5 text-xs font-bold text-[#FF8D06]">
                 Authorized Officer Action • {{ verifiedRoleLabel }}
             </span>
-            <h2 class="mt-2 text-xl font-bold text-slate-900">
+            <h2 class="mt-1 text-base font-bold text-foreground">
                 Directly Add &amp; Verify a CPF Member
             </h2>
-            <p class="mt-1 text-xs text-slate-600">
-                Authorized for <strong>Adviser</strong>, <strong>President</strong>, and <strong>Vice President</strong>.
-                Members added here are immediately verified, receive a locked 12-character <strong>Passkey Code</strong> to sign in and create their own personal password, and appear in the A–Z Messenger GC checklist.
+            <p class="mt-0.5 text-sm text-muted-foreground">
+                Authorized for <strong class="text-foreground">Adviser</strong>, <strong class="text-foreground">President</strong>, and <strong class="text-foreground">Vice President</strong>.
+                Members added here are immediately verified, receive a locked 12-character <strong class="text-foreground">Passkey Code</strong> to sign in and create their own personal password, and appear in the A–Z Messenger GC checklist.
             </p>
         </div>
 
-        <form @submit.prevent="submitOfficerAdd" class="mt-6 grid gap-4 sm:grid-cols-2">
+        <form @submit.prevent="submitOfficerAdd" class="mt-4 grid gap-3.5 sm:grid-cols-2">
             <div class="grid gap-2 sm:col-span-2" v-if="isClubAdviser">
                 <Label for="officer_role">Assign Role (Club Adviser Exclusive Authority)</Label>
                 <select
                     id="officer_role"
                     v-model="officerForm.role"
-                    class="rounded-xl border border-black/15 bg-[#FBF6EE] px-3.5 py-2 text-sm text-slate-900"
+                    class="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
                 >
                     <option v-for="r in availableRoles" :key="r.value" :value="r.value">
                         {{ r.label }}
@@ -113,7 +113,7 @@ function submitOfficerAdd() {
                         type="text"
                         required
                         placeholder="e.g. Bea"
-                        class="bg-[#FBF6EE]"
+                        class="bg-background"
                     />
                     <InputError :message="officerForm.errors.first_name" />
                 </div>
@@ -124,7 +124,7 @@ function submitOfficerAdd() {
                         v-model="officerForm.middle_name"
                         type="text"
                         placeholder="e.g. T."
-                        class="bg-[#FBF6EE]"
+                        class="bg-background"
                     />
                     <InputError :message="officerForm.errors.middle_name" />
                 </div>
@@ -136,13 +136,13 @@ function submitOfficerAdd() {
                         type="text"
                         required
                         placeholder="e.g. Villanueva"
-                        class="bg-[#FBF6EE]"
+                        class="bg-background"
                     />
                     <InputError :message="officerForm.errors.last_name" />
                 </div>
             </div>
 
-            <div class="grid gap-4 sm:col-span-2 sm:grid-cols-3">
+            <div class="grid gap-3 sm:col-span-2 sm:grid-cols-3">
                 <div class="grid gap-2">
                     <Label for="add_course">Course / Program *</Label>
                     <Input
@@ -151,7 +151,7 @@ function submitOfficerAdd() {
                         type="text"
                         required
                         placeholder="e.g. BSIS"
-                        class="bg-[#FBF6EE]"
+                        class="bg-background"
                     />
                     <InputError :message="officerForm.errors.course" />
                 </div>
@@ -161,7 +161,7 @@ function submitOfficerAdd() {
                         id="add_year_level"
                         v-model="officerForm.year_level"
                         required
-                        class="h-9 rounded-md border border-black/15 bg-[#FBF6EE] px-3 py-1 text-sm"
+                        class="h-9 rounded-lg border border-border bg-background px-3 py-1 text-sm text-foreground"
                     >
                         <option value="" disabled>Select Year</option>
                         <option value="1">1st Year</option>
@@ -180,7 +180,7 @@ function submitOfficerAdd() {
                         type="text"
                         required
                         placeholder="e.g. A"
-                        class="bg-[#FBF6EE]"
+                        class="bg-background"
                     />
                     <InputError :message="officerForm.errors.section" />
                 </div>
@@ -193,7 +193,7 @@ function submitOfficerAdd() {
                     v-model="officerForm.birthdate"
                     type="date"
                     required
-                    class="bg-[#FBF6EE]"
+                    class="bg-background"
                 />
                 <InputError :message="officerForm.errors.birthdate" />
             </div>
@@ -203,7 +203,7 @@ function submitOfficerAdd() {
                 <select
                     id="add_sex"
                     v-model="officerForm.sex"
-                    class="rounded-xl border border-black/15 bg-[#FBF6EE] px-3 py-2 text-sm"
+                    class="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
                 >
                     <option value="Female">Female</option>
                     <option value="Male">Male</option>
@@ -215,7 +215,7 @@ function submitOfficerAdd() {
                 <select
                     id="add_gender"
                     v-model="officerForm.gender_identity"
-                    class="rounded-xl border border-black/15 bg-[#FBF6EE] px-3 py-2 text-sm"
+                    class="rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
                 >
                     <option value="Woman">Woman</option>
                     <option value="Man">Man</option>
@@ -233,7 +233,7 @@ function submitOfficerAdd() {
                     type="email"
                     required
                     placeholder="member@cpf.chmsu.edu.ph"
-                    class="bg-[#FBF6EE]"
+                    class="bg-background"
                 />
                 <InputError :message="officerForm.errors.active_email" />
             </div>
@@ -246,7 +246,7 @@ function submitOfficerAdd() {
                     type="text"
                     required
                     placeholder="0917-555-0190"
-                    class="bg-[#FBF6EE]"
+                    class="bg-background"
                 />
                 <InputError :message="officerForm.errors.cellphone_number" />
             </div>
@@ -259,7 +259,7 @@ function submitOfficerAdd() {
                     type="url"
                     required
                     :placeholder="facebookUrlPlaceholder"
-                    class="bg-[#FBF6EE]"
+                    class="bg-background"
                 />
                 <InputError :message="officerForm.errors.facebook_profile_url" />
             </div>
@@ -271,16 +271,16 @@ function submitOfficerAdd() {
                     v-model="officerForm.active_fb_account"
                     type="text"
                     placeholder="e.g. Bea Villanueva (Smiling in white polo shirt)"
-                    class="bg-[#FBF6EE]"
+                    class="bg-background"
                 />
                 <InputError :message="officerForm.errors.active_fb_account" />
             </div>
 
-            <div class="flex justify-end gap-3 pt-2 sm:col-span-2">
+            <div class="flex justify-end gap-3 pt-1 sm:col-span-2">
                 <button
                     type="submit"
                     :disabled="officerForm.processing"
-                    class="inline-flex items-center gap-2 rounded-xl border-[1.5px] border-[#FF8D06] bg-[#FF8D06] px-5 py-2.5 text-sm font-semibold text-white transition-colors duration-200 hover:bg-[#FBF6EE] hover:text-[#FF8D06]"
+                    class="bento-btn"
                 >
                     <UserPlus class="size-4" />
                     Verify &amp; Add Member to Campus Roster

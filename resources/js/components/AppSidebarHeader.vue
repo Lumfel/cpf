@@ -76,10 +76,10 @@ async function markAllRead() {
 
 <template>
     <header
-        class="flex h-16 shrink-0 items-center justify-between gap-2 border-b border-sidebar-border/70 bg-background/80 px-6 backdrop-blur-md transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-12 md:px-4"
+        class="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-sidebar-border/70 bg-background/85 px-4 backdrop-blur-md transition-[width,height] ease-linear"
     >
-        <div class="flex items-center gap-2">
-            <SidebarTrigger class="-ml-1" />
+        <div class="flex min-w-0 items-center gap-2">
+            <SidebarTrigger class="-ml-1 size-8" />
             <template v-if="breadcrumbs && breadcrumbs.length > 0">
                 <Breadcrumbs :breadcrumbs="breadcrumbs" />
             </template>
@@ -90,7 +90,7 @@ async function markAllRead() {
             <DropdownMenuTrigger as-child>
                 <button
                     type="button"
-                    class="relative inline-flex size-9 items-center justify-center rounded-xl border border-border bg-card text-foreground shadow-xs transition hover:border-[#0384C5]/40 hover:text-[#0384C5] focus-visible:ring-2 focus-visible:ring-[#0384C5]/40 focus-visible:outline-none"
+                    class="relative inline-flex size-8 items-center justify-center rounded-lg border border-border bg-card text-foreground shadow-xs transition hover:border-primary/40 hover:text-primary focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none"
                     :aria-label="
                         unreadCount > 0
                             ? `Notifications (${unreadCount} unread)`
@@ -101,7 +101,7 @@ async function markAllRead() {
                     <Bell class="size-4" />
                     <span
                         v-if="unreadCount > 0"
-                        class="absolute -top-1.5 -right-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#FF8D06] px-1 text-[10px] leading-none font-bold text-white shadow-xs ring-2 ring-background"
+                        class="absolute -top-1.5 -right-1.5 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-[#FF8D06] px-1 text-xs leading-none font-bold text-white shadow-xs ring-2 ring-background"
                     >
                         {{ unreadCount > 99 ? '99+' : unreadCount }}
                     </span>
@@ -110,15 +110,15 @@ async function markAllRead() {
 
             <DropdownMenuContent
                 align="end"
-                :side-offset="8"
-                class="w-80 overflow-hidden rounded-2xl border border-border bg-card p-0 shadow-lg sm:w-96"
+                :side-offset="6"
+                class="w-80 overflow-hidden rounded-xl border border-border bg-card p-0 shadow-lg sm:w-96"
             >
-                <div class="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+                <div class="flex items-center justify-between gap-2 border-b border-border px-3.5 py-2.5">
                     <div class="flex items-center gap-2">
                         <span class="text-sm font-bold text-foreground">Notifications</span>
                         <span
                             v-if="unreadCount > 0"
-                            class="rounded-full bg-[#FF8D06]/15 px-2 py-0.5 text-[11px] font-bold text-[#FF8D06]"
+                            class="rounded-full bg-[#FF8D06]/15 px-2 py-0.5 text-xs font-bold text-[#FF8D06]"
                         >
                             {{ unreadCount }} unread
                         </span>
@@ -129,17 +129,17 @@ async function markAllRead() {
                         type="button"
                         :disabled="markingAll"
                         @click="markAllRead"
-                        class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-[11px] font-semibold text-[#0384C5] transition hover:bg-[#0384C5]/10 disabled:opacity-50"
+                        class="inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs font-semibold text-primary transition hover:bg-primary/10 disabled:opacity-50"
                     >
                         <CheckCheck class="size-3.5" />
                         Mark all read
                     </button>
                 </div>
 
-                <div v-if="notifications.length === 0" class="px-4 py-8 text-center">
-                    <Bell class="mx-auto size-6 text-muted-foreground/50" />
-                    <p class="mt-2 text-xs font-semibold text-foreground">You're all caught up</p>
-                    <p class="mt-0.5 text-[11px] text-muted-foreground">
+                <div v-if="notifications.length === 0" class="px-4 py-6 text-center">
+                    <Bell class="mx-auto size-5 text-muted-foreground/50" />
+                    <p class="mt-1.5 text-sm font-semibold text-foreground">You're all caught up</p>
+                    <p class="mt-0.5 text-xs text-muted-foreground">
                         Campus event and activity alerts will appear here.
                     </p>
                 </div>
@@ -148,25 +148,25 @@ async function markAllRead() {
                     <li
                         v-for="item in notifications"
                         :key="item.id"
-                        class="px-4 py-3 text-xs transition"
-                        :class="item.is_read ? 'bg-card opacity-80' : 'bg-[#0384C5]/5 dark:bg-[#4AA8D8]/10'"
+                        class="px-3.5 py-2.5 text-sm transition"
+                        :class="item.is_read ? 'bg-card opacity-85' : 'bg-primary/5'"
                     >
                         <div class="flex items-start justify-between gap-2">
                             <div class="min-w-0 flex-1">
                                 <div class="flex items-center gap-1.5">
                                     <span
                                         v-if="!item.is_read"
-                                        class="size-2 shrink-0 rounded-full bg-[#0384C5]"
+                                        class="size-2 shrink-0 rounded-full bg-primary"
                                         aria-hidden="true"
                                     />
-                                    <p class="truncate font-bold text-foreground">
+                                    <p class="truncate text-sm font-bold text-foreground">
                                         {{ item.title }}
                                     </p>
                                 </div>
-                                <p class="mt-1 line-clamp-2 leading-relaxed text-[11px] text-muted-foreground">
+                                <p class="mt-0.5 line-clamp-2 text-xs leading-relaxed text-muted-foreground">
                                     {{ item.message }}
                                 </p>
-                                <span v-if="item.created_at" class="mt-1 block text-[10px] text-muted-foreground/80">
+                                <span v-if="item.created_at" class="mt-1 block text-xs text-muted-foreground/80">
                                     {{ item.created_at }}
                                 </span>
                             </div>
@@ -176,14 +176,14 @@ async function markAllRead() {
                                 type="button"
                                 :disabled="busyId === item.id || markingAll"
                                 @click="markRead(item)"
-                                class="inline-flex shrink-0 items-center gap-1 rounded-lg border border-[#0384C5]/30 bg-background px-2 py-1 text-[10px] font-semibold text-[#0384C5] transition hover:bg-[#0384C5] hover:text-white disabled:opacity-50"
+                                class="inline-flex shrink-0 items-center gap-1 rounded-lg border border-primary/30 bg-background px-2.5 py-1 text-xs font-semibold text-primary transition hover:bg-primary hover:text-primary-foreground disabled:opacity-50"
                             >
                                 <Check class="size-3" />
                                 Mark read
                             </button>
                             <span
                                 v-else
-                                class="shrink-0 text-[10px] font-medium text-muted-foreground"
+                                class="shrink-0 text-xs font-medium text-muted-foreground"
                             >
                                 Read
                             </span>
@@ -193,11 +193,11 @@ async function markAllRead() {
 
                 <div
                     v-if="canOpenEvents"
-                    class="border-t border-border bg-muted/30 px-4 py-2 text-center"
+                    class="border-t border-border bg-muted/30 px-3.5 py-2 text-center"
                 >
                     <Link
                         href="/events-activities"
-                        class="text-[11px] font-semibold text-[#0384C5] hover:underline"
+                        class="text-xs font-semibold text-primary hover:underline"
                     >
                         View all in Events &amp; Activities
                     </Link>
@@ -209,17 +209,17 @@ async function markAllRead() {
             <DropdownMenuTrigger as-child>
                 <button
                     type="button"
-                    class="inline-flex size-9 items-center justify-center overflow-hidden rounded-xl border border-border bg-card text-foreground shadow-xs transition hover:border-[#0384C5]/40 focus-visible:ring-2 focus-visible:ring-[#0384C5]/40 focus-visible:outline-none"
+                    class="inline-flex size-8 items-center justify-center overflow-hidden rounded-lg border border-border bg-card text-foreground shadow-xs transition hover:border-primary/40 focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:outline-none"
                     :title="currentUser.name"
                     aria-label="Account profile menu"
                 >
-                    <Avatar class="size-8 rounded-lg">
+                    <Avatar class="size-7 rounded-md">
                         <AvatarImage
                             v-if="currentUser.avatar"
                             :src="currentUser.avatar"
                             :alt="currentUser.name"
                         />
-                        <AvatarFallback class="rounded-lg bg-primary/15 text-xs font-bold text-primary">
+                        <AvatarFallback class="rounded-md bg-primary/15 text-xs font-bold text-primary">
                             {{ getInitials(currentUser.name) }}
                         </AvatarFallback>
                     </Avatar>
@@ -227,8 +227,8 @@ async function markAllRead() {
             </DropdownMenuTrigger>
             <DropdownMenuContent
                 align="end"
-                :side-offset="8"
-                class="w-56 rounded-2xl border border-border bg-card p-1 shadow-lg"
+                :side-offset="6"
+                class="w-56 rounded-xl border border-border bg-card p-1 shadow-lg"
             >
                 <UserMenuContent :user="currentUser" />
             </DropdownMenuContent>

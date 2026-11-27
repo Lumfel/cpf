@@ -9,8 +9,8 @@
             <img src="/cpf_logo.png" alt="Circle of Peer Facilitators Emblem" class="size-full object-contain" />
         </div>
         <div class="grid flex-1 text-left text-sm leading-tight group-data-[collapsible=icon]:hidden">
-            <span class="truncate font-bold tracking-wide text-slate-900 dark:text-slate-100">Circle of Peer Facilitators</span>
-            <span class="truncate text-[11px] font-semibold text-[#0384C5] dark:text-[#4AA8D8]">Student Guidance &amp; Peer Support</span>
+            <span class="truncate font-bold tracking-wide text-foreground">Circle of Peer Facilitators</span>
+            <span class="truncate text-xs font-semibold text-primary">Student Guidance &amp; Peer Support</span>
         </div>
     </div>
 </template>

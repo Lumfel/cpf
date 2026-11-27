@@ -176,13 +176,13 @@ async function openCapsule(capsuleId: number) {
 <template>
     <Head title="Community, Elections & Archives" />
 
-    <div class="flex min-h-full flex-1 flex-col gap-6 bg-[#FBF6EE] p-4 text-slate-900 md:p-6">
-        <div class="bento flex flex-wrap items-center justify-between gap-4 p-5">
+    <div class="flex min-h-full w-full max-w-none flex-1 flex-col gap-3.5 bg-background p-3 text-foreground md:p-4">
+        <div class="bento flex flex-wrap items-center justify-between gap-3 p-4">
             <div>
-                <span class="rounded-full bg-[#0384C5]/10 px-3 py-1 text-xs font-bold text-[#0384C5]">
+                <span class="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-bold text-primary">
                     {{ campusName }}
                 </span>
-                <h1 class="font-editorial mt-2 text-2xl font-bold text-slate-900">
+                <h1 class="font-editorial mt-1 text-xl font-bold text-foreground md:text-2xl">
                     Campus Elections, Time Capsules &amp; Archives
                 </h1>
             </div>
@@ -191,8 +191,8 @@ async function openCapsule(capsuleId: number) {
                 <button
                     type="button"
                     @click="activeTab = 'elections'"
-                    class="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition"
-                    :class="activeTab === 'elections' ? 'bg-[#0384C5] text-white' : 'border border-black/10 bg-white text-slate-700'"
+                    class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition"
+                    :class="activeTab === 'elections' ? 'bg-[#0384C5] text-white' : 'border border-border bg-card text-foreground'"
                 >
                     <Vote class="size-4" />
                     Campus Elections
@@ -200,8 +200,8 @@ async function openCapsule(capsuleId: number) {
                 <button
                     type="button"
                     @click="activeTab = 'capsules'"
-                    class="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition"
-                    :class="activeTab === 'capsules' ? 'bg-[#FF8D06] text-white' : 'border border-black/10 bg-white text-slate-700'"
+                    class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition"
+                    :class="activeTab === 'capsules' ? 'bg-[#FF8D06] text-white' : 'border border-border bg-card text-foreground'"
                 >
                     <Clock class="size-4" />
                     Time Capsules
@@ -209,8 +209,8 @@ async function openCapsule(capsuleId: number) {
                 <button
                     type="button"
                     @click="activeTab = 'archives'"
-                    class="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition"
-                    :class="activeTab === 'archives' ? 'bg-[#1A8F26] text-white' : 'border border-black/10 bg-white text-slate-700'"
+                    class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition"
+                    :class="activeTab === 'archives' ? 'bg-[#1A8F26] text-white' : 'border border-border bg-card text-foreground'"
                 >
                     <Archive class="size-4" />
                     School Year Archives
@@ -218,38 +218,38 @@ async function openCapsule(capsuleId: number) {
             </div>
         </div>
 
-        <div v-if="statusBanner" class="rounded-2xl border border-[#1A8F26]/30 bg-[#1A8F26]/10 px-4 py-3 text-xs font-semibold text-[#1A8F26]">
+        <div v-if="statusBanner" class="rounded-xl border border-[#1A8F26]/30 bg-[#1A8F26]/10 px-3.5 py-2.5 text-sm font-semibold text-[#1A8F26]">
             {{ statusBanner }}
         </div>
-        <div v-if="errorBanner" class="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-xs font-semibold text-red-700">
+        <div v-if="errorBanner" class="rounded-xl border border-red-300 bg-red-50 px-3.5 py-2.5 text-sm font-semibold text-red-700">
             {{ errorBanner }}
         </div>
 
         <!-- TAB 1: FR-09 CAMPUS ELECTIONS (GENERAL ASSEMBLY FLOOR + SEQUENTIAL CONSTITUTION ORDER) -->
-        <div v-if="activeTab === 'elections'" class="flex flex-col gap-5">
-            <section v-if="isClubAdviser" class="bento p-5">
+        <div v-if="activeTab === 'elections'" class="flex flex-col gap-3.5">
+            <section v-if="isClubAdviser" class="bento p-4">
                 <div>
-                    <h2 class="text-sm font-bold text-slate-900">
+                    <h2 class="text-base font-bold text-foreground">
                         Activate Campus Election Session (Club Adviser Control)
                     </h2>
-                    <p class="mt-0.5 text-xs text-slate-600">
+                    <p class="mt-0.5 text-sm text-muted-foreground">
                         Seats run sequentially from President down to 4th Year Representative (with optional representative skipping).
                     </p>
                 </div>
-                <form class="mt-3 grid gap-2.5 text-xs md:grid-cols-[1.4fr_1fr_1fr_auto]" @submit.prevent="createElection">
+                <form class="mt-3 grid gap-2.5 text-sm md:grid-cols-[1.4fr_1fr_1fr_auto]" @submit.prevent="createElection">
                     <input
                         v-model="electionTitle"
                         required
                         placeholder="Election Title (e.g. CPF Officers AY 2026-2027)"
-                        class="rounded-xl border border-black/15 bg-white px-3 py-2"
+                        class="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
                     />
                     <input
                         v-model="electionAy"
                         required
                         placeholder="Academic Year (e.g. 2026-2027)"
-                        class="rounded-xl border border-black/15 bg-white px-3 py-2"
+                        class="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
                     />
-                    <select v-model="electionStatus" class="rounded-xl border border-black/15 bg-white px-3 py-2">
+                    <select v-model="electionStatus" class="rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground">
                         <option value="open">Activate &amp; Open Nominations</option>
                         <option value="draft">Save as Draft</option>
                     </select>
@@ -257,7 +257,7 @@ async function openCapsule(capsuleId: number) {
                 </form>
             </section>
 
-            <div v-if="elections.length === 0" class="bento p-6 text-xs text-slate-500">
+            <div v-if="elections.length === 0" class="bento p-4 text-sm text-muted-foreground">
                 No campus elections have been activated by the Club Adviser yet.
             </div>
 
@@ -275,30 +275,30 @@ async function openCapsule(capsuleId: number) {
         </div>
 
         <!-- TAB 2: FR-10 ENCRYPTED TIME CAPSULES -->
-        <div v-else-if="activeTab === 'capsules'" class="flex flex-col gap-5">
+        <div v-else-if="activeTab === 'capsules'" class="flex flex-col gap-3.5">
             <!-- Distress Redirect Safeguard (System Limitation #4) -->
-            <div class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#1A8F26]/30 bg-[#1A8F26]/10 p-4 text-xs text-slate-800">
+            <div class="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#1A8F26]/30 bg-[#1A8F26]/10 p-3.5 text-sm text-foreground">
                 <div class="flex items-center gap-2">
-                    <HeartHandshake class="size-4 text-[#1A8F26]" />
+                    <HeartHandshake class="size-4 shrink-0 text-[#1A8F26]" />
                     <span>
                         <strong>Feeling overwhelmed right now?</strong> Time Capsules stay locked and unread by officers until their unlock date. For immediate support, reach out through Confidential Guidance Referrals.
                     </span>
                 </div>
-                <Link href="/campus-hub" class="rounded-xl bg-[#1A8F26] px-3 py-1.5 font-semibold text-white">
+                <Link href="/campus-hub" class="rounded-lg bg-[#1A8F26] px-3 py-1.5 text-sm font-semibold text-white">
                     Go to Guidance Referrals
                 </Link>
             </div>
 
-            <div class="grid gap-5 lg:grid-cols-2">
-                <section class="bento p-6">
-                    <h2 class="text-base font-bold text-slate-900">Seal an Encrypted Time Capsule</h2>
-                    <form class="mt-4 grid gap-3 text-xs" @submit.prevent="createCapsule">
+            <div class="grid gap-3.5 lg:grid-cols-2">
+                <section class="bento p-4">
+                    <h2 class="text-base font-bold text-foreground">Seal an Encrypted Time Capsule</h2>
+                    <form class="mt-3 grid gap-3 text-sm" @submit.prevent="createCapsule">
                         <div>
-                            <label class="mb-1 block font-bold">Title *</label>
-                            <input v-model="capsuleTitle" required placeholder="e.g. Letter to Future Me" class="w-full rounded-xl border border-black/15 bg-white px-3 py-2" />
+                            <label class="mb-1 block font-bold text-foreground">Title *</label>
+                            <input v-model="capsuleTitle" required placeholder="e.g. Letter to Future Me" class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground" />
                         </div>
                         <div>
-                            <label class="mb-1.5 block font-bold">Letter Variety / Stationery Style</label>
+                            <label class="mb-1.5 block font-bold text-foreground">Letter Variety / Stationery Style</label>
                             <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
                                 <button
                                     v-for="opt in letterStyleOptions"
@@ -309,10 +309,10 @@ async function openCapsule(capsuleId: number) {
                                     :class="
                                         capsuleLetterStyle === opt.value
                                             ? 'border-[#D94B7C] ring-2 ring-[#D94B7C]/35'
-                                            : 'border-black/10 bg-white hover:border-black/25'
+                                            : 'border-border bg-card hover:border-primary/40'
                                     "
                                 >
-                                    <div class="relative h-12 w-full overflow-hidden" :style="{ background: opt.swatch }">
+                                    <div class="relative h-11 w-full overflow-hidden" :style="{ background: opt.swatch }">
                                         <div
                                             v-if="opt.value === 'letter_in_sunrise'"
                                             class="pointer-events-none absolute -top-2 left-3 size-12 rounded-full bg-[#FFE28A]/70 blur-md"
@@ -328,20 +328,20 @@ async function openCapsule(capsuleId: number) {
                                             <span class="pointer-events-none absolute -top-2 right-4 size-10 rounded-full bg-[#FFB357]/45 blur-xs" />
                                         </template>
                                     </div>
-                                    <div class="p-2">
-                                        <div class="text-[11px] font-bold text-slate-900">{{ opt.label }}</div>
-                                        <div class="text-[10px] text-slate-500">{{ opt.caption }}</div>
+                                    <div class="p-2.5">
+                                        <div class="text-sm font-bold text-foreground">{{ opt.label }}</div>
+                                        <div class="text-xs text-muted-foreground">{{ opt.caption }}</div>
                                     </div>
                                 </button>
                             </div>
                         </div>
                         <div>
-                            <label class="mb-1 block font-bold">Unlock Date &amp; Time *</label>
-                            <input v-model="capsuleUnlockAt" type="datetime-local" required class="w-full rounded-xl border border-black/15 bg-white px-3 py-2" />
+                            <label class="mb-1 block font-bold text-foreground">Unlock Date &amp; Time *</label>
+                            <input v-model="capsuleUnlockAt" type="datetime-local" required class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground" />
                         </div>
                         <div>
-                            <label class="mb-1 block font-bold">Private Message (AES-256 Encrypted) *</label>
-                            <textarea v-model="capsuleMessage" rows="4" required class="w-full rounded-xl border border-black/15 bg-white px-3 py-2" />
+                            <label class="mb-1 block font-bold text-foreground">Private Message (AES-256 Encrypted) *</label>
+                            <textarea v-model="capsuleMessage" rows="4" required class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground" />
                         </div>
                         <button type="submit" :disabled="savingCapsule" class="bento-btn w-fit">
                             <Lock class="size-3.5" />
@@ -350,16 +350,16 @@ async function openCapsule(capsuleId: number) {
                     </form>
                 </section>
 
-                <section class="bento p-6">
-                    <h2 class="text-base font-bold text-slate-900">My Time Capsules</h2>
-                    <div v-if="timeCapsules.length === 0" class="mt-3 text-xs text-slate-500">
+                <section class="bento p-4">
+                    <h2 class="text-base font-bold text-foreground">My Time Capsules</h2>
+                    <div v-if="timeCapsules.length === 0" class="mt-2.5 text-sm text-muted-foreground">
                         No sealed Time Capsules yet.
                     </div>
-                    <div v-else class="mt-3 flex flex-col gap-3">
+                    <div v-else class="mt-2.5 flex flex-col gap-3">
                         <div
                             v-for="cap in timeCapsules"
                             :key="cap.id"
-                            class="overflow-hidden rounded-2xl border text-xs transition"
+                            class="overflow-hidden rounded-xl border text-sm transition"
                             :class="
                                 cap.letter_style === 'letter_in_sunrise'
                                     ? 'border-[#D94B7C]/45 bg-gradient-to-br from-[#FFF0EA] via-[#FDE0E4] to-[#F7CBE0] text-[#2D1628]'
@@ -369,17 +369,17 @@ async function openCapsule(capsuleId: number) {
                                         ? 'border-[#FF5CAA]/45 bg-gradient-to-br from-[#160C26] via-[#211138] to-[#152438] text-[#F8F0FF]'
                                         : cap.letter_style === 'twilight_calm'
                                           ? 'border-[#56B4E3]/30 bg-gradient-to-br from-[#141C24] via-[#192430] to-[#1D2B38] text-[#EFE9DF]'
-                                          : 'border-black/10 bg-white text-slate-900'
+                                          : 'border-border bg-card text-foreground'
                             "
                         >
                             <div
                                 v-if="cap.letter_style === 'letter_in_sunrise'"
-                                class="relative h-20 w-full overflow-hidden"
+                                class="relative h-16 w-full overflow-hidden"
                                 style="background: linear-gradient(135deg, #FF9E57 0%, #F46B6E 45%, #E0538C 80%, #9E4E9C 100%)"
                             >
                                 <div class="pointer-events-none absolute -top-3 left-6 size-20 rounded-full bg-[#FFE28A]/65 blur-xl" />
                                 <div class="pointer-events-none absolute right-6 -bottom-4 size-24 rounded-full bg-[#FF75B5]/45 blur-xl" />
-                                <span class="absolute bottom-2.5 left-3 inline-flex items-center gap-1 rounded-full bg-[#FFF1F0]/90 px-2.5 py-0.5 text-[10px] font-bold text-[#B53568] shadow-2xs">
+                                <span class="absolute bottom-2 left-3 inline-flex items-center gap-1 rounded-full bg-[#FFF1F0]/90 px-2.5 py-0.5 text-xs font-bold text-[#B53568] shadow-2xs">
                                     <Sunrise class="size-3" />
                                     Letter in Sunrise
                                 </span>
@@ -387,13 +387,13 @@ async function openCapsule(capsuleId: number) {
 
                             <div
                                 v-else-if="cap.letter_style === 'joy_blobs'"
-                                class="relative h-20 w-full overflow-hidden bg-[#FBF4E4]"
+                                class="relative h-16 w-full overflow-hidden bg-[#FBF4E4]"
                             >
                                 <div class="pointer-events-none absolute -top-4 left-4 size-24 rounded-full bg-[#E56C66]/24 blur-lg" />
                                 <div class="pointer-events-none absolute top-1 left-24 size-24 rounded-full bg-[#4A9ED6]/24 blur-lg" />
                                 <div class="pointer-events-none absolute -bottom-5 left-14 size-24 rounded-full bg-[#F2C85C]/34 blur-lg" />
                                 <div class="pointer-events-none absolute top-0 right-6 size-20 rounded-full bg-[#68B886]/24 blur-lg" />
-                                <span class="absolute bottom-2.5 left-3 inline-flex items-center gap-1 rounded-full border border-[#5C4C38]/15 bg-[#FFFCF6]/92 px-2.5 py-0.5 text-[10px] font-bold text-[#C45D44] shadow-2xs">
+                                <span class="absolute bottom-2 left-3 inline-flex items-center gap-1 rounded-full border border-[#5C4C38]/15 bg-[#FFFCF6]/92 px-2.5 py-0.5 text-xs font-bold text-[#C45D44] shadow-2xs">
                                     <Sparkles class="size-3" />
                                     In Little Blobs of Joy
                                 </span>
@@ -401,38 +401,38 @@ async function openCapsule(capsuleId: number) {
 
                             <div
                                 v-else-if="cap.letter_style === 'vice_dusk'"
-                                class="relative h-20 w-full overflow-hidden"
+                                class="relative h-16 w-full overflow-hidden"
                                 style="background: linear-gradient(135deg, #1B0E2E 0%, #5B1E66 36%, #FF4FA3 74%, #FFA84C 100%)"
                             >
                                 <div class="pointer-events-none absolute -bottom-4 left-4 size-24 rounded-full bg-[#3CE4E8]/40 blur-xl" />
                                 <div class="pointer-events-none absolute -top-3 right-8 size-20 rounded-full bg-[#FFB357]/45 blur-xl" />
-                                <span class="absolute bottom-2.5 left-3 inline-flex items-center gap-1 rounded-full border border-[#3CE4E8]/40 bg-[#140B22]/85 px-2.5 py-0.5 text-[10px] font-bold text-[#3CE4E8] shadow-2xs">
+                                <span class="absolute bottom-2 left-3 inline-flex items-center gap-1 rounded-full border border-[#3CE4E8]/40 bg-[#140B22]/85 px-2.5 py-0.5 text-xs font-bold text-[#3CE4E8] shadow-2xs">
                                     <Zap class="size-3 text-[#FF5CAA]" />
                                     Somehow, We Got Here Before Anything Worse
                                 </span>
                             </div>
 
-                            <div class="p-4">
+                            <div class="p-3.5">
                                 <div class="flex flex-wrap items-center justify-between gap-2">
                                     <div class="flex flex-wrap items-center gap-2">
                                         <span class="font-bold">{{ cap.title }}</span>
                                         <span
                                             v-if="cap.letter_style === 'twilight_calm'"
-                                            class="inline-flex items-center gap-1 rounded-full bg-white/10 px-2 py-0.5 text-[10px] font-semibold text-[#56B4E3]"
+                                            class="inline-flex items-center gap-1 rounded-full bg-white/10 px-2.5 py-0.5 text-xs font-semibold text-[#56B4E3]"
                                         >
                                             <Moon class="size-3" />
                                             Twilight Calm
                                         </span>
                                         <span
                                             v-else-if="cap.letter_style !== 'letter_in_sunrise' && cap.letter_style !== 'joy_blobs' && cap.letter_style !== 'vice_dusk'"
-                                            class="inline-flex items-center gap-1 rounded-full bg-[#FBF6EE] px-2 py-0.5 text-[10px] font-semibold text-slate-600"
+                                            class="inline-flex items-center gap-1 rounded-full bg-background px-2.5 py-0.5 text-xs font-semibold text-muted-foreground"
                                         >
                                             <Sparkles class="size-3" />
                                             Soft Cream Classic
                                         </span>
                                     </div>
                                     <span
-                                        class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-[11px] font-bold"
+                                        class="inline-flex items-center gap-1 rounded-full px-2.5 py-0.5 text-xs font-bold"
                                         :class="
                                             cap.is_opened
                                                 ? 'bg-[#1A8F26]/15 text-[#1A8F26]'
@@ -445,14 +445,14 @@ async function openCapsule(capsuleId: number) {
                                     </span>
                                 </div>
                                 <div
-                                    class="mt-1"
-                                    :class="cap.letter_style === 'twilight_calm' || cap.letter_style === 'vice_dusk' ? 'text-[#C4B0DC]' : 'text-slate-500'"
+                                    class="mt-1 text-xs"
+                                    :class="cap.letter_style === 'twilight_calm' || cap.letter_style === 'vice_dusk' ? 'text-[#C4B0DC]' : 'text-muted-foreground'"
                                 >
                                     Unlock Date: {{ cap.unlock_at }}
                                 </div>
                                 <p
                                     v-if="cap.is_opened && cap.message"
-                                    class="font-editorial mt-2 rounded-xl p-3.5 text-sm leading-relaxed"
+                                    class="font-editorial mt-2 rounded-lg p-3 text-sm leading-relaxed"
                                     :class="
                                         cap.letter_style === 'letter_in_sunrise'
                                             ? 'border border-[#D94B7C]/30 bg-white/85 text-[#2D1628]'
@@ -462,7 +462,7 @@ async function openCapsule(capsuleId: number) {
                                                 ? 'border border-[#FF5CAA]/30 bg-[#140B22]/85 text-[#F8F0FF]'
                                                 : cap.letter_style === 'twilight_calm'
                                                   ? 'border border-white/10 bg-black/25 text-[#EFE9DF]'
-                                                  : 'bg-[#FBF6EE] text-slate-800'
+                                                  : 'bg-background text-foreground'
                                     "
                                 >
                                     {{ cap.message }}
@@ -471,7 +471,7 @@ async function openCapsule(capsuleId: number) {
                                     v-else-if="cap.ready_to_open"
                                     type="button"
                                     @click="openCapsule(cap.id)"
-                                    class="bento-btn mt-3 py-1.5"
+                                    class="bento-btn mt-2.5"
                                 >
                                     Open Unlocked Capsule
                                 </button>
@@ -483,28 +483,28 @@ async function openCapsule(capsuleId: number) {
         </div>
 
         <!-- TAB 3: FR-10 SCHOOL YEAR ARCHIVES -->
-        <div v-else class="bento p-6">
-            <h2 class="text-base font-bold text-slate-900">School Year Archives (HDD ZIP Bundles)</h2>
-            <p class="mt-0.5 text-xs text-slate-600">
+        <div v-else class="bento p-4">
+            <h2 class="text-base font-bold text-foreground">School Year Archives (HDD ZIP Bundles)</h2>
+            <p class="mt-0.5 text-sm text-muted-foreground">
                 End-of-school-year ZIP archive index with SHA-256 checksums for chapter continuity.
             </p>
-            <div v-if="schoolYearArchives.length === 0" class="mt-4 text-xs text-slate-500">
+            <div v-if="schoolYearArchives.length === 0" class="mt-3 text-sm text-muted-foreground">
                 No School Year Archives generated yet.
             </div>
-            <div v-else class="mt-4 grid gap-3 md:grid-cols-2">
+            <div v-else class="mt-3 grid gap-3 md:grid-cols-2">
                 <div
                     v-for="arc in schoolYearArchives"
                     :key="arc.id"
-                    class="rounded-2xl border border-black/10 bg-white p-4 text-xs"
+                    class="rounded-xl border border-border bg-card p-3.5 text-sm"
                 >
                     <div class="flex items-center justify-between gap-2">
-                        <span class="font-bold text-slate-900">{{ arc.title }}</span>
-                        <span class="rounded-full bg-[#0384C5]/10 px-2.5 py-0.5 text-[11px] font-bold text-[#0384C5]">
+                        <span class="font-bold text-foreground">{{ arc.title }}</span>
+                        <span class="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-bold text-primary">
                             {{ arc.academic_year }}
                         </span>
                     </div>
-                    <div class="mt-1 text-slate-600">File: {{ arc.zip_file_name }} ({{ arc.archive_type }})</div>
-                    <div class="mt-1 truncate font-mono text-[10px] text-slate-500">
+                    <div class="mt-1 text-muted-foreground">File: {{ arc.zip_file_name }} ({{ arc.archive_type }})</div>
+                    <div class="mt-1 truncate font-mono text-xs text-muted-foreground">
                         SHA-256: {{ arc.sha256_checksum }}
                     </div>
                 </div>

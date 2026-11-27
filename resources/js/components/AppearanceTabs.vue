@@ -128,19 +128,19 @@ const themeVarieties: Array<{
                             />
                         </div>
                     </div>
-                    <div class="p-3">
+                    <div class="p-3.5">
                         <div class="flex items-center justify-between gap-2">
-                            <span class="text-xs font-bold text-foreground">
+                            <span class="text-sm font-bold text-foreground">
                                 {{ item.name }}
                             </span>
                             <span
                                 v-if="appearance === item.value"
-                                class="rounded-full bg-primary/15 px-2 py-0.5 text-[10px] font-bold text-primary"
+                                class="rounded-full bg-primary/15 px-2 py-0.5 text-xs font-bold text-primary"
                             >
                                 Active
                             </span>
                         </div>
-                        <p class="mt-1 text-[11px] leading-snug text-muted-foreground">
+                        <p class="mt-1 text-xs leading-snug text-muted-foreground">
                             {{ item.subtitle }}
                         </p>
                     </div>

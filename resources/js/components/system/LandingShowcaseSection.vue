@@ -273,17 +273,17 @@ onBeforeUnmount(() => {
 
 <template>
     <!-- Bottom-of-Landing Looping PowerPoint Showcase Section -->
-    <section id="cpf-system-showcase" class="bento overflow-hidden p-6 md:p-8">
-        <div class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-900/10 pb-5">
+    <section id="cpf-system-showcase" class="bento overflow-hidden p-4 md:p-6">
+        <div class="flex flex-wrap items-start justify-between gap-4 border-b border-slate-900/10 pb-4">
             <div class="max-w-2xl">
-                <span class="inline-flex items-center gap-1.5 rounded-full border border-[#0384C5]/25 bg-[#0384C5]/10 px-3 py-1 text-[11px] font-bold text-[#0384C5]">
+                <span class="inline-flex items-center gap-1.5 rounded-full border border-[#0384C5]/25 bg-[#0384C5]/10 px-3 py-1 text-xs font-bold text-[#0384C5]">
                     <Sparkles class="size-3.5" />
                     Dynamic System Showcase • Looping Video &amp; Soundtrack
                 </span>
-                <h2 class="font-editorial mt-2.5 text-2xl font-bold text-slate-900 md:text-3xl">
+                <h2 class="font-editorial mt-2 text-xl font-bold text-slate-900 md:text-2xl">
                     Explore the CPF Platform in Motion
                 </h2>
-                <p class="mt-1.5 text-xs leading-relaxed text-slate-600 md:text-sm">
+                <p class="mt-1.5 text-sm leading-relaxed text-slate-600">
                     Walk through our interactive PowerPoint presentation in continuous 1080p loop—highlighting QR event attendance, sequential chapter elections, encrypted time capsules, and all five signature visual themes.
                 </p>
             </div>
@@ -325,7 +325,7 @@ onBeforeUnmount(() => {
 
             <div class="flex flex-wrap items-center justify-between gap-3 border-t border-white/10 bg-slate-900/95 px-4 py-3 text-xs text-slate-200">
                 <div class="flex items-center gap-2.5">
-                    <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-[11px] font-bold text-emerald-300">
+                    <span class="inline-flex items-center gap-1.5 rounded-full bg-emerald-500/15 px-2.5 py-0.5 text-xs font-bold text-emerald-300">
                         <span class="size-2 animate-pulse rounded-full bg-emerald-400" />
                         LOOPING 1080P SHOWCASE
                     </span>
@@ -336,7 +336,7 @@ onBeforeUnmount(() => {
                     <button
                         type="button"
                         @click="toggleInlineSound"
-                        class="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/15"
+                        class="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/15"
                     >
                         <VolumeX v-if="inlineMuted" class="size-3.5 text-amber-300" />
                         <Volume2 v-else class="size-3.5 text-emerald-300" />
@@ -345,7 +345,7 @@ onBeforeUnmount(() => {
                     <button
                         type="button"
                         @click="openFullscreenTheater(true)"
-                        class="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-[11px] font-semibold text-white transition hover:bg-white/15"
+                        class="inline-flex items-center gap-1.5 rounded-lg border border-white/15 bg-white/5 px-3 py-1.5 text-xs font-semibold text-white transition hover:bg-white/15"
                     >
                         <RotateCcw class="size-3.5 text-sky-300" />
                         Replay Intro Tour
@@ -374,7 +374,7 @@ onBeforeUnmount(() => {
                     <div class="text-xs font-extrabold tracking-wide text-white uppercase">
                         Circle of Peer Facilitators — System Tour
                     </div>
-                    <div class="text-[11px] text-slate-400">
+                    <div class="text-xs text-slate-400">
                         <template v-if="isMandatoryMode && !mandatoryCompleted">
                             Welcome! Please watch the complete onboarding showcase before entering the portal.
                         </template>
@@ -451,7 +451,7 @@ onBeforeUnmount(() => {
         <div class="border-t border-white/10 bg-slate-950/95 px-5 py-3.5 backdrop-blur-md">
             <div class="mx-auto flex max-w-5xl flex-col gap-2.5 sm:flex-row sm:items-center sm:justify-between">
                 <div class="flex flex-1 flex-col gap-1.5">
-                    <div class="flex items-center justify-between text-[11px] font-semibold">
+                    <div class="flex items-center justify-between text-xs font-semibold">
                         <span v-if="isMandatoryMode && !mandatoryCompleted" class="inline-flex items-center gap-1.5 text-sky-300">
                             <Lock class="size-3.5" />
                             Mandatory First-Visit Showcase • Remaining: {{ remainingLabel }}

@@ -345,21 +345,21 @@ function blockBgClass(bg: TextBlock['bg']): string {
                     "
                 >
                     <div class="flex items-center justify-between gap-2">
-                        <span class="rounded-full bg-black/5 px-2.5 py-0.5 text-[11px] font-bold text-slate-700">
+                        <span class="rounded-full bg-black/5 px-2.5 py-0.5 text-xs font-bold text-slate-700">
                             {{ note.tag }}
                         </span>
-                        <span class="text-[11px] text-slate-500">{{ note.timeAgo }}</span>
+                        <span class="text-xs text-slate-500">{{ note.timeAgo }}</span>
                     </div>
 
                     <h3 class="mt-2.5 text-sm font-bold text-slate-900 group-hover:text-[#0384C5]">
                         {{ note.pages[0]?.title }}
                     </h3>
 
-                    <p class="mt-1.5 line-clamp-3 text-xs leading-relaxed text-slate-700">
+                    <p class="mt-1.5 line-clamp-3 text-sm leading-relaxed text-slate-700">
                         {{ note.pages[0]?.body }}
                     </p>
 
-                    <div class="mt-4 flex items-center justify-between border-t border-black/10 pt-2.5 text-[11px] text-slate-600">
+                    <div class="mt-4 flex items-center justify-between border-t border-black/10 pt-2.5 text-xs text-slate-600">
                         <span class="font-semibold">{{ note.author }}</span>
                         <span class="inline-flex items-center gap-1 font-semibold text-[#FF8D06]">
                             <Heart class="size-3.5 fill-current" />

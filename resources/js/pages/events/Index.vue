@@ -546,17 +546,17 @@ function statusPillClasses(ev: CampusEventFull): string {
 <template>
     <Head title="Events & Activities" />
 
-    <div class="flex min-h-full flex-1 flex-col gap-6 bg-[#FBF6EE] p-4 text-slate-900 md:p-6">
+    <div class="flex min-h-full w-full max-w-none flex-1 flex-col gap-3.5 bg-background p-3 text-foreground md:p-4">
         <!-- Header & Space Tabs -->
-        <div class="bento flex flex-wrap items-center justify-between gap-4 p-5">
+        <div class="bento flex flex-wrap items-center justify-between gap-3 p-4">
             <div>
-                <span class="rounded-full bg-[#0384C5]/10 px-3 py-1 text-xs font-bold text-[#0384C5]">
+                <span class="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-bold text-primary">
                     {{ campusName }}
                 </span>
-                <h1 class="font-editorial mt-2 text-2xl font-bold text-slate-900">
+                <h1 class="font-editorial mt-1 text-xl font-bold text-foreground md:text-2xl">
                     Events &amp; Activities
                 </h1>
-                <p class="mt-0.5 text-xs text-slate-600">
+                <p class="mt-0.5 text-sm text-muted-foreground">
                     Event scheduling (1-day advance limit), automatic activation, Officer QR Log-In/Log-Out scanner, Checklist list view &amp; Time Capsule reflections.
                 </p>
             </div>
@@ -565,8 +565,8 @@ function statusPillClasses(ev: CampusEventFull): string {
                 <button
                     type="button"
                     @click="activeTab = 'schedule'"
-                    class="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition"
-                    :class="activeTab === 'schedule' ? 'bg-[#0384C5] text-white' : 'border border-black/10 bg-white text-slate-700'"
+                    class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition"
+                    :class="activeTab === 'schedule' ? 'bg-[#0384C5] text-white' : 'border border-border bg-card text-foreground'"
                 >
                     <CalendarDays class="size-4" />
                     Schedule &amp; Calendar
@@ -574,8 +574,8 @@ function statusPillClasses(ev: CampusEventFull): string {
                 <button
                     type="button"
                     @click="activeTab = 'attendance'"
-                    class="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition"
-                    :class="activeTab === 'attendance' ? 'bg-[#1A8F26] text-white' : 'border border-black/10 bg-white text-slate-700'"
+                    class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition"
+                    :class="activeTab === 'attendance' ? 'bg-[#1A8F26] text-white' : 'border border-border bg-card text-foreground'"
                 >
                     <ClipboardList class="size-4" />
                     QR Scanner &amp; Checklist
@@ -583,8 +583,8 @@ function statusPillClasses(ev: CampusEventFull): string {
                 <button
                     type="button"
                     @click="activeTab = 'reflections'"
-                    class="inline-flex items-center gap-1.5 rounded-xl px-3.5 py-2 text-xs font-semibold transition"
-                    :class="activeTab === 'reflections' ? 'bg-[#FF8D06] text-white' : 'border border-black/10 bg-white text-slate-700'"
+                    class="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-sm font-semibold transition"
+                    :class="activeTab === 'reflections' ? 'bg-[#FF8D06] text-white' : 'border border-border bg-card text-foreground'"
                 >
                     <Sparkles class="size-4" />
                     Reflections &rarr; Time Capsule
@@ -592,13 +592,13 @@ function statusPillClasses(ev: CampusEventFull): string {
                 <button
                     type="button"
                     @click="showNotificationsPanel = !showNotificationsPanel"
-                    class="inline-flex items-center gap-1.5 rounded-xl border border-black/15 bg-white px-3.5 py-2 text-xs font-semibold text-slate-800 hover:border-[#0384C5]"
+                    class="inline-flex items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-semibold text-foreground hover:border-primary"
                 >
                     <Bell class="size-4 text-[#FF8D06]" />
                     Notifications
                     <span
                         v-if="unreadNotificationCount > 0"
-                        class="rounded-full bg-[#FF8D06] px-1.5 py-0.5 text-[10px] font-bold text-white"
+                        class="rounded-full bg-[#FF8D06] px-2 py-0.5 text-xs font-bold text-white"
                     >
                         {{ unreadNotificationCount }}
                     </span>
@@ -609,21 +609,21 @@ function statusPillClasses(ev: CampusEventFull): string {
         <!-- Feedback Banners -->
         <div
             v-if="statusBanner"
-            class="rounded-2xl border border-[#1A8F26]/30 bg-[#1A8F26]/10 px-4 py-3 text-xs font-semibold text-[#1A8F26]"
+            class="rounded-xl border border-[#1A8F26]/30 bg-[#1A8F26]/10 px-3.5 py-2.5 text-sm font-semibold text-[#1A8F26]"
         >
             {{ statusBanner }}
         </div>
         <div
             v-if="errorBanner"
-            class="rounded-2xl border border-red-300 bg-red-50 px-4 py-3 text-xs font-semibold text-red-700"
+            class="rounded-xl border border-red-300 bg-red-50 px-3.5 py-2.5 text-sm font-semibold text-red-700"
         >
             {{ errorBanner }}
         </div>
 
         <!-- Collapsible Notifications Panel -->
-        <section v-if="showNotificationsPanel" class="bento p-5">
-            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-black/10 pb-3">
-                <div class="flex items-center gap-2 text-sm font-bold text-slate-900">
+        <section v-if="showNotificationsPanel" class="bento p-4">
+            <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2.5">
+                <div class="flex items-center gap-2 text-base font-bold text-foreground">
                     <Bell class="size-4 text-[#FF8D06]" />
                     Event &amp; Schedule Notifications
                 </div>
@@ -631,32 +631,32 @@ function statusPillClasses(ev: CampusEventFull): string {
                     v-if="unreadNotificationCount > 0"
                     type="button"
                     @click="markAllNotificationsRead"
-                    class="rounded-xl border border-[#0384C5]/30 bg-[#0384C5]/10 px-3 py-1 text-xs font-semibold text-[#0384C5]"
+                    class="rounded-lg border border-primary/30 bg-primary/10 px-3 py-1 text-xs font-semibold text-primary"
                 >
                     Mark All Read
                 </button>
             </div>
 
-            <div v-if="notifications.length === 0" class="mt-3 text-xs text-slate-500">
+            <div v-if="notifications.length === 0" class="mt-2.5 text-sm text-muted-foreground">
                 No event notifications yet.
             </div>
-            <div v-else class="mt-3 grid gap-2 md:grid-cols-2">
+            <div v-else class="mt-2.5 grid gap-2 md:grid-cols-2">
                 <div
                     v-for="notif in notifications"
                     :key="notif.id"
-                    class="flex items-start justify-between gap-3 rounded-2xl border p-3 text-xs"
-                    :class="notif.is_unread ? 'border-[#FF8D06]/45 bg-[#FFF8EC]' : 'border-black/10 bg-white'"
+                    class="flex items-start justify-between gap-2.5 rounded-xl border p-3.5 text-sm"
+                    :class="notif.is_unread ? 'border-primary/45 bg-primary/10' : 'border-border bg-card'"
                 >
                     <div>
-                        <div class="font-bold text-slate-900">{{ notif.title }}</div>
-                        <p class="mt-0.5 text-slate-600">{{ notif.message }}</p>
-                        <div class="mt-1 text-[10px] text-slate-400">{{ notif.created_at }}</div>
+                        <div class="font-bold text-foreground">{{ notif.title }}</div>
+                        <p class="mt-0.5 text-muted-foreground">{{ notif.message }}</p>
+                        <div class="mt-1 text-xs text-muted-foreground/80">{{ notif.created_at }}</div>
                     </div>
                     <button
                         v-if="notif.is_unread"
                         type="button"
                         @click="markNotificationRead(notif.id)"
-                        class="shrink-0 rounded-lg border border-black/15 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700"
+                        class="shrink-0 rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-semibold text-foreground"
                     >
                         Read
                     </button>
@@ -665,73 +665,73 @@ function statusPillClasses(ev: CampusEventFull): string {
         </section>
 
         <!-- TAB 1: SCHEDULE & CALENDAR -->
-        <div v-if="activeTab === 'schedule'" class="flex flex-col gap-5">
+        <div v-if="activeTab === 'schedule'" class="flex flex-col gap-3.5">
             <!-- Propose / Schedule Event Form (Adviser, President, VP) -->
-            <section v-if="canProposeEvents" class="bento p-5">
+            <section v-if="canProposeEvents" class="bento p-4">
                 <div class="flex flex-wrap items-center justify-between gap-2">
                     <div>
-                        <h2 class="flex items-center gap-1.5 text-sm font-bold text-slate-900">
-                            <PlusCircle class="size-4 text-[#0384C5]" />
+                        <h2 class="flex items-center gap-1.5 text-base font-bold text-foreground">
+                            <PlusCircle class="size-4 text-primary" />
                             Schedule Campus Event / Activity (Adviser, President &amp; VP)
                         </h2>
-                        <p class="mt-0.5 text-xs text-slate-600">
-                            Must be scheduled at least <strong>1 day in advance</strong> (earliest: <strong>{{ minScheduleDate }}</strong>).
+                        <p class="mt-0.5 text-sm text-muted-foreground">
+                            Must be scheduled at least <strong class="text-foreground">1 day in advance</strong> (earliest: <strong class="text-foreground">{{ minScheduleDate }}</strong>).
                             {{ isClubAdviser ? 'Events you create are immediately approved.' : 'President / VP proposals require Club Adviser approval before going live.' }}
                         </p>
                     </div>
                 </div>
 
-                <form class="mt-4 grid gap-3 text-xs md:grid-cols-6" @submit.prevent="createEvent">
+                <form class="mt-3 grid gap-3 text-sm md:grid-cols-6" @submit.prevent="createEvent">
                     <div class="md:col-span-2">
-                        <label class="mb-1 block font-bold">Event Title *</label>
+                        <label class="mb-1 block font-bold text-foreground">Event Title *</label>
                         <input
                             v-model="newTitle"
                             required
                             placeholder="e.g. Peer Listening Caravan"
-                            class="w-full rounded-xl border border-black/15 bg-white px-3 py-2"
+                            class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
                         />
                     </div>
                     <div>
-                        <label class="mb-1 block font-bold">Date * (Min 1 day ahead)</label>
+                        <label class="mb-1 block font-bold text-foreground">Date * (Min 1 day ahead)</label>
                         <input
                             v-model="newDate"
                             type="date"
                             :min="minScheduleDate"
                             required
-                            class="w-full rounded-xl border border-black/15 bg-white px-3 py-2"
+                            class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
                         />
                     </div>
                     <div>
-                        <label class="mb-1 block font-bold">Start Time *</label>
+                        <label class="mb-1 block font-bold text-foreground">Start Time *</label>
                         <input
                             v-model="newStartTime"
                             type="time"
                             required
-                            class="w-full rounded-xl border border-black/15 bg-white px-3 py-2"
+                            class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
                         />
                     </div>
                     <div>
-                        <label class="mb-1 block font-bold">End Time *</label>
+                        <label class="mb-1 block font-bold text-foreground">End Time *</label>
                         <input
                             v-model="newEndTime"
                             type="time"
                             required
-                            class="w-full rounded-xl border border-black/15 bg-white px-3 py-2"
+                            class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
                         />
                     </div>
                     <div>
-                        <label class="mb-1 block font-bold">Venue / Room</label>
+                        <label class="mb-1 block font-bold text-foreground">Venue / Room</label>
                         <input
                             v-model="newLocation"
                             placeholder="e.g. Student Center"
-                            class="w-full rounded-xl border border-black/15 bg-white px-3 py-2"
+                            class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
                         />
                     </div>
                     <div class="md:col-span-4 flex flex-col justify-center">
                         <input
                             v-model="newDescription"
                             placeholder="Optional activity agenda or notes for members..."
-                            class="w-full rounded-xl border border-black/15 bg-white px-3 py-2"
+                            class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
                         />
                     </div>
                     <div class="flex items-center md:col-span-2">
@@ -739,18 +739,18 @@ function statusPillClasses(ev: CampusEventFull): string {
                             {{ isClubAdviser ? 'Schedule Event' : 'Propose Event' }}
                         </button>
                     </div>
-                    <div class="md:col-span-6 rounded-xl border border-black/10 bg-[#FBF6EE] px-3 py-2.5">
-                        <label class="flex cursor-pointer items-start gap-2.5 text-xs">
+                    <div class="md:col-span-6 rounded-xl border border-border bg-background/80 px-3 py-2.5">
+                        <label class="flex cursor-pointer items-start gap-2.5 text-sm">
                             <input
                                 v-model="newAllowReflection"
                                 type="checkbox"
-                                class="mt-0.5 size-4 rounded border-black/25 text-[#FF8D06] focus:ring-[#FF8D06]"
+                                class="mt-0.5 size-4 rounded border-border text-[#FF8D06] focus:ring-[#FF8D06]"
                             />
                             <span>
-                                <span class="font-bold text-slate-800">
+                                <span class="font-bold text-foreground">
                                     Optional: Enable Post-Event Reflection (Time Capsule)
                                 </span>
-                                <span class="block text-[11px] text-slate-600">
+                                <span class="block text-xs text-muted-foreground">
                                     No reflection is needed by default.
                                     {{ isClubAdviser ? 'Checked: activates Time Capsule reflection once completed.' : 'If checked, requires Club Adviser confirmation before taking effect.' }}
                                 </span>
@@ -761,7 +761,7 @@ function statusPillClasses(ev: CampusEventFull): string {
             </section>
 
             <!-- Calendar Grid + Selected Event Controls -->
-            <div class="grid gap-5 xl:grid-cols-[1.35fr_1fr]">
+            <div class="grid gap-3.5 xl:grid-cols-[1.35fr_1fr]">
                 <EventCalendarGrid
                     :events="events"
                     :selected-event-id="selectedEvent?.id ?? null"
@@ -773,22 +773,22 @@ function statusPillClasses(ev: CampusEventFull): string {
                 />
 
                 <!-- Selected Event Inspector & Adviser Controls -->
-                <div class="flex flex-col gap-4">
-                    <section v-if="selectedEvent" class="bento p-5">
-                        <div class="flex flex-wrap items-start justify-between gap-2 border-b border-black/10 pb-3">
+                <div class="flex flex-col gap-3.5">
+                    <section v-if="selectedEvent" class="bento p-4">
+                        <div class="flex flex-wrap items-start justify-between gap-2 border-b border-border pb-3">
                             <div>
                                 <span
-                                    class="inline-block rounded-full px-2.5 py-0.5 text-[11px] font-bold"
+                                    class="inline-block rounded-full px-2.5 py-0.5 text-xs font-bold"
                                     :class="statusPillClasses(selectedEvent)"
                                 >
                                     {{ statusPillLabel(selectedEvent) }}
                                 </span>
-                                <h2 class="font-editorial mt-2 text-lg font-bold text-slate-900">
+                                <h2 class="font-editorial mt-1.5 text-base font-bold text-foreground">
                                     {{ selectedEvent.title }}
                                 </h2>
-                                <div class="mt-1 flex flex-wrap items-center gap-3 text-xs text-slate-600">
-                                    <span class="inline-flex items-center gap-1 font-semibold text-slate-800">
-                                        <Clock class="size-3.5 text-[#0384C5]" />
+                                <div class="mt-1 flex flex-wrap items-center gap-3 text-sm text-muted-foreground">
+                                    <span class="inline-flex items-center gap-1 font-semibold text-foreground">
+                                        <Clock class="size-3.5 text-primary" />
                                         {{ selectedEvent.event_date_label }} • {{ selectedEvent.start_time }}–{{ selectedEvent.end_time }}
                                     </span>
                                     <span v-if="selectedEvent.location" class="inline-flex items-center gap-1">
@@ -799,30 +799,30 @@ function statusPillClasses(ev: CampusEventFull): string {
                             </div>
                         </div>
 
-                        <p v-if="selectedEvent.description" class="mt-3 text-xs leading-relaxed text-slate-700">
+                        <p v-if="selectedEvent.description" class="mt-2.5 text-sm leading-relaxed text-muted-foreground">
                             {{ selectedEvent.description }}
                         </p>
 
-                        <div class="mt-3 rounded-xl bg-[#FBF6EE] p-3 text-[11px] text-slate-600">
-                            <div>Proposed by: <strong>{{ selectedEvent.creator_name }}</strong></div>
+                        <div class="mt-3 rounded-xl border border-border bg-background/80 p-3.5 text-xs text-muted-foreground">
+                            <div>Proposed by: <strong class="text-foreground">{{ selectedEvent.creator_name }}</strong></div>
                             <div v-if="selectedEvent.approver_name">
-                                Approved by: <strong>{{ selectedEvent.approver_name }}</strong>
+                                Approved by: <strong class="text-foreground">{{ selectedEvent.approver_name }}</strong>
                                 <span v-if="selectedEvent.approved_at">({{ selectedEvent.approved_at }})</span>
                             </div>
                             <div class="mt-1 flex flex-wrap items-center gap-1.5">
                                 <span>Post-Event Reflection:</span>
                                 <span
-                                    class="inline-flex items-center rounded-full px-2 py-0.5 text-[10px] font-bold"
+                                    class="inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-bold"
                                     :class="
                                         selectedEvent.reflection_enabled
                                             ? 'bg-[#FF8D06]/15 text-[#FF8D06]'
-                                            : 'bg-slate-200/80 text-slate-600'
+                                            : 'bg-muted text-muted-foreground'
                                     "
                                 >
                                     {{ selectedEvent.reflection_enabled ? 'Reflection Enabled (Optional Time Capsule)' : 'No Reflection Needed' }}
                                 </span>
                             </div>
-                            <div v-if="selectedEvent.effective_status === 'scheduled'" class="mt-1 font-semibold text-[#0384C5]">
+                            <div v-if="selectedEvent.effective_status === 'scheduled'" class="mt-1 font-semibold text-primary">
                                 Activates automatically on {{ selectedEvent.event_date }} at {{ selectedEvent.start_time }}.
                             </div>
                             <div v-if="selectedEvent.within_one_day_cutoff && selectedEvent.effective_status === 'scheduled'" class="mt-1 inline-flex items-center gap-1 font-semibold text-amber-800">
@@ -836,36 +836,36 @@ function statusPillClasses(ev: CampusEventFull): string {
                         <!-- Pending Reflection Change Notice (Proposed by President / VP) -->
                         <div
                             v-if="selectedEvent.pending_reflection_enabled !== null"
-                            class="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-xs text-amber-950"
+                            class="mt-3 rounded-xl border border-amber-300 bg-amber-50 p-3.5 text-sm text-amber-950"
                         >
                             <div class="font-bold">
                                 Pending Reflection Change Request ({{ selectedEvent.pending_reflection_enabled ? 'Enable Reflection' : 'Disable Reflection' }})
                             </div>
-                            <p class="mt-0.5 text-[11px] text-amber-900">
+                            <p class="mt-0.5 text-xs text-amber-900">
                                 Requested by <strong>{{ selectedEvent.reflection_requester_name ?? selectedEvent.creator_name }}</strong>
                                 <span v-if="selectedEvent.reflection_requested_at"> on {{ selectedEvent.reflection_requested_at }}</span>
                                 — awaiting Club Adviser confirmation before taking effect.
                             </p>
                             <div
                                 v-if="isClubAdviser && selectedEvent.effective_status !== 'pending_approval' && selectedEvent.effective_status !== 'cancelled'"
-                                class="mt-2.5 flex flex-wrap gap-2"
+                                class="mt-2 flex flex-wrap gap-2"
                             >
                                 <button
                                     type="button"
                                     :disabled="busy"
                                     @click="reviewReflectionSetting(selectedEvent, 'approved')"
-                                    class="inline-flex items-center gap-1 rounded-lg bg-[#1A8F26] px-2.5 py-1 text-[11px] font-bold text-white"
+                                    class="inline-flex items-center gap-1 rounded-lg bg-[#1A8F26] px-3 py-1.5 text-xs font-bold text-white"
                                 >
-                                    <CheckCircle2 class="size-3" />
+                                    <CheckCircle2 class="size-3.5" />
                                     Confirm Reflection {{ selectedEvent.pending_reflection_enabled ? 'Enable' : 'Disable' }}
                                 </button>
                                 <button
                                     type="button"
                                     :disabled="busy"
                                     @click="reviewReflectionSetting(selectedEvent, 'declined')"
-                                    class="inline-flex items-center gap-1 rounded-lg border border-amber-400 bg-white px-2.5 py-1 text-[11px] font-bold text-amber-900"
+                                    class="inline-flex items-center gap-1 rounded-lg border border-amber-400 bg-white px-3 py-1.5 text-xs font-bold text-amber-900"
                                 >
-                                    <XCircle class="size-3" />
+                                    <XCircle class="size-3.5" />
                                     Decline Request
                                 </button>
                             </div>
@@ -874,17 +874,17 @@ function statusPillClasses(ev: CampusEventFull): string {
                         <!-- Adviser Reflection Confirmation on Event Approval -->
                         <div
                             v-if="isClubAdviser && selectedEvent.effective_status === 'pending_approval'"
-                            class="mt-3 rounded-xl border border-[#1A8F26]/25 bg-[#1A8F26]/5 p-3 text-xs"
+                            class="mt-3 rounded-xl border border-[#1A8F26]/25 bg-[#1A8F26]/5 p-3 text-sm"
                         >
-                            <label class="flex cursor-pointer items-center gap-2 font-semibold text-slate-800">
+                            <label class="flex cursor-pointer items-center gap-2 font-semibold text-foreground">
                                 <input
                                     v-model="approveWithReflection"
                                     type="checkbox"
-                                    class="size-4 rounded border-black/25 text-[#1A8F26] focus:ring-[#1A8F26]"
+                                    class="size-4 rounded border-border text-[#1A8F26] focus:ring-[#1A8F26]"
                                 />
                                 <span>
                                     Confirm Optional Post-Event Reflection on Approval
-                                    <span v-if="selectedEvent.pending_reflection_enabled" class="text-[11px] font-normal text-amber-800">
+                                    <span v-if="selectedEvent.pending_reflection_enabled" class="text-xs font-normal text-amber-800">
                                         (Requested by proposer)
                                     </span>
                                 </span>
@@ -901,7 +901,7 @@ function statusPillClasses(ev: CampusEventFull): string {
                                 type="button"
                                 :disabled="busy"
                                 @click="toggleReflectionSetting(selectedEvent, !selectedEvent.reflection_enabled)"
-                                class="inline-flex items-center gap-1.5 rounded-xl border border-[#FF8D06]/40 bg-[#FF8D06]/10 px-3 py-1.5 text-xs font-bold text-[#B36000]"
+                                class="inline-flex items-center gap-1.5 rounded-lg border border-[#FF8D06]/40 bg-[#FF8D06]/10 px-3 py-1.5 text-sm font-bold text-[#B36000]"
                             >
                                 <Sparkles class="size-3.5" />
                                 {{ selectedEvent.reflection_enabled ? 'Disable Post-Event Reflection' : 'Enable Post-Event Reflection (Optional)' }}
@@ -913,7 +913,7 @@ function statusPillClasses(ev: CampusEventFull): string {
                                     type="button"
                                     :disabled="busy"
                                     @click="toggleReflectionSetting(selectedEvent, selectedEvent.effective_status === 'pending_approval' ? false : selectedEvent.reflection_enabled)"
-                                    class="inline-flex items-center gap-1.5 rounded-xl border border-amber-300 bg-amber-50 px-3 py-1.5 text-xs font-bold text-amber-900"
+                                    class="inline-flex items-center gap-1.5 rounded-lg border border-amber-300 bg-amber-50 px-3 py-1.5 text-sm font-bold text-amber-900"
                                 >
                                     <XCircle class="size-3.5" />
                                     Withdraw Pending Reflection Request
@@ -923,7 +923,7 @@ function statusPillClasses(ev: CampusEventFull): string {
                                     type="button"
                                     :disabled="busy"
                                     @click="toggleReflectionSetting(selectedEvent, !selectedEvent.reflection_enabled)"
-                                    class="inline-flex items-center gap-1.5 rounded-xl border border-[#FF8D06]/40 bg-[#FF8D06]/10 px-3 py-1.5 text-xs font-bold text-[#B36000]"
+                                    class="inline-flex items-center gap-1.5 rounded-lg border border-[#FF8D06]/40 bg-[#FF8D06]/10 px-3 py-1.5 text-sm font-bold text-[#B36000]"
                                 >
                                     <Sparkles class="size-3.5" />
                                     {{
@@ -936,13 +936,13 @@ function statusPillClasses(ev: CampusEventFull): string {
                         </div>
 
                         <!-- Adviser Controls -->
-                        <div v-if="isClubAdviser" class="mt-4 flex flex-wrap gap-2">
+                        <div v-if="isClubAdviser" class="mt-3 flex flex-wrap gap-2">
                             <button
                                 v-if="selectedEvent.effective_status === 'pending_approval'"
                                 type="button"
                                 :disabled="busy"
                                 @click="approveEvent(selectedEvent)"
-                                class="inline-flex items-center gap-1.5 rounded-xl bg-[#1A8F26] px-3.5 py-2 text-xs font-bold text-white"
+                                class="inline-flex items-center gap-1.5 rounded-lg bg-[#1A8F26] px-3 py-1.5 text-sm font-bold text-white"
                             >
                                 <CheckCircle2 class="size-3.5" />
                                 Approve Event
@@ -952,7 +952,7 @@ function statusPillClasses(ev: CampusEventFull): string {
                                 v-if="selectedEvent.can_edit_schedule"
                                 type="button"
                                 @click="editingSchedule ? (editingSchedule = false) : openEditSchedule(selectedEvent)"
-                                class="inline-flex items-center gap-1.5 rounded-xl border border-[#0384C5]/40 bg-[#0384C5]/10 px-3.5 py-2 text-xs font-bold text-[#0384C5]"
+                                class="inline-flex items-center gap-1.5 rounded-lg border border-primary/40 bg-primary/10 px-3 py-1.5 text-sm font-bold text-primary"
                             >
                                 <Pencil class="size-3.5" />
                                 {{ editingSchedule ? 'Close Schedule Editor' : 'Change Schedule / Details' }}
@@ -962,7 +962,7 @@ function statusPillClasses(ev: CampusEventFull): string {
                                 v-if="selectedEvent.effective_status !== 'completed' && selectedEvent.effective_status !== 'cancelled'"
                                 type="button"
                                 @click="cancelPromptOpen = !cancelPromptOpen"
-                                class="inline-flex items-center gap-1.5 rounded-xl border border-red-300 bg-white px-3.5 py-2 text-xs font-bold text-red-700"
+                                class="inline-flex items-center gap-1.5 rounded-lg border border-red-300 bg-card px-3 py-1.5 text-sm font-bold text-red-700"
                             >
                                 <XCircle class="size-3.5" />
                                 Cancel Event
@@ -972,19 +972,19 @@ function statusPillClasses(ev: CampusEventFull): string {
                         <!-- Adviser Input Schedule Editor -->
                         <form
                             v-if="isClubAdviser && editingSchedule && selectedEvent.can_edit_schedule"
-                            class="mt-4 grid gap-2.5 rounded-2xl border border-[#0384C5]/30 bg-[#FBF6EE] p-4 text-xs"
+                            class="mt-3 grid gap-2.5 rounded-xl border border-primary/30 bg-background/80 p-3.5 text-sm"
                             @submit.prevent="submitEditSchedule"
                         >
-                            <div class="font-bold text-[#0384C5]">Adviser Input Schedule Change</div>
-                            <input v-model="editTitle" required placeholder="Event Title" class="rounded-xl border border-black/15 bg-white px-3 py-1.5" />
+                            <div class="font-bold text-primary">Adviser Input Schedule Change</div>
+                            <input v-model="editTitle" required placeholder="Event Title" class="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground" />
                             <div class="grid gap-2 sm:grid-cols-3">
-                                <input v-model="editDate" type="date" :min="minScheduleDate" required class="rounded-xl border border-black/15 bg-white px-2.5 py-1.5" />
-                                <input v-model="editStartTime" type="time" required class="rounded-xl border border-black/15 bg-white px-2.5 py-1.5" />
-                                <input v-model="editEndTime" type="time" required class="rounded-xl border border-black/15 bg-white px-2.5 py-1.5" />
+                                <input v-model="editDate" type="date" :min="minScheduleDate" required class="rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm text-foreground" />
+                                <input v-model="editStartTime" type="time" required class="rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm text-foreground" />
+                                <input v-model="editEndTime" type="time" required class="rounded-lg border border-border bg-card px-2.5 py-1.5 text-sm text-foreground" />
                             </div>
-                            <input v-model="editLocation" placeholder="Venue / Location" class="rounded-xl border border-black/15 bg-white px-3 py-1.5" />
-                            <input v-model="editDescription" placeholder="Description" class="rounded-xl border border-black/15 bg-white px-3 py-1.5" />
-                            <button type="submit" :disabled="busy" class="bento-btn w-fit py-1.5">
+                            <input v-model="editLocation" placeholder="Venue / Location" class="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground" />
+                            <input v-model="editDescription" placeholder="Description" class="rounded-lg border border-border bg-card px-3 py-1.5 text-sm text-foreground" />
+                            <button type="submit" :disabled="busy" class="bento-btn w-fit">
                                 Save New Schedule
                             </button>
                         </form>
@@ -992,27 +992,27 @@ function statusPillClasses(ev: CampusEventFull): string {
                         <!-- Adviser Cancellation Prompt -->
                         <form
                             v-if="isClubAdviser && cancelPromptOpen"
-                            class="mt-4 flex flex-col gap-2 rounded-2xl border border-red-200 bg-red-50/80 p-4 text-xs"
+                            class="mt-3 flex flex-col gap-2 rounded-xl border border-red-200 bg-red-50/80 p-3.5 text-sm"
                             @submit.prevent="cancelEvent(selectedEvent)"
                         >
                             <label class="font-bold text-red-800">Confirm Cancellation (Members will be notified)</label>
                             <input
                                 v-model="cancelReason"
                                 placeholder="Optional cancellation reason..."
-                                class="rounded-xl border border-red-200 bg-white px-3 py-1.5"
+                                class="rounded-lg border border-red-200 bg-white px-3 py-1.5 text-sm text-slate-900"
                             />
-                            <button type="submit" :disabled="busy" class="w-fit rounded-xl bg-red-600 px-3.5 py-1.5 font-bold text-white">
+                            <button type="submit" :disabled="busy" class="w-fit rounded-lg bg-red-600 px-3.5 py-1.5 text-sm font-bold text-white">
                                 Confirm Cancel Event
                             </button>
                         </form>
 
                         <!-- Quick Tab Shortcuts -->
-                        <div class="mt-4 flex flex-wrap gap-2 border-t border-black/10 pt-3">
+                        <div class="mt-3 flex flex-wrap gap-2 border-t border-border pt-2.5">
                             <button
                                 v-if="selectedEvent.effective_status === 'active' || selectedEvent.effective_status === 'completed'"
                                 type="button"
                                 @click="activeTab = 'attendance'"
-                                class="rounded-xl bg-[#1A8F26]/12 px-3 py-1.5 text-xs font-bold text-[#1A8F26]"
+                                class="rounded-lg bg-[#1A8F26]/12 px-3 py-1.5 text-sm font-bold text-[#1A8F26]"
                             >
                                 {{ selectedEvent.effective_status === 'active' ? 'Open Officer QR Scanner & Checklist →' : 'View Attendance Checklist →' }}
                             </button>
@@ -1020,7 +1020,7 @@ function statusPillClasses(ev: CampusEventFull): string {
                                 v-if="selectedEvent.effective_status === 'completed' && selectedEvent.reflection_enabled"
                                 type="button"
                                 @click="activeTab = 'reflections'"
-                                class="rounded-xl bg-[#FF8D06]/15 px-3 py-1.5 text-xs font-bold text-[#FF8D06]"
+                                class="rounded-lg bg-[#FF8D06]/15 px-3 py-1.5 text-sm font-bold text-[#FF8D06]"
                             >
                                 Write Reflection for Time Capsule →
                             </button>
@@ -1028,32 +1028,32 @@ function statusPillClasses(ev: CampusEventFull): string {
                     </section>
 
                     <!-- All Campus Events Quick Selector -->
-                    <section class="bento p-5">
-                        <h3 class="text-sm font-bold text-slate-900">Campus Events Directory ({{ events.length }})</h3>
-                        <div v-if="events.length === 0" class="mt-2 text-xs text-slate-500">
+                    <section class="bento p-4">
+                        <h3 class="text-base font-bold text-foreground">Campus Events Directory ({{ events.length }})</h3>
+                        <div v-if="events.length === 0" class="mt-2 text-sm text-muted-foreground">
                             No campus events scheduled yet.
                         </div>
-                        <div v-else class="mt-3 flex max-h-64 flex-col gap-2 overflow-y-auto pr-1">
+                        <div v-else class="mt-2.5 flex max-h-64 flex-col gap-2 overflow-y-auto pr-1">
                             <button
                                 v-for="ev in events"
                                 :key="`list-${ev.id}`"
                                 type="button"
                                 @click="selectedEventId = ev.id"
-                                class="flex items-center justify-between gap-2 rounded-xl border p-2.5 text-left text-xs transition"
+                                class="flex items-center justify-between gap-2 rounded-xl border px-3 py-2.5 text-left text-sm transition"
                                 :class="
                                     selectedEvent?.id === ev.id
-                                        ? 'border-[#0384C5] bg-[#0384C5]/5'
-                                        : 'border-black/10 bg-white hover:border-black/25'
+                                        ? 'border-primary bg-primary/8'
+                                        : 'border-border bg-card hover:border-primary/40'
                                 "
                             >
                                 <div class="min-w-0">
-                                    <div class="truncate font-bold text-slate-900">{{ ev.title }}</div>
-                                    <div class="text-[11px] text-slate-500">
+                                    <div class="truncate font-bold text-foreground">{{ ev.title }}</div>
+                                    <div class="text-xs text-muted-foreground">
                                         {{ ev.event_date_label }} • {{ ev.start_time }}–{{ ev.end_time }}
                                     </div>
                                 </div>
                                 <span
-                                    class="shrink-0 rounded-full px-2 py-0.5 text-[10px] font-bold"
+                                    class="shrink-0 rounded-full px-2.5 py-0.5 text-xs font-bold"
                                     :class="statusPillClasses(ev)"
                                 >
                                     {{ statusPillLabel(ev) }}
@@ -1066,13 +1066,13 @@ function statusPillClasses(ev: CampusEventFull): string {
         </div>
 
         <!-- TAB 2: OFFICER QR SCANNER & ATTENDANCE CHECKLIST (LIST VIEW) -->
-        <div v-else-if="activeTab === 'attendance'" class="flex flex-col gap-5">
-            <div class="bento flex flex-wrap items-center justify-between gap-3 p-4 text-xs">
+        <div v-else-if="activeTab === 'attendance'" class="flex flex-col gap-3.5">
+            <div class="bento flex flex-wrap items-center justify-between gap-3 p-4 text-sm">
                 <div class="flex flex-wrap items-center gap-2">
-                    <span class="font-bold text-slate-700">Selected Activity:</span>
+                    <span class="font-bold text-foreground">Selected Activity:</span>
                     <select
                         v-model="selectedEventId"
-                        class="rounded-xl border border-black/15 bg-white px-3 py-2 font-semibold text-slate-900"
+                        class="rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-semibold text-foreground"
                     >
                         <option v-for="ev in events" :key="`opt-${ev.id}`" :value="ev.id">
                             {{ ev.title }} ({{ ev.event_date_label }} • {{ statusPillLabel(ev) }})
@@ -1080,7 +1080,7 @@ function statusPillClasses(ev: CampusEventFull): string {
                     </select>
                 </div>
 
-                <div v-if="selectedEvent" class="flex flex-wrap items-center gap-2 font-bold">
+                <div v-if="selectedEvent" class="flex flex-wrap items-center gap-2 text-xs font-bold">
                     <span class="rounded-full bg-[#1A8F26]/12 px-3 py-1 text-[#1A8F26]">
                         Logged In: {{ selectedEvent.logged_in_count }}
                     </span>
@@ -1089,13 +1089,13 @@ function statusPillClasses(ev: CampusEventFull): string {
                     </span>
                     <span
                         v-if="selectedEvent.reflection_enabled"
-                        class="rounded-full bg-[#0384C5]/12 px-3 py-1 text-[#0384C5]"
+                        class="rounded-full bg-primary/12 px-3 py-1 text-primary"
                     >
                         Reflections Sealed: {{ selectedEvent.reflection_count }}
                     </span>
                     <span
                         v-else
-                        class="rounded-full bg-slate-100 px-3 py-1 text-slate-600"
+                        class="rounded-full bg-muted px-3 py-1 text-muted-foreground"
                     >
                         Reflection: Not Required
                     </span>
@@ -1114,37 +1114,37 @@ function statusPillClasses(ev: CampusEventFull): string {
 
                 <div
                     v-else-if="isOfficerOrAdviser"
-                    class="rounded-2xl border border-amber-300 bg-amber-50 p-4 text-xs text-amber-900"
+                    class="rounded-xl border border-amber-300 bg-amber-50 p-3.5 text-sm text-amber-900"
                 >
                     <Lock class="mr-1.5 inline size-4" />
                     <strong>QR Scanner Locked:</strong> The Attendance QR Scanner unlocks automatically only while this event is <strong>Active</strong> ({{ selectedEvent.event_date_label }} • {{ selectedEvent.start_time }}–{{ selectedEvent.end_time }}).
                 </div>
 
                 <!-- Separate List-View Attendance Checklist -->
-                <section class="bento p-5">
-                    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-black/10 pb-3">
+                <section class="bento p-4">
+                    <div class="flex flex-wrap items-center justify-between gap-3 border-b border-border pb-3">
                         <div>
-                            <h2 class="text-base font-bold text-slate-900">
+                            <h2 class="text-base font-bold text-foreground">
                                 Attendance Checklist (List View) — {{ selectedEvent.title }}
                             </h2>
-                            <p class="text-xs text-slate-600">
+                            <p class="text-sm text-muted-foreground">
                                 Real-time A–Z attendance roster tracking Log-In (start), Log-Out (end), and reflection completion when enabled.
                             </p>
                         </div>
 
-                        <div class="flex flex-wrap items-center gap-2 text-xs">
+                        <div class="flex flex-wrap items-center gap-2 text-sm">
                             <div class="relative">
-                                <Search class="pointer-events-none absolute top-2.5 left-3 size-3.5 text-slate-400" />
+                                <Search class="pointer-events-none absolute top-2.5 left-3 size-3.5 text-muted-foreground" />
                                 <input
                                     v-model="checklistSearch"
                                     type="text"
                                     placeholder="Search member or ID..."
-                                    class="rounded-xl border border-black/15 bg-[#FBF6EE] py-1.5 pr-3 pl-8"
+                                    class="rounded-lg border border-border bg-background py-1.5 pr-3 pl-8 text-sm text-foreground"
                                 />
                             </div>
                             <select
                                 v-model="checklistFilter"
-                                class="rounded-xl border border-black/15 bg-[#FBF6EE] px-3 py-1.5 font-medium"
+                                class="rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-medium text-foreground"
                             >
                                 <option value="all">All ({{ selectedEvent.checklist.length }})</option>
                                 <option value="complete">Present In &amp; Out</option>
@@ -1154,58 +1154,58 @@ function statusPillClasses(ev: CampusEventFull): string {
                         </div>
                     </div>
 
-                    <div v-if="filteredChecklist.length === 0" class="py-8 text-center text-xs text-slate-500">
+                    <div v-if="filteredChecklist.length === 0" class="py-6 text-center text-sm text-muted-foreground">
                         No members match this checklist filter.
                     </div>
-                    <div v-else class="mt-4 flex flex-col gap-2">
+                    <div v-else class="mt-3 flex flex-col gap-2">
                         <div
                             v-for="(row, idx) in filteredChecklist"
                             :key="`chk-${row.user_id}`"
-                            class="flex flex-wrap items-center justify-between gap-3 rounded-2xl border p-3.5 text-xs"
+                            class="flex flex-wrap items-center justify-between gap-2.5 rounded-xl border px-3 py-2.5 text-sm"
                             :class="
                                 row.logged_in_at && row.logged_out_at
                                     ? 'border-[#1A8F26]/30 bg-[#1A8F26]/5'
                                     : row.logged_in_at
                                       ? 'border-amber-300 bg-amber-50/70'
-                                      : 'border-black/10 bg-white'
+                                      : 'border-border bg-card'
                             "
                         >
                             <div>
                                 <div class="flex flex-wrap items-center gap-2">
-                                    <span class="font-mono text-[11px] font-bold text-slate-400">#{{ idx + 1 }}</span>
-                                    <span class="text-sm font-bold text-slate-900">{{ row.full_name_last_first_mi }}</span>
-                                    <span class="rounded-full bg-[#0384C5]/10 px-2 py-0.5 text-[10px] font-semibold text-[#0384C5]">
+                                    <span class="font-mono text-xs font-bold text-muted-foreground">#{{ idx + 1 }}</span>
+                                    <span class="text-sm font-bold text-foreground">{{ row.full_name_last_first_mi }}</span>
+                                    <span class="rounded-full bg-primary/10 px-2.5 py-0.5 text-sm font-semibold text-primary">
                                         {{ row.course_year_section }}
                                     </span>
-                                    <span class="rounded-full bg-[#FBF6EE] px-2 py-0.5 text-[10px] font-medium text-slate-700">
+                                    <span class="rounded-full bg-secondary px-2 py-0.5 text-xs font-medium text-secondary-foreground">
                                         {{ row.role }}
                                     </span>
-                                    <span class="font-mono text-[10px] text-slate-500">{{ row.member_id_code }}</span>
+                                    <span class="font-mono text-xs text-muted-foreground">{{ row.member_id_code }}</span>
                                 </div>
                             </div>
 
                             <div class="flex flex-wrap items-center gap-2">
                                 <span
-                                    class="rounded-full px-2.5 py-1 text-[11px] font-bold"
-                                    :class="row.logged_in_at ? 'bg-[#1A8F26]/15 text-[#1A8F26]' : 'bg-slate-100 text-slate-500'"
+                                    class="rounded-full px-2.5 py-1 text-xs font-bold"
+                                    :class="row.logged_in_at ? 'bg-[#1A8F26]/15 text-[#1A8F26]' : 'bg-muted text-muted-foreground'"
                                 >
                                     {{ row.logged_in_at ? `In: ${row.logged_in_at}` : 'In: Pending' }}
                                 </span>
                                 <span
-                                    class="rounded-full px-2.5 py-1 text-[11px] font-bold"
-                                    :class="row.logged_out_at ? 'bg-[#0384C5]/15 text-[#0384C5]' : 'bg-slate-100 text-slate-500'"
+                                    class="rounded-full px-2.5 py-1 text-xs font-bold"
+                                    :class="row.logged_out_at ? 'bg-primary/15 text-primary' : 'bg-muted text-muted-foreground'"
                                 >
                                     {{ row.logged_out_at ? `Out: ${row.logged_out_at}` : 'Out: Pending' }}
                                 </span>
                                 <span
                                     v-if="selectedEvent.reflection_enabled && row.has_reflection"
-                                    class="rounded-full bg-[#FF8D06]/15 px-2.5 py-1 text-[11px] font-bold text-[#FF8D06]"
+                                    class="rounded-full bg-[#FF8D06]/15 px-2.5 py-1 text-xs font-bold text-[#FF8D06]"
                                 >
                                     Reflection Sealed ✓
                                 </span>
                                 <span
                                     v-else-if="!selectedEvent.reflection_enabled"
-                                    class="rounded-full bg-slate-100 px-2.5 py-1 text-[11px] font-medium text-slate-500"
+                                    class="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-muted-foreground"
                                 >
                                     Reflection: N/A
                                 </span>
@@ -1217,11 +1217,11 @@ function statusPillClasses(ev: CampusEventFull): string {
         </div>
 
         <!-- TAB 3: POST-EVENT REFLECTIONS -> TIME CAPSULE -->
-        <div v-else class="flex flex-col gap-5">
-            <div class="bento flex flex-wrap items-center justify-between gap-3 p-5 text-xs">
+        <div v-else class="flex flex-col gap-3.5">
+            <div class="bento flex flex-wrap items-center justify-between gap-3 p-4 text-sm">
                 <div>
-                    <h2 class="text-base font-bold text-slate-900">Post-Event Reflections &rarr; Encrypted Time Capsule</h2>
-                    <p class="mt-0.5 text-slate-600">
+                    <h2 class="text-base font-bold text-foreground">Post-Event Reflections &rarr; Encrypted Time Capsule</h2>
+                    <p class="mt-0.5 text-muted-foreground">
                         Post-event reflection is optional per activity (configured by the Club Adviser, or proposed by the President/VP and confirmed by the Club Adviser). When enabled for a completed activity, your reflection is AES-256 encrypted and sealed straight into your date-locked Time Capsule.
                     </p>
                 </div>
@@ -1230,7 +1230,7 @@ function statusPillClasses(ev: CampusEventFull): string {
                 </Link>
             </div>
 
-            <div v-if="reflectionEnabledCompletedEvents.length === 0" class="bento p-6 text-xs text-slate-500">
+            <div v-if="reflectionEnabledCompletedEvents.length === 0" class="bento p-4 text-sm text-muted-foreground">
                 <template v-if="completedWithoutReflectionEvents.length > 0">
                     No completed activities currently require a post-event reflection (optional Time Capsule reflection is disabled by default unless enabled by the Club Adviser).
                 </template>
@@ -1242,12 +1242,12 @@ function statusPillClasses(ev: CampusEventFull): string {
             <section
                 v-for="ev in reflectionEnabledCompletedEvents"
                 :key="`refl-${ev.id}`"
-                class="bento p-5"
+                class="bento p-4"
             >
-                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-black/10 pb-3">
+                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
                     <div>
-                        <h3 class="font-editorial text-lg font-bold text-slate-900">{{ ev.title }}</h3>
-                        <p class="text-xs text-slate-600">
+                        <h3 class="font-editorial text-base font-bold text-foreground">{{ ev.title }}</h3>
+                        <p class="text-sm text-muted-foreground">
                             Completed on {{ ev.event_date_label }} • {{ ev.start_time }}–{{ ev.end_time }}
                         </p>
                     </div>
@@ -1260,43 +1260,43 @@ function statusPillClasses(ev: CampusEventFull): string {
                     </span>
                 </div>
 
-                <div v-if="ev.my_reflection_submitted" class="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-2xl bg-[#FBF6EE] p-4 text-xs text-slate-700">
+                <div v-if="ev.my_reflection_submitted" class="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl bg-background/80 p-3.5 text-sm text-foreground">
                     <span>
                         Your reflection was encrypted and stored in Time Capsule #{{ ev.my_reflection_capsule_id }} ({{ ev.my_reflection_submitted_at }}).
                     </span>
-                    <Link href="/community-hub" class="font-bold text-[#0384C5] underline">
+                    <Link href="/community-hub" class="font-bold text-primary underline">
                         Open Community &amp; Archives &rarr; Time Capsules
                     </Link>
                 </div>
 
                 <form
                     v-else-if="isVerifiedMember"
-                    class="mt-4 grid gap-3 text-xs"
+                    class="mt-3 grid gap-3 text-sm"
                     @submit.prevent="submitReflection(ev)"
                 >
                     <div class="grid gap-3 md:grid-cols-2">
                         <div>
-                            <label class="mb-1 block font-bold">Time Capsule Title</label>
+                            <label class="mb-1 block font-bold text-foreground">Time Capsule Title</label>
                             <input
                                 v-model="reflectionTitles[ev.id]"
                                 :placeholder="`Reflection: ${ev.title}`"
-                                class="w-full rounded-xl border border-black/15 bg-white px-3 py-2"
+                                class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
                             />
                         </div>
                         <div>
-                            <label class="mb-1 block font-bold">Time Capsule Unlock Date &amp; Time *</label>
+                            <label class="mb-1 block font-bold text-foreground">Time Capsule Unlock Date &amp; Time *</label>
                             <input
                                 v-model="reflectionUnlockDates[ev.id]"
                                 type="datetime-local"
                                 required
-                                class="w-full rounded-xl border border-black/15 bg-white px-3 py-2"
+                                class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
                             />
                         </div>
                     </div>
 
                     <div>
-                        <label class="mb-1.5 block font-bold">Time Capsule Letter Variety</label>
-                        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
+                        <label class="mb-1.5 block font-bold text-foreground">Time Capsule Letter Variety</label>
+                        <div class="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-3">
                             <button
                                 v-for="opt in letterStyleOptions"
                                 :key="`${ev.id}-${opt.value}`"
@@ -1306,7 +1306,7 @@ function statusPillClasses(ev: CampusEventFull): string {
                                 :class="
                                     (reflectionLetterStyles[ev.id] ?? 'classic') === opt.value
                                         ? 'border-[#D94B7C] ring-2 ring-[#D94B7C]/35'
-                                        : 'border-black/10 bg-white hover:border-black/25'
+                                        : 'border-border bg-card hover:border-primary/40'
                                 "
                             >
                                 <div class="relative h-10 w-full overflow-hidden" :style="{ background: opt.swatch }">
@@ -1325,23 +1325,23 @@ function statusPillClasses(ev: CampusEventFull): string {
                                         <span class="pointer-events-none absolute -top-2 right-4 size-8 rounded-full bg-[#FFB357]/45 blur-xs" />
                                     </template>
                                 </div>
-                                <div class="p-2">
-                                    <div class="text-[11px] font-bold text-slate-900">{{ opt.label }}</div>
-                                    <div class="text-[10px] text-slate-500">{{ opt.caption }}</div>
+                                <div class="p-2.5">
+                                    <div class="text-sm font-bold text-foreground">{{ opt.label }}</div>
+                                    <div class="text-xs text-muted-foreground">{{ opt.caption }}</div>
                                 </div>
                             </button>
                         </div>
                     </div>
 
                     <div>
-                        <label class="mb-1 block font-bold">Your Post-Event Reflection * (min 10 characters)</label>
+                        <label class="mb-1 block font-bold text-foreground">Your Post-Event Reflection * (min 10 characters)</label>
                         <textarea
                             v-model="reflectionMessages[ev.id]"
                             rows="3"
                             minlength="10"
                             required
                             placeholder="What stayed with you from today’s activity, and what do you want to remember when this Time Capsule unlocks?"
-                            class="w-full rounded-xl border border-black/15 bg-white px-3 py-2"
+                            class="w-full rounded-lg border border-border bg-card px-3 py-2 text-sm text-foreground"
                         />
                     </div>
 
@@ -1351,39 +1351,39 @@ function statusPillClasses(ev: CampusEventFull): string {
                     </button>
                 </form>
 
-                <div v-else class="mt-3 text-xs text-slate-500">
+                <div v-else class="mt-2.5 text-sm text-muted-foreground">
                     Verified campus membership is required to submit post-event reflections.
                 </div>
             </section>
 
             <section
                 v-if="completedWithoutReflectionEvents.length > 0"
-                class="bento p-5 text-xs"
+                class="bento p-4 text-sm"
             >
-                <h3 class="text-sm font-bold text-slate-800">
+                <h3 class="text-base font-bold text-foreground">
                     Completed Activities Without Required Reflection ({{ completedWithoutReflectionEvents.length }})
                 </h3>
-                <p class="mt-0.5 text-[11px] text-slate-500">
+                <p class="mt-0.5 text-xs text-muted-foreground">
                     Reflection is optional per activity and was not enabled for these completed events.
                 </p>
-                <div class="mt-3 flex flex-col gap-2">
+                <div class="mt-2.5 flex flex-col gap-2">
                     <div
                         v-for="ev in completedWithoutReflectionEvents"
                         :key="`norefl-${ev.id}`"
-                        class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-black/10 bg-white px-3.5 py-2.5"
+                        class="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-border bg-card px-3 py-2.5"
                     >
                         <div>
-                            <div class="font-bold text-slate-900">{{ ev.title }}</div>
-                            <div class="text-[11px] text-slate-500">
+                            <div class="font-bold text-foreground">{{ ev.title }}</div>
+                            <div class="text-xs text-muted-foreground">
                                 Completed on {{ ev.event_date_label }} • {{ ev.start_time }}–{{ ev.end_time }}
                             </div>
                         </div>
                         <span
-                            class="rounded-full px-2.5 py-0.5 text-[10px] font-bold"
+                            class="rounded-full px-2.5 py-0.5 text-xs font-bold"
                             :class="
                                 ev.pending_reflection_enabled === true
                                     ? 'bg-amber-100 text-amber-900'
-                                    : 'bg-slate-100 text-slate-600'
+                                    : 'bg-muted text-muted-foreground'
                             "
                         >
                             {{ ev.pending_reflection_enabled === true ? 'Enable Request Pending Adviser Confirmation' : 'No Reflection Needed' }}

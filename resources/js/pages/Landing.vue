@@ -356,22 +356,22 @@ function submitApplication() {
             </div>
         </header>
 
-        <main class="mx-auto flex max-w-6xl flex-col gap-6 px-4 py-6 pb-16">
+        <main class="mx-auto flex max-w-6xl flex-col gap-5 px-4 py-5 pb-14">
             <div
                 v-if="flashStatus || applicationSubmittedBanner"
-                class="bento flex items-center justify-between gap-3 border-[#1A8F26]/30 bg-[#1A8F26]/10 px-5 py-3 text-xs font-semibold text-[#1A8F26]"
+                class="bento flex items-center justify-between gap-3 border-[#1A8F26]/30 bg-[#1A8F26]/10 px-4 py-3 text-sm font-semibold text-[#1A8F26]"
             >
                 <span>{{ flashStatus ?? 'Your CPF Membership Application has been submitted for campus officer review.' }}</span>
-                <button type="button" class="rounded-lg px-2 py-0.5 text-[11px] hover:bg-black/5" @click="applicationSubmittedBanner = false">Dismiss</button>
+                <button type="button" class="rounded-lg px-2 py-0.5 text-xs hover:bg-black/5" @click="applicationSubmittedBanner = false">Dismiss</button>
             </div>
 
             <!-- Top Wave Hero -->
-            <section class="bento relative grid grid-cols-1 items-center gap-7 overflow-hidden bg-gradient-to-br from-white via-[#FBF6EE] to-[#DCEEF8] p-7 md:grid-cols-2 md:p-9 dark:from-[#18212A] dark:via-[#121A22] dark:to-[#132635]">
-                <div class="relative z-10 flex flex-col gap-4">
+            <section class="bento relative grid grid-cols-1 items-center gap-6 overflow-hidden bg-gradient-to-br from-white via-[#FBF6EE] to-[#DCEEF8] p-5 md:grid-cols-2 md:p-6 dark:from-[#18212A] dark:via-[#121A22] dark:to-[#132635]">
+                <div class="relative z-10 flex flex-col gap-3.5">
                     <span class="w-fit rounded-full border border-[#0384C5]/20 bg-white px-3 py-1 text-xs font-bold text-[#0384C5]">
                         {{ heroSlides[currentSlide].tag }}
                     </span>
-                    <h1 class="font-editorial text-3xl leading-tight font-bold text-[#0384C5] md:text-4xl">
+                    <h1 class="font-editorial text-2xl leading-tight font-bold text-[#0384C5] md:text-3xl">
                         {{ heroSlides[currentSlide].title }}
                     </h1>
                     <p class="max-w-md text-sm leading-relaxed text-slate-600">
@@ -384,14 +384,14 @@ function submitApplication() {
                     </div>
                 </div>
 
-                <div :key="slideKey" class="bento small-card-fade hero-enter-right relative z-10 bg-white/90 p-5">
+                <div :key="slideKey" class="bento small-card-fade hero-enter-right relative z-10 bg-white/90 p-4">
                     <div class="mb-3 flex justify-between text-xs font-bold">
                         <span class="text-[#0384C5]">{{ heroSlides[currentSlide].spotlightTitle }}</span>
                         <span class="text-[#1A8F26]">● Available Now</span>
                     </div>
                     <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                        <div v-for="c in heroSlides[currentSlide].cards" :key="c.name" class="small-card-fade rounded-2xl border border-slate-900/10 bg-white p-3.5">
-                            <span class="rounded-full bg-[#0384C5]/10 px-2.5 py-0.5 text-[10px] font-bold text-[#0384C5]">{{ c.track }}</span>
+                        <div v-for="c in heroSlides[currentSlide].cards" :key="c.name" class="small-card-fade rounded-xl border border-slate-900/10 bg-white p-3.5">
+                            <span class="rounded-full bg-[#0384C5]/10 px-2.5 py-0.5 text-xs font-bold text-[#0384C5]">{{ c.track }}</span>
                             <div class="mt-2 text-sm font-bold text-slate-900">{{ c.name }}</div>
                             <div class="text-xs font-semibold text-[#0384C5]">{{ c.yr }}</div>
                         </div>
@@ -400,26 +400,26 @@ function submitApplication() {
             </section>
 
             <!-- Middle Static Trio -->
-            <section class="grid grid-cols-1 gap-4 sm:grid-cols-3">
-                <div v-for="word in ['Breath', 'Refresh', 'Listen']" :key="word" class="small-card-fade rounded-3xl border border-slate-900/10 bg-white/85 px-5 py-6 text-center backdrop-blur-lg">
-                    <h2 class="font-editorial text-2xl font-bold text-slate-900">{{ word }}</h2>
+            <section class="grid grid-cols-1 gap-3.5 sm:grid-cols-3">
+                <div v-for="word in ['Breath', 'Refresh', 'Listen']" :key="word" class="small-card-fade rounded-2xl border border-slate-900/10 bg-white/85 px-5 py-4 text-center backdrop-blur-lg">
+                    <h2 class="font-editorial text-xl font-bold text-slate-900 md:text-2xl">{{ word }}</h2>
                 </div>
             </section>
 
             <!-- Bottom Taller Meet Our Officers Container with Image Header & 4 Top-Image Cards -->
             <section class="bento overflow-hidden p-0">
-                <div class="relative flex h-48 w-full items-start justify-center overflow-hidden pt-6 md:h-56">
+                <div class="relative flex h-44 w-full items-start justify-center overflow-hidden pt-5 md:h-52">
                     <img src="/cpf_officers_header.jpg" alt="Campus Peer Support Lounge" class="absolute inset-0 size-full object-cover opacity-75" />
                     <div class="absolute inset-0 bg-gradient-to-b from-[#FBF6EE]/80 via-[#FBF6EE]/20 to-white/95" />
-                    <div class="relative z-10 rounded-full border border-white bg-[#FBF6EE]/85 px-7 py-2 shadow-sm backdrop-blur-md">
-                        <h2 class="font-editorial text-2xl font-bold text-[#0384C5]">Meet Our Officers</h2>
+                    <div class="relative z-10 rounded-full border border-white bg-[#FBF6EE]/85 px-6 py-1.5 shadow-sm backdrop-blur-md">
+                        <h2 class="font-editorial text-xl font-bold text-[#0384C5] md:text-2xl">Meet Our Officers</h2>
                     </div>
                 </div>
 
                 <TransitionGroup
                     name="officer-flow"
                     tag="div"
-                    class="grid grid-cols-1 gap-5 p-6 pt-4 md:grid-cols-2 md:p-8 md:pt-4"
+                    class="grid grid-cols-1 gap-4 p-4 pt-3 md:grid-cols-2 md:p-5 md:pt-4"
                 >
                     <article
                         v-for="slot in officerSlots"
@@ -438,9 +438,9 @@ function submitApplication() {
                                     :alt="cardPools[slot.poolIndex][activeCards[slot.poolIndex]].title"
                                 />
                             </div>
-                            <div class="flex flex-1 flex-col p-5">
+                            <div class="flex flex-1 flex-col p-4">
                                 <span
-                                    class="w-fit rounded-full px-2.5 py-1 text-xs font-bold"
+                                    class="w-fit rounded-full px-2.5 py-0.5 text-xs font-bold"
                                     :style="{
                                         backgroundColor: cardPools[slot.poolIndex][activeCards[slot.poolIndex]].bg,
                                         color: cardPools[slot.poolIndex][activeCards[slot.poolIndex]].color,
@@ -448,13 +448,13 @@ function submitApplication() {
                                 >
                                     {{ cardPools[slot.poolIndex][activeCards[slot.poolIndex]].badge }}
                                 </span>
-                                <h3 class="font-editorial mt-3 text-lg font-bold text-slate-900">
+                                <h3 class="font-editorial mt-2.5 text-base font-bold text-slate-900">
                                     {{ cardPools[slot.poolIndex][activeCards[slot.poolIndex]].title }}
                                 </h3>
                                 <div class="text-xs font-bold text-[#0384C5]">
                                     {{ cardPools[slot.poolIndex][activeCards[slot.poolIndex]].sub }}
                                 </div>
-                                <p class="mt-2 text-xs leading-relaxed text-slate-600">
+                                <p class="mt-1.5 text-sm leading-relaxed text-slate-600">
                                     {{ cardPools[slot.poolIndex][activeCards[slot.poolIndex]].body }}
                                 </p>
                             </div>
@@ -468,18 +468,18 @@ function submitApplication() {
 
         <!-- Data Privacy Modal -->
         <div v-if="showPrivacyModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-md" @click.self="showPrivacyModal = false">
-            <div class="bento max-h-[90vh] w-full max-w-xl overflow-y-auto p-6">
-                <div class="mb-4 flex items-center justify-between border-b border-slate-900/10 pb-3">
-                    <h2 class="font-editorial text-xl font-bold text-slate-900">Data Privacy</h2>
+            <div class="bento max-h-[90vh] w-full max-w-xl overflow-y-auto p-5">
+                <div class="mb-3.5 flex items-center justify-between border-b border-slate-900/10 pb-3">
+                    <h2 class="font-editorial text-lg font-bold text-slate-900">Data Privacy</h2>
                     <button type="button" class="rounded-lg border px-3 py-1 text-xs font-semibold" @click="showPrivacyModal = false">✕ Close</button>
                 </div>
-                <div class="space-y-3 text-xs leading-relaxed text-slate-700">
+                <div class="space-y-3 text-sm leading-relaxed text-slate-700">
                     <p><strong>1. What we collect:</strong> Full name, birthday, course/year/section, active email, phone number, sex and gender identity, and active Facebook account name to confirm CHMSU student membership.</p>
                     <p><strong>2. Why we need it:</strong> To verify membership, manage your campus chapter roster, confirm Messenger GC membership, and coordinate peer support activities.</p>
                     <p><strong>3. Confidentiality:</strong> Only your Club Adviser and authorized officers can review applications. Counseling referrals are encrypted and go strictly to the Guidance Counselor.</p>
                     <p><strong>4. Your rights (RA 10173):</strong> You may view, correct, or request removal of your record at any time through your Club Adviser or Secretary.</p>
                 </div>
-                <div class="mt-5 flex justify-end">
+                <div class="mt-4 flex justify-end">
                     <button type="button" class="bento-btn" @click="showPrivacyModal = false">I Understand</button>
                 </div>
             </div>
@@ -487,27 +487,27 @@ function submitApplication() {
 
         <!-- Membership Application Modal -->
         <div v-if="showApplyModal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 p-4 backdrop-blur-md" @click.self="showApplyModal = false">
-            <div class="bento max-h-[92vh] w-full max-w-xl overflow-y-auto p-6">
-                <div class="mb-4 flex items-center justify-between border-b border-slate-900/10 pb-3">
-                    <h2 class="font-editorial text-xl font-bold text-[#0384C5]">Membership Application</h2>
+            <div class="bento max-h-[92vh] w-full max-w-xl overflow-y-auto p-5">
+                <div class="mb-3.5 flex items-center justify-between border-b border-slate-900/10 pb-3">
+                    <h2 class="font-editorial text-lg font-bold text-[#0384C5]">Membership Application</h2>
                     <button type="button" class="rounded-lg border px-3 py-1 text-xs font-semibold" @click="showApplyModal = false">✕ Close</button>
                 </div>
-                <form class="grid gap-3 text-xs" @submit.prevent="submitApplication">
+                <form class="grid gap-3 text-sm" @submit.prevent="submitApplication">
                     <div>
                         <label class="mb-1 block font-bold">CHMSU Campus *</label>
                         <select v-model="applyForm.campus_id" required class="w-full rounded-lg border px-3 py-2">
                             <option v-for="c in campusList" :key="c.id" :value="c.id">{{ c.name }}</option>
                         </select>
-                        <p class="mt-1 text-[11px] text-slate-500">
+                        <p class="mt-1 text-xs text-slate-500">
                             Currently active for <strong>CHMSU Alijis Campus</strong>. Binalbagan, Talisay, and Fortune Towne are on hold (Coming Soon).
                         </p>
-                        <p v-if="applyForm.errors.campus_id" class="mt-1 text-[11px] font-semibold text-red-600">{{ applyForm.errors.campus_id }}</p>
+                        <p v-if="applyForm.errors.campus_id" class="mt-1 text-xs font-semibold text-red-600">{{ applyForm.errors.campus_id }}</p>
                     </div>
                     <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
                         <div>
                             <label class="mb-1 block font-bold">First Name *</label>
                             <input v-model="applyForm.first_name" required class="w-full rounded-lg border px-3 py-2" />
-                            <p v-if="applyForm.errors.first_name" class="mt-1 text-[11px] font-semibold text-red-600">{{ applyForm.errors.first_name }}</p>
+                            <p v-if="applyForm.errors.first_name" class="mt-1 text-xs font-semibold text-red-600">{{ applyForm.errors.first_name }}</p>
                         </div>
                         <div>
                             <label class="mb-1 block font-bold">Middle Name / M.I.</label>
@@ -516,19 +516,19 @@ function submitApplication() {
                         <div>
                             <label class="mb-1 block font-bold">Last Name *</label>
                             <input v-model="applyForm.last_name" required class="w-full rounded-lg border px-3 py-2" />
-                            <p v-if="applyForm.errors.last_name" class="mt-1 text-[11px] font-semibold text-red-600">{{ applyForm.errors.last_name }}</p>
+                            <p v-if="applyForm.errors.last_name" class="mt-1 text-xs font-semibold text-red-600">{{ applyForm.errors.last_name }}</p>
                         </div>
                     </div>
                     <div>
                         <label class="mb-1 block font-bold">Birthday (Date of Birth) *</label>
                         <input v-model="applyForm.birthdate" type="date" required class="w-full rounded-lg border px-3 py-2" />
-                        <p v-if="applyForm.errors.birthdate" class="mt-1 text-[11px] font-semibold text-red-600">{{ applyForm.errors.birthdate }}</p>
+                        <p v-if="applyForm.errors.birthdate" class="mt-1 text-xs font-semibold text-red-600">{{ applyForm.errors.birthdate }}</p>
                     </div>
                     <div class="grid grid-cols-1 gap-2 sm:grid-cols-3">
                         <div>
                             <label class="mb-1 block font-bold">Course / Program *</label>
                             <input v-model="applyForm.course" required placeholder="e.g. BSIT" class="w-full rounded-lg border px-3 py-2" />
-                            <p v-if="applyForm.errors.course" class="mt-1 text-[11px] font-semibold text-red-600">{{ applyForm.errors.course }}</p>
+                            <p v-if="applyForm.errors.course" class="mt-1 text-xs font-semibold text-red-600">{{ applyForm.errors.course }}</p>
                         </div>
                         <div>
                             <label class="mb-1 block font-bold">Year Level *</label>
@@ -540,24 +540,24 @@ function submitApplication() {
                                 <option value="4">4th Year</option>
                                 <option value="5">5th Year</option>
                             </select>
-                            <p v-if="applyForm.errors.year_level" class="mt-1 text-[11px] font-semibold text-red-600">{{ applyForm.errors.year_level }}</p>
+                            <p v-if="applyForm.errors.year_level" class="mt-1 text-xs font-semibold text-red-600">{{ applyForm.errors.year_level }}</p>
                         </div>
                         <div>
                             <label class="mb-1 block font-bold">Section *</label>
                             <input v-model="applyForm.section" required placeholder="e.g. A" class="w-full rounded-lg border px-3 py-2" />
-                            <p v-if="applyForm.errors.section" class="mt-1 text-[11px] font-semibold text-red-600">{{ applyForm.errors.section }}</p>
+                            <p v-if="applyForm.errors.section" class="mt-1 text-xs font-semibold text-red-600">{{ applyForm.errors.section }}</p>
                         </div>
                     </div>
                     <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
                         <div>
                             <label class="mb-1 block font-bold">Active Email Address *</label>
                             <input v-model="applyForm.active_email" type="email" required class="w-full rounded-lg border px-3 py-2" />
-                            <p v-if="applyForm.errors.active_email" class="mt-1 text-[11px] font-semibold text-red-600">{{ applyForm.errors.active_email }}</p>
+                            <p v-if="applyForm.errors.active_email" class="mt-1 text-xs font-semibold text-red-600">{{ applyForm.errors.active_email }}</p>
                         </div>
                         <div>
                             <label class="mb-1 block font-bold">Active Phone / Cellphone No. *</label>
                             <input v-model="applyForm.cellphone_number" type="tel" required class="w-full rounded-lg border px-3 py-2" />
-                            <p v-if="applyForm.errors.cellphone_number" class="mt-1 text-[11px] font-semibold text-red-600">{{ applyForm.errors.cellphone_number }}</p>
+                            <p v-if="applyForm.errors.cellphone_number" class="mt-1 text-xs font-semibold text-red-600">{{ applyForm.errors.cellphone_number }}</p>
                         </div>
                     </div>
                     <div class="grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -583,16 +583,16 @@ function submitApplication() {
                             placeholder="https://www.facebook.com/your.username"
                             class="w-full rounded-lg border px-3 py-2"
                         />
-                        <p class="mt-0.5 text-[11px] text-slate-500">Clickable link shown to the Club Adviser and President during verification.</p>
-                        <p v-if="applyForm.errors.facebook_profile_url" class="mt-1 text-[11px] font-semibold text-red-600">{{ applyForm.errors.facebook_profile_url }}</p>
+                        <p class="mt-0.5 text-xs text-slate-500">Clickable link shown to the Club Adviser and President during verification.</p>
+                        <p v-if="applyForm.errors.facebook_profile_url" class="mt-1 text-xs font-semibold text-red-600">{{ applyForm.errors.facebook_profile_url }}</p>
                     </div>
                     <div>
                         <label class="mb-1 block font-bold">Facebook Account Name / Profile Photo Note (Optional)</label>
                         <input v-model="applyForm.active_fb_account" placeholder="e.g. Juan Dela Cruz (CHMSU lanyard)" class="w-full rounded-lg border px-3 py-2" />
-                        <p v-if="applyForm.errors.active_fb_account" class="mt-1 text-[11px] font-semibold text-red-600">{{ applyForm.errors.active_fb_account }}</p>
+                        <p v-if="applyForm.errors.active_fb_account" class="mt-1 text-xs font-semibold text-red-600">{{ applyForm.errors.active_fb_account }}</p>
                     </div>
                     <div class="mt-2 flex justify-end gap-2">
-                        <button type="button" class="rounded-lg border px-3 py-2 font-semibold" @click="showApplyModal = false">Cancel</button>
+                        <button type="button" class="rounded-lg border px-3.5 py-2 text-sm font-semibold" @click="showApplyModal = false">Cancel</button>
                         <button type="submit" class="bento-btn" :disabled="applyForm.processing">Submit Application</button>
                     </div>
                 </form>

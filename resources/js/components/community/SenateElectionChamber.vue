@@ -251,26 +251,26 @@ const dynamicRowsReversed = computed<DynamicSeatRow[]>(() => {
 const seatCardLayoutClass = computed(() => {
     switch (floorLayoutMode.value) {
         case 'intimate':
-            return 'w-48 p-3 text-xs';
+            return 'w-48 p-3 text-sm';
         case 'chapter':
-            return 'w-40 p-2.5 text-[11px]';
+            return 'w-44 p-2.5 text-xs';
         case 'assembly':
-            return 'w-36 p-2 text-[11px]';
+            return 'w-40 p-2.5 text-xs';
         default:
-            return 'w-[132px] p-2 text-[10px]';
+            return 'w-36 p-2 text-xs';
     }
 });
 
 const seatAvatarSizeClass = computed(() => {
     switch (floorLayoutMode.value) {
         case 'intimate':
-            return 'size-12 text-xs';
+            return 'size-11 text-xs';
         case 'chapter':
-            return 'size-10 text-[11px]';
+            return 'size-10 text-xs';
         case 'assembly':
-            return 'size-9 text-[10px]';
+            return 'size-9 text-xs';
         default:
-            return 'size-8 text-[10px]';
+            return 'size-8 text-xs';
     }
 });
 
@@ -526,16 +526,16 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
 </script>
 
 <template>
-    <section class="bento p-6">
+    <section class="bento p-4">
         <!-- Chamber Header -->
-        <div class="flex flex-wrap items-start justify-between gap-4 border-b border-black/10 pb-4">
+        <div class="flex flex-wrap items-start justify-between gap-3 border-b border-border pb-3">
             <div>
                 <div class="flex flex-wrap items-center gap-2">
-                    <span class="rounded-full bg-[#0384C5]/10 px-3 py-1 text-xs font-bold text-[#0384C5]">
+                    <span class="rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-bold text-primary">
                         {{ election.academic_year }} • General Assembly Election Floor
                     </span>
                     <span
-                        class="rounded-full px-3 py-1 text-xs font-bold uppercase"
+                        class="rounded-full px-2.5 py-0.5 text-xs font-bold uppercase"
                         :class="
                             election.current_phase === 'tie_breaker'
                                 ? 'bg-[#FF8D06] text-white'
@@ -543,22 +543,22 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                                   ? 'bg-[#1A8F26] text-white'
                                   : election.status === 'open'
                                     ? 'bg-[#1A8F26]/15 text-[#1A8F26]'
-                                    : 'bg-slate-200 text-slate-700'
+                                    : 'bg-muted text-muted-foreground'
                         "
                     >
                         {{ election.status }} • {{ phaseLabel }}
                     </span>
                 </div>
-                <h2 class="font-editorial mt-2 text-xl font-bold text-slate-900">
+                <h2 class="font-editorial mt-1.5 text-base font-bold text-foreground md:text-lg">
                     {{ election.title }}
                 </h2>
-                <p v-if="activePositionMeta" class="mt-0.5 text-xs text-slate-600">
+                <p v-if="activePositionMeta" class="mt-0.5 text-sm text-muted-foreground">
                     Currently Electing Seat #{{ activePositionMeta.seat_order }} of {{ positionOrder.length }}:
-                    <strong class="text-[#0384C5]">{{ activePositionMeta.label }}</strong>
+                    <strong class="text-primary">{{ activePositionMeta.label }}</strong>
                     <span v-if="activePositionMeta.required_year" class="ml-1 font-semibold text-amber-800">
                         (Restricted Strictly to Year {{ activePositionMeta.required_year }} Members)
                     </span>
-                    <span v-if="activePositionMeta.optional" class="ml-1 font-semibold text-slate-500">
+                    <span v-if="activePositionMeta.optional" class="ml-1 font-semibold text-muted-foreground">
                         • Optional if unavailable
                     </span>
                 </p>
@@ -569,7 +569,7 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                     type="button"
                     :disabled="busy"
                     @click="toggleOpenStatus"
-                    class="rounded-xl border border-black/15 bg-white px-3 py-1.5 text-xs font-semibold text-slate-800 hover:border-[#0384C5]"
+                    class="rounded-lg border border-border bg-card px-3 py-1.5 text-sm font-semibold text-foreground hover:border-primary"
                 >
                     {{ election.status === 'open' ? 'Pause / Close Session' : 'Activate / Open Session' }}
                 </button>
@@ -579,13 +579,13 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
         <!-- Feedback Banners -->
         <div
             v-if="notice"
-            class="mt-4 rounded-xl border border-[#1A8F26]/30 bg-[#1A8F26]/10 px-4 py-2.5 text-xs font-semibold text-[#1A8F26]"
+            class="mt-3 rounded-xl border border-[#1A8F26]/30 bg-[#1A8F26]/10 px-3.5 py-2 text-sm font-semibold text-[#1A8F26]"
         >
             {{ notice }}
         </div>
         <div
             v-if="errorText"
-            class="mt-4 rounded-xl border border-red-300 bg-red-50 px-4 py-2.5 text-xs font-semibold text-red-700"
+            class="mt-3 rounded-xl border border-red-300 bg-red-50 px-3.5 py-2 text-sm font-semibold text-red-700"
         >
             {{ errorText }}
         </div>
@@ -593,7 +593,7 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
         <!-- Opted-Out Self-Reversal Bar -->
         <div
             v-if="isMyUserOptedOut && !isMyUserAlreadyElected && isVerifiedMember && election.status === 'open' && election.current_phase !== 'completed'"
-            class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-amber-400/50 bg-amber-50 p-4 text-xs text-amber-950"
+            class="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-amber-400/50 bg-amber-50 p-3.5 text-sm text-amber-950"
         >
             <div>
                 <strong>You declined nominations for this election.</strong>
@@ -603,7 +603,7 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                 type="button"
                 :disabled="busy"
                 @click="optInAgain"
-                class="inline-flex items-center gap-1.5 rounded-xl bg-[#0384C5] px-3.5 py-2 font-semibold text-white hover:bg-[#026da3]"
+                class="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground hover:opacity-90"
             >
                 <RotateCcw class="size-3.5" />
                 Change Mind — Allow Nominations Again
@@ -613,7 +613,7 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
         <!-- Already-Elected Lock Banner -->
         <div
             v-if="isMyUserAlreadyElected && election.status === 'open' && election.current_phase !== 'completed'"
-            class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#1A8F26]/35 bg-[#1A8F26]/10 p-4 text-xs text-slate-900"
+            class="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#1A8F26]/35 bg-[#1A8F26]/10 p-3.5 text-sm text-foreground"
         >
             <div>
                 You have been elected as <strong>{{ electedPositionByUserId[myUserId] }}</strong>.
@@ -624,10 +624,10 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
         <!-- Pending Personal Nomination Action Alert -->
         <div
             v-if="pendingMyNomination && election.status === 'open' && election.current_phase === 'nomination'"
-            class="mt-4 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[#0384C5]/40 bg-[#0384C5]/10 p-4 text-xs text-slate-900"
+            class="mt-3 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-primary/40 bg-primary/10 p-3.5 text-sm text-foreground"
         >
             <div>
-                <span class="font-bold text-[#0384C5]">You were nominated for {{ activePositionMeta?.label }}!</span>
+                <span class="font-bold text-primary">You were nominated for {{ activePositionMeta?.label }}!</span>
                 Please accept to enter the ballot, or decline to opt out of nominations.
             </div>
             <div class="flex items-center gap-2">
@@ -635,7 +635,7 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                     type="button"
                     :disabled="busy"
                     @click="respondNomination(pendingMyNomination.id, 'accepted')"
-                    class="inline-flex items-center gap-1 rounded-xl bg-[#1A8F26] px-3.5 py-1.5 font-semibold text-white"
+                    class="inline-flex items-center gap-1 rounded-lg bg-[#1A8F26] px-3 py-1.5 text-sm font-semibold text-white"
                 >
                     <CheckCircle2 class="size-3.5" />
                     Accept Nomination
@@ -644,7 +644,7 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                     type="button"
                     :disabled="busy"
                     @click="respondNomination(pendingMyNomination.id, 'declined')"
-                    class="inline-flex items-center gap-1 rounded-xl border border-red-300 bg-white px-3.5 py-1.5 font-semibold text-red-700"
+                    class="inline-flex items-center gap-1 rounded-lg border border-red-300 bg-card px-3 py-1.5 text-sm font-semibold text-red-700"
                 >
                     <XCircle class="size-3.5" />
                     Decline All Nominations
@@ -653,54 +653,54 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
         </div>
 
         <!-- 2-COLUMN GENERAL ASSEMBLY FLOOR + RIGHT OFFICIAL BILLBOARD -->
-        <div class="mt-5 grid gap-6 xl:grid-cols-[1fr_340px]">
+        <div class="mt-4 grid gap-4 xl:grid-cols-[1fr_320px]">
             <!-- LEFT: DYNAMIC ADAPTIVE GENERAL ASSEMBLY FLOOR (1 TO 120+ MEMBERS, EXCLUDING ADVISER) -->
-            <div class="flex min-w-0 flex-col justify-between gap-6 rounded-3xl border border-black/10 bg-[#FBF6EE] p-5 md:p-6">
+            <div class="flex min-w-0 flex-col justify-between gap-4 rounded-2xl border border-border bg-background/80 p-4">
                 <!-- Member Count, Dynamic Scale Mode, Search & Filter Controls -->
-                <div class="flex flex-wrap items-center justify-between gap-2.5 border-b border-black/10 pb-3.5 text-xs">
+                <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3 text-sm">
                     <div class="flex flex-wrap items-center gap-2">
-                        <span class="inline-flex items-center gap-1.5 rounded-full bg-[#0384C5]/10 px-3 py-1 font-bold text-[#0384C5]">
+                        <span class="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-bold text-primary">
                             <Users class="size-3.5" />
                             {{ assemblyMemberSeats.length }} Seated Member(s) (Excludes Adviser)
                         </span>
-                        <span class="rounded-full bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-600 ring-1 ring-black/10">
+                        <span class="rounded-full bg-card px-2.5 py-0.5 text-xs font-semibold text-muted-foreground ring-1 ring-border">
                             {{ floorLayoutLabel }}
                         </span>
                     </div>
 
                     <div class="flex flex-wrap items-center gap-2">
                         <div class="relative">
-                            <Search class="pointer-events-none absolute top-2 left-2.5 size-3.5 text-slate-400" />
+                            <Search class="pointer-events-none absolute top-2.5 left-2.5 size-3.5 text-muted-foreground" />
                             <input
                                 v-model="chamberSearch"
                                 type="text"
                                 placeholder="Find name, course, year..."
-                                class="w-44 rounded-xl border border-black/15 bg-white py-1.5 pr-2.5 pl-8 text-xs text-slate-900 focus:border-[#0384C5] focus:outline-none"
+                                class="w-44 rounded-lg border border-border bg-card py-1.5 pr-2.5 pl-8 text-sm text-foreground focus:border-primary focus:outline-none"
                             />
                         </div>
 
-                        <div class="flex rounded-xl border border-black/15 bg-white p-0.5 text-[11px] font-semibold">
+                        <div class="flex rounded-lg border border-border bg-card p-0.5 text-xs font-semibold">
                             <button
                                 type="button"
                                 @click="chamberFilter = 'all'"
-                                class="rounded-lg px-2.5 py-1 transition"
-                                :class="chamberFilter === 'all' ? 'bg-[#0384C5] text-white' : 'text-slate-600'"
+                                class="rounded-md px-2.5 py-1 transition"
+                                :class="chamberFilter === 'all' ? 'bg-primary text-primary-foreground' : 'text-muted-foreground'"
                             >
                                 All
                             </button>
                             <button
                                 type="button"
                                 @click="chamberFilter = 'candidates'"
-                                class="rounded-lg px-2.5 py-1 transition"
-                                :class="chamberFilter === 'candidates' ? 'bg-[#1A8F26] text-white' : 'text-slate-600'"
+                                class="rounded-md px-2.5 py-1 transition"
+                                :class="chamberFilter === 'candidates' ? 'bg-[#1A8F26] text-white' : 'text-muted-foreground'"
                             >
                                 Candidates
                             </button>
                             <button
                                 type="button"
                                 @click="chamberFilter = 'eligible'"
-                                class="rounded-lg px-2.5 py-1 transition"
-                                :class="chamberFilter === 'eligible' ? 'bg-[#FF8D06] text-white' : 'text-slate-600'"
+                                class="rounded-md px-2.5 py-1 transition"
+                                :class="chamberFilter === 'eligible' ? 'bg-[#FF8D06] text-white' : 'text-muted-foreground'"
                             >
                                 Eligible
                             </button>
@@ -710,12 +710,12 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
 
                 <!-- Dynamic Curved Amphitheater Rows (Only Actual Members; Zero Empty Placeholders, Zero Horizontal Scrollbars) -->
                 <div
-                    class="flex flex-col items-center gap-3 pt-4"
+                    class="flex flex-col items-center gap-3 pt-3"
                     :class="floorLayoutMode === 'grand' ? 'max-h-[680px] overflow-y-auto pr-1' : ''"
                 >
                     <div
                         v-if="dynamicRowsReversed.length === 0"
-                        class="w-full rounded-2xl border border-black/10 bg-white/80 p-6 text-center text-xs text-slate-500"
+                        class="w-full rounded-xl border border-border bg-card p-4 text-center text-sm text-muted-foreground"
                     >
                         {{
                             assemblyMemberSeats.length === 0
@@ -742,20 +742,20 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                             :key="`seat-${item.seat.user_id}`"
                             :style="getArcLiftStyle(sIdx, row.seats.length, seatArcLiftMaxPx)"
                             :title="`${item.seat.full_name_last_first_mi} • ${item.seat.course_year_section}`"
-                            class="flex flex-col justify-between rounded-2xl border shadow-2xs transition"
+                            class="flex flex-col justify-between rounded-xl border shadow-2xs transition"
                             :class="[
                                 seatCardLayoutClass,
                                 candidateByUserIdForActive[item.seat.user_id]?.nomination_status === 'accepted'
-                                    ? 'border-[#1A8F26] bg-white ring-1 ring-[#1A8F26]/30'
+                                    ? 'border-[#1A8F26] bg-card ring-1 ring-[#1A8F26]/30'
                                     : candidateByUserIdForActive[item.seat.user_id]?.nomination_status === 'pending'
                                       ? 'border-amber-400 bg-amber-50/70'
                                       : isOptedOut(item.seat.user_id) || isYearBlocked(item.seat) || isAlreadyElected(item.seat.user_id)
-                                        ? 'border-black/10 bg-slate-100/80 opacity-65'
-                                        : 'border-black/15 bg-white',
+                                        ? 'border-border bg-muted/70 opacity-65'
+                                        : 'border-border bg-card',
                             ]"
                         >
                             <div class="text-center">
-                                <div class="mb-2 flex justify-center">
+                                <div class="mb-1.5 flex justify-center">
                                     <img
                                         v-if="item.seat.avatar_url"
                                         :src="item.seat.avatar_url"
@@ -764,56 +764,56 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                                             seatAvatarSizeClass,
                                             candidateByUserIdForActive[item.seat.user_id]?.nomination_status === 'accepted'
                                                 ? 'border-[#1A8F26]'
-                                                : 'border-[#0384C5]/35',
+                                                : 'border-primary/35',
                                         ]"
-                                        class="rounded-full border-2 bg-white object-cover shadow-2xs"
+                                        class="rounded-full border-2 bg-card object-cover shadow-2xs"
                                     />
                                     <div
                                         v-else
                                         :class="seatAvatarSizeClass"
-                                        class="flex items-center justify-center rounded-full border border-[#0384C5]/30 bg-[#0384C5]/10 font-bold text-[#0384C5]"
+                                        class="flex items-center justify-center rounded-full border border-primary/30 bg-primary/10 font-bold text-primary"
                                     >
                                         {{ getSeatInitials(item.seat.full_name_last_first_mi) }}
                                     </div>
                                 </div>
-                                <div class="truncate leading-snug font-bold text-slate-900">
+                                <div class="truncate text-sm leading-snug font-bold text-foreground">
                                     {{ item.seat.full_name_last_first_mi }}
                                 </div>
-                                <div class="mt-0.5 truncate text-[10px] font-medium text-[#0384C5]">
+                                <div class="mt-0.5 truncate text-xs font-medium text-primary">
                                     {{ item.seat.course_year_section }}
                                 </div>
-                                <div class="mt-0.5 truncate text-[10px] font-semibold text-slate-600">
+                                <div class="mt-0.5 truncate text-xs font-semibold text-muted-foreground">
                                     {{ item.seat.role_label ?? item.seat.role }}
                                 </div>
 
                                 <div class="mt-1.5 flex flex-wrap justify-center gap-1">
                                     <span
                                         v-if="isAlreadyElected(item.seat.user_id)"
-                                        class="rounded-full bg-amber-500/20 px-1.5 py-0.5 text-[9px] font-bold text-amber-900"
+                                        class="rounded-full bg-amber-500/20 px-2 py-0.5 text-xs font-bold text-amber-900"
                                     >
                                         Elected: {{ electedPositionByUserId[item.seat.user_id] }}
                                     </span>
                                     <span
                                         v-else-if="isOptedOut(item.seat.user_id)"
-                                        class="inline-flex items-center gap-0.5 rounded-full bg-red-100 px-1.5 py-0.5 text-[9px] font-bold text-red-700"
+                                        class="inline-flex items-center gap-0.5 rounded-full bg-red-100 px-2 py-0.5 text-xs font-bold text-red-700"
                                     >
-                                        <Lock class="size-2.5" /> Declined
+                                        <Lock class="size-3" /> Declined
                                     </span>
                                     <span
                                         v-else-if="isYearBlocked(item.seat)"
-                                        class="rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] font-bold text-slate-600"
+                                        class="rounded-full bg-muted px-2 py-0.5 text-xs font-bold text-muted-foreground"
                                     >
                                         Yr {{ activePositionMeta?.required_year }} Only
                                     </span>
                                     <span
                                         v-else-if="candidateByUserIdForActive[item.seat.user_id]?.nomination_status === 'pending'"
-                                        class="rounded-full bg-amber-500/15 px-1.5 py-0.5 text-[9px] font-bold text-amber-800"
+                                        class="rounded-full bg-amber-500/15 px-2 py-0.5 text-xs font-bold text-amber-800"
                                     >
                                         Pending Accept
                                     </span>
                                     <span
                                         v-else-if="candidateByUserIdForActive[item.seat.user_id]?.nomination_status === 'accepted'"
-                                        class="rounded-full bg-[#1A8F26]/15 px-1.5 py-0.5 text-[9px] font-bold text-[#1A8F26]"
+                                        class="rounded-full bg-[#1A8F26]/15 px-2 py-0.5 text-xs font-bold text-[#1A8F26]"
                                     >
                                         {{ candidateByUserIdForActive[item.seat.user_id].votes }} vote(s)
                                     </span>
@@ -826,7 +826,7 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                                     type="button"
                                     :disabled="busy"
                                     @click="nominateMember(item.seat)"
-                                    class="inline-flex w-full items-center justify-center gap-1 rounded-lg border border-[#0384C5]/35 bg-[#0384C5]/10 px-1.5 py-1 text-[10px] font-bold text-[#0384C5] hover:bg-[#0384C5] hover:text-white"
+                                    class="inline-flex w-full items-center justify-center gap-1 rounded-lg border border-primary/35 bg-primary/10 px-2 py-1 text-xs font-bold text-primary hover:bg-primary hover:text-primary-foreground"
                                 >
                                     <UserPlus class="size-3 shrink-0" />
                                     <span class="truncate">{{ item.seat.user_id === myUserId ? 'Self-Nominate' : 'Nominate' }}</span>
@@ -843,7 +843,7 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                                         type="button"
                                         :disabled="busy"
                                         @click="respondNomination(candidateByUserIdForActive[item.seat.user_id].id, 'accepted')"
-                                        class="flex-1 rounded-lg bg-[#1A8F26] px-1.5 py-1 text-[10px] font-bold text-white"
+                                        class="flex-1 rounded-lg bg-[#1A8F26] px-2 py-1 text-xs font-bold text-white"
                                     >
                                         Accept
                                     </button>
@@ -851,7 +851,7 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                                         type="button"
                                         :disabled="busy"
                                         @click="respondNomination(candidateByUserIdForActive[item.seat.user_id].id, 'declined')"
-                                        class="flex-1 rounded-lg border border-red-300 bg-white px-1.5 py-1 text-[10px] font-bold text-red-700"
+                                        class="flex-1 rounded-lg border border-red-300 bg-card px-2 py-1 text-xs font-bold text-red-700"
                                     >
                                         Decline
                                     </button>
@@ -860,7 +860,7 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                                 <template v-else-if="isActiveVotingContender(candidateByUserIdForActive[item.seat.user_id]) && isVerifiedMember && !isClubAdviser">
                                     <span
                                         v-if="election.my_votes[election.current_position ?? ''] === candidateByUserIdForActive[item.seat.user_id].id"
-                                        class="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-[#1A8F26]/15 px-1.5 py-1 text-[10px] font-bold text-[#1A8F26]"
+                                        class="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-[#1A8F26]/15 px-2 py-1 text-xs font-bold text-[#1A8F26]"
                                     >
                                         <CheckCircle2 class="size-3 shrink-0" /> Your Vote ✓
                                     </span>
@@ -869,7 +869,7 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                                         type="button"
                                         :disabled="busy"
                                         @click="castVoteFor(candidateByUserIdForActive[item.seat.user_id])"
-                                        class="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-[#FF8D06] px-1.5 py-1 text-[10px] font-bold text-white hover:bg-[#e57d00]"
+                                        class="inline-flex w-full items-center justify-center gap-1 rounded-lg bg-[#FF8D06] px-2 py-1 text-xs font-bold text-white hover:bg-[#e57d00]"
                                     >
                                         <Vote class="size-3 shrink-0" /> Cast Vote
                                     </button>
@@ -880,34 +880,34 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                 </div>
 
                 <!-- CENTER PRESIDING PODIUM: CLUB ADVISER DAIS -->
-                <div class="mx-auto w-full max-w-xl rounded-t-[48px] rounded-b-2xl border-2 border-[#0384C5]/45 bg-white p-5 text-center shadow-sm">
-                    <div class="mb-2 flex justify-center">
+                <div class="mx-auto w-full max-w-xl rounded-t-[36px] rounded-b-xl border-2 border-primary/45 bg-card p-4 text-center shadow-sm">
+                    <div class="mb-1.5 flex justify-center">
                         <img
                             v-if="adviserDisplay.avatar_url"
                             :src="adviserDisplay.avatar_url"
                             :alt="adviserDisplay.name"
-                            class="size-14 rounded-full border-2 border-[#0384C5]/40 bg-white object-cover shadow-xs"
+                            class="size-12 rounded-full border-2 border-primary/40 bg-card object-cover shadow-xs"
                         />
                         <div
                             v-else
-                            class="flex size-14 items-center justify-center rounded-full border-2 border-[#0384C5]/35 bg-[#0384C5]/10 text-base font-bold text-[#0384C5]"
+                            class="flex size-12 items-center justify-center rounded-full border-2 border-primary/35 bg-primary/10 text-base font-bold text-primary"
                         >
                             {{ getSeatInitials(adviserDisplay.name) }}
                         </div>
                     </div>
-                    <div class="inline-flex items-center gap-1.5 rounded-full bg-[#0384C5]/10 px-3 py-1 text-[11px] font-bold text-[#0384C5]">
+                    <div class="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-bold text-primary">
                         <ShieldCheck class="size-3.5" />
                         Presiding Dais • Club Adviser
                     </div>
-                    <h3 class="font-editorial mt-2 text-lg font-bold text-slate-900">
+                    <h3 class="font-editorial mt-1.5 text-base font-bold text-foreground">
                         {{ adviserDisplay.name }}
                     </h3>
-                    <p class="text-xs text-slate-600">{{ adviserDisplay.title }}</p>
+                    <p class="text-xs text-muted-foreground">{{ adviserDisplay.title }}</p>
 
                     <!-- Parliamentary Gavel Controls on Podium -->
                     <div
                         v-if="election.status === 'open' && activePositionMeta"
-                        class="mt-4 flex flex-wrap items-center justify-center gap-2 border-t border-black/10 pt-3.5 text-xs"
+                        class="mt-3 flex flex-wrap items-center justify-center gap-2 border-t border-border pt-3 text-sm"
                     >
                         <!-- Nomination Phase Controls -->
                         <template v-if="election.current_phase === 'nomination'">
@@ -916,7 +916,7 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                                 type="button"
                                 :disabled="busy"
                                 @click="closeNominations"
-                                class="inline-flex items-center gap-1.5 rounded-xl bg-[#0384C5] px-4 py-2 font-semibold text-white hover:bg-[#026da3]"
+                                class="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3.5 py-1.5 font-semibold text-primary-foreground hover:opacity-90"
                             >
                                 <Gavel class="size-3.5" />
                                 Close Nominations &amp; Open Voting ({{ acceptedForActive.length }} Candidates)
@@ -927,7 +927,7 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                                 type="button"
                                 :disabled="busy"
                                 @click="closeNominations"
-                                class="inline-flex items-center gap-1.5 rounded-xl bg-[#1A8F26] px-4 py-2 font-semibold text-white"
+                                class="inline-flex items-center gap-1.5 rounded-lg bg-[#1A8F26] px-3.5 py-1.5 font-semibold text-white"
                             >
                                 <UserCheck class="size-3.5" />
                                 Close Unopposed &amp; Elect Candidate
@@ -935,7 +935,7 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
 
                             <span
                                 v-else
-                                class="rounded-xl bg-[#FBF6EE] px-3 py-1.5 text-[11px] font-medium text-slate-600"
+                                class="rounded-lg bg-background px-3 py-1.5 text-xs font-medium text-muted-foreground"
                             >
                                 {{
                                     acceptedForActive.length === 0
@@ -951,7 +951,7 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                                 type="button"
                                 :disabled="busy"
                                 @click="skipOptionalPosition"
-                                class="inline-flex items-center gap-1 rounded-xl border border-amber-400 bg-amber-50 px-3 py-2 font-semibold text-amber-900 hover:bg-amber-100"
+                                class="inline-flex items-center gap-1 rounded-lg border border-amber-400 bg-amber-50 px-3 py-1.5 text-sm font-semibold text-amber-900 hover:bg-amber-100"
                             >
                                 <SkipForward class="size-3.5" />
                                 {{
@@ -966,9 +966,9 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                         <template v-else-if="election.current_phase === 'voting' || election.current_phase === 'tie_breaker'">
                             <div
                                 v-if="election.current_phase === 'tie_breaker' && isClubAdviser"
-                                class="flex w-full flex-col items-center gap-2.5"
+                                class="flex w-full flex-col items-center gap-2"
                             >
-                                <div class="text-[11px] font-bold text-[#FF8D06]">
+                                <div class="text-xs font-bold text-[#FF8D06]">
                                     Tie-Breaker Active (Round #{{ election.round_number }}): {{ tiedContenders.length }} contenders tied
                                 </div>
                                 <div class="flex flex-wrap items-center justify-center gap-2">
@@ -976,14 +976,14 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                                         type="button"
                                         :disabled="busy"
                                         @click="finalizePosition('runoff')"
-                                        class="bento-btn py-1.5"
+                                        class="bento-btn"
                                     >
                                         Tally / Start Next Runoff Round
                                     </button>
                                     <div class="flex items-center gap-1.5">
                                         <select
                                             v-model="tieBreakWinnerId"
-                                            class="rounded-xl border border-black/15 bg-[#FBF6EE] px-2.5 py-1.5 text-xs"
+                                            class="rounded-lg border border-border bg-background px-2.5 py-1.5 text-sm text-foreground"
                                         >
                                             <option value="" disabled>Select Tied Candidate...</option>
                                             <option v-for="tc in tiedContenders" :key="`tb-${tc.id}`" :value="tc.id">
@@ -994,7 +994,7 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                                             type="button"
                                             :disabled="busy || !tieBreakWinnerId"
                                             @click="finalizePosition('adviser_tiebreak')"
-                                            class="rounded-xl bg-[#0384C5] px-3 py-1.5 font-semibold text-white disabled:opacity-50"
+                                            class="rounded-lg bg-primary px-3 py-1.5 text-sm font-semibold text-primary-foreground disabled:opacity-50"
                                         >
                                             Adviser Tie-Break
                                         </button>
@@ -1003,7 +1003,7 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                                         type="button"
                                         :disabled="busy"
                                         @click="finalizePosition('draw_lots')"
-                                        class="inline-flex items-center gap-1 rounded-xl border border-black/15 bg-[#FBF6EE] px-3 py-1.5 font-semibold text-slate-800 hover:border-[#FF8D06]"
+                                        class="inline-flex items-center gap-1 rounded-lg border border-border bg-background px-3 py-1.5 text-sm font-semibold text-foreground hover:border-[#FF8D06]"
                                     >
                                         <Sparkles class="size-3.5 text-[#FF8D06]" />
                                         Draw Lots
@@ -1016,12 +1016,12 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
                                 type="button"
                                 :disabled="busy"
                                 @click="finalizePosition()"
-                                class="inline-flex items-center gap-1.5 rounded-xl bg-[#1A8F26] px-4 py-2 font-semibold text-white hover:bg-[#15741f]"
+                                class="inline-flex items-center gap-1.5 rounded-lg bg-[#1A8F26] px-3.5 py-1.5 text-sm font-semibold text-white hover:bg-[#15741f]"
                             >
                                 <Gavel class="size-3.5" />
                                 Finalize &amp; Tally {{ activePositionMeta.label }} Votes
                             </button>
-                            <span v-else class="text-[11px] text-slate-500">
+                            <span v-else class="text-xs text-muted-foreground">
                                 Voting in progress — cast your ballot directly on a candidate's seat above.
                             </span>
                         </template>
@@ -1030,84 +1030,84 @@ function formatWonBy(wonBy: SenateElectionResult['won_by']): string {
             </div>
 
             <!-- RIGHT SIDEBAR: OFFICIAL CPF OFFICERS BILLBOARD (IN ORDER: PRESIDENT -> 4TH YEAR REP) -->
-            <aside class="flex flex-col rounded-3xl border border-black/10 bg-white p-5 shadow-2xs">
-                <div class="flex items-center gap-2 border-b border-black/10 pb-3">
+            <aside class="flex flex-col rounded-2xl border border-border bg-card p-4 shadow-2xs">
+                <div class="flex items-center gap-2 border-b border-border pb-2.5">
                     <Award class="size-5 text-[#FF8D06]" />
                     <div>
-                        <h3 class="text-sm font-bold text-slate-900">Official CPF Election Billboard</h3>
-                        <p class="text-[11px] text-slate-500">Strict Constitution Order (President &rarr; 4th Yr Rep)</p>
+                        <h3 class="text-base font-bold text-foreground">Official CPF Election Billboard</h3>
+                        <p class="text-xs text-muted-foreground">Strict Constitution Order (President &rarr; 4th Yr Rep)</p>
                     </div>
                 </div>
 
-                <ol class="mt-3 flex-1 space-y-2">
+                <ol class="mt-2.5 flex-1 space-y-2">
                     <li
                         v-for="pos in positionOrder"
                         :key="`board-${pos.key}`"
-                        class="rounded-xl border p-3 text-xs transition"
+                        class="rounded-xl border px-3 py-2.5 text-sm transition"
                         :class="
                             election.position_results[pos.key]?.status === 'elected'
                                 ? 'border-[#1A8F26]/35 bg-[#1A8F26]/5'
                                 : election.position_results[pos.key]?.status === 'skipped' ||
                                     election.position_results[pos.key]?.status === 'vacant'
-                                  ? 'border-black/10 bg-slate-50 opacity-70'
+                                  ? 'border-border bg-muted/50 opacity-75'
                                   : election.current_position === pos.key && election.current_phase !== 'completed'
-                                    ? 'border-[#0384C5] bg-[#0384C5]/10 ring-1 ring-[#0384C5]/30'
-                                    : 'border-black/10 bg-[#FBF6EE]/60'
+                                    ? 'border-primary bg-primary/10 ring-1 ring-primary/30'
+                                    : 'border-border bg-background/60'
                         "
                     >
                         <div class="flex items-center justify-between gap-2">
-                            <span class="font-bold text-slate-900">
+                            <span class="font-bold text-foreground">
                                 {{ pos.seat_order }}. {{ pos.label }}
                             </span>
                             <span
                                 v-if="election.position_results[pos.key]?.status === 'elected'"
-                                class="rounded-full bg-[#1A8F26] px-2 py-0.5 text-[10px] font-bold text-white"
+                                class="rounded-full bg-[#1A8F26] px-2 py-0.5 text-xs font-bold text-white"
                             >
                                 {{ formatWonBy(election.position_results[pos.key].won_by) }}
                             </span>
                             <span
                                 v-else-if="election.position_results[pos.key]?.status === 'skipped'"
-                                class="rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-bold text-slate-600"
+                                class="rounded-full bg-muted px-2 py-0.5 text-xs font-bold text-muted-foreground"
                             >
                                 Skipped
                             </span>
                             <span
                                 v-else-if="election.position_results[pos.key]?.status === 'vacant'"
-                                class="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-bold text-amber-800"
+                                class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-bold text-amber-800"
                             >
                                 Vacant
                             </span>
                             <span
                                 v-else-if="election.current_position === pos.key && election.current_phase !== 'completed'"
-                                class="rounded-full bg-[#0384C5] px-2 py-0.5 text-[10px] font-bold text-white"
+                                class="rounded-full bg-primary px-2 py-0.5 text-xs font-bold text-primary-foreground"
                             >
                                 Active
                             </span>
-                            <span v-else class="text-[10px] font-medium text-slate-400">
+                            <span v-else class="text-xs font-medium text-muted-foreground">
                                 {{ pos.optional ? 'Optional' : 'Queued' }}
                             </span>
                         </div>
 
                         <div
                             v-if="election.position_results[pos.key]?.status === 'elected'"
-                            class="mt-2 flex flex-wrap items-center justify-between gap-2 text-[11px]"
+                            class="mt-2 flex flex-wrap items-center justify-between gap-2 text-xs"
                         >
                             <div class="flex min-w-0 items-center gap-2">
                                 <img
                                     v-if="avatarByUserId[election.position_results[pos.key].winner_user_id ?? 0]"
                                     :src="avatarByUserId[election.position_results[pos.key].winner_user_id ?? 0]!"
                                     :alt="election.position_results[pos.key].winner_name ?? 'Winner'"
-                                    class="size-7 shrink-0 rounded-full border border-[#1A8F26]/40 bg-white object-cover"
+                                    class="size-7 shrink-0 rounded-full border border-[#1A8F26]/40 bg-card object-cover"
                                 />
                                 <div
                                     v-else
-                                    class="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#1A8F26]/30 bg-[#1A8F26]/10 text-[10px] font-bold text-[#1A8F26]"
+                                    class="flex size-7 shrink-0 items-center justify-center rounded-full border border-[#1A8F26]/30 bg-[#1A8F26]/10 text-xs font-bold text-[#1A8F26]"
                                 >
                                     {{ getSeatInitials(election.position_results[pos.key].winner_name ?? 'CPF') }}
                                 </div>
                                 <div class="min-w-0 truncate">
-                                    <span class="font-bold text-slate-900">{{ election.position_results[pos.key].winner_name }}</span>
-                                    <span class="ml-1 text-slate-600">({{ election.position_results[pos.key].course_year_section }})</span>
+                                    <span class="font-bold text-foreground">{{ election.position_results[pos.key].winner_name }}</span>
+                                    <span class="ml-1 text-muted-foreground">({{ election.position_results[pos.key].course_year_section }})</span>
                                 </div>
                             </div>
                             <span class="shrink-0 font-semibold text-[#1A8F26]">

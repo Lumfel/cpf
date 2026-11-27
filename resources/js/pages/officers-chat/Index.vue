@@ -70,34 +70,32 @@ function handleCounselorArchived() {
 <template>
     <Head title="Officers Chat — CPF Messenger" />
 
-    <div class="flex h-full flex-1 flex-col gap-5 bg-[#FBF6EE] p-4 text-slate-900 md:p-6">
-        <div class="flex flex-wrap items-center justify-between gap-3">
-            <div>
-                <div class="flex items-center gap-2">
-                    <span class="inline-flex items-center gap-1.5 rounded-full bg-[#0384C5]/10 px-3 py-1 text-xs font-bold text-[#0384C5]">
-                        <MessageCircle class="size-3.5" />
-                        CPF Executive Messenger
-                    </span>
-                    <span class="inline-flex items-center gap-1 rounded-full bg-[#1A8F26]/12 px-2.5 py-1 text-[11px] font-bold text-[#1A8F26]">
-                        <ShieldCheck class="size-3.5" />
-                        {{ campusName }}
-                    </span>
-                </div>
-                <h1 class="font-editorial mt-1.5 text-2xl font-bold tracking-tight text-slate-900">
+    <div class="flex min-h-full w-full max-w-none flex-1 flex-col gap-3.5 bg-background p-3 text-foreground md:p-4">
+        <div class="flex flex-wrap items-center justify-between gap-2.5">
+            <div class="flex flex-wrap items-center gap-2.5">
+                <h1 class="font-editorial text-xl font-bold tracking-tight text-foreground md:text-2xl">
                     Officers Private Group Chat
                 </h1>
+                <span class="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-xs font-bold text-primary">
+                    <MessageCircle class="size-3.5" />
+                    CPF Executive Messenger
+                </span>
+                <span class="inline-flex items-center gap-1 rounded-full bg-[#1A8F26]/12 px-2.5 py-0.5 text-xs font-bold text-[#1A8F26]">
+                    <ShieldCheck class="size-3.5" />
+                    {{ campusName }}
+                </span>
             </div>
         </div>
 
         <div
             v-if="statusBanner"
-            class="rounded-xl border border-[#1A8F26]/30 bg-[#1A8F26]/10 px-4 py-2.5 text-xs font-semibold text-[#1A8F26]"
+            class="rounded-xl border border-[#1A8F26]/30 bg-[#1A8F26]/10 px-3.5 py-2 text-sm font-semibold text-[#1A8F26]"
         >
             {{ statusBanner }}
         </div>
         <div
             v-if="errorBanner"
-            class="rounded-xl border border-red-300 bg-red-50 px-4 py-2.5 text-xs font-semibold text-red-700"
+            class="rounded-xl border border-red-300 bg-red-50 px-3.5 py-2 text-sm font-semibold text-red-700"
         >
             {{ errorBanner }}
         </div>
@@ -118,23 +116,23 @@ function handleCounselorArchived() {
         />
 
         <!-- Annual Officer GC ZIP Archives (Adviser & Officers Read Record) -->
-        <section class="bento p-5">
-            <div class="flex items-center gap-2 text-sm font-bold text-slate-900">
-                <Archive class="size-4 text-[#0384C5]" />
+        <section class="bento p-4">
+            <div class="flex items-center gap-2 text-base font-bold text-foreground">
+                <Archive class="size-4 text-primary" />
                 Officer GC Annual ZIP Archives
             </div>
-            <div v-if="gcArchives.length === 0" class="mt-2 text-xs text-slate-500">
+            <div v-if="gcArchives.length === 0" class="mt-1.5 text-sm text-muted-foreground">
                 No annual GC archives recorded yet. The Club Adviser can archive and reset the channel at the end of each academic year.
             </div>
-            <div v-else class="mt-3 grid gap-2.5 md:grid-cols-2">
+            <div v-else class="mt-2.5 grid gap-2.5 md:grid-cols-2">
                 <div
                     v-for="arc in gcArchives"
                     :key="arc.id"
-                    class="rounded-2xl border border-black/10 bg-white p-3 text-xs"
+                    class="rounded-xl border border-border bg-card p-3.5 text-sm"
                 >
-                    <div class="font-bold text-slate-900">{{ arc.zip_file_name }}</div>
-                    <div class="text-slate-600">AY {{ arc.academic_year }} • {{ arc.total_messages }} messages</div>
-                    <div class="mt-1 truncate font-mono text-[10px] text-slate-500">
+                    <div class="font-bold text-foreground">{{ arc.zip_file_name }}</div>
+                    <div class="text-muted-foreground">AY {{ arc.academic_year }} • {{ arc.total_messages }} messages</div>
+                    <div class="mt-1 truncate font-mono text-xs text-muted-foreground">
                         SHA-256: {{ arc.sha256_checksum }}
                     </div>
                 </div>
