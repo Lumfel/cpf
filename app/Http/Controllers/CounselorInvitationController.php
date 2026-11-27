@@ -47,17 +47,36 @@ class CounselorInvitationController extends Controller
             ? trim((string) $validated['counselor_name'])
             : null;
 
-        abort_if(
-            User::query()->where('email', $email)->exists(),
-            422,
-            'An account with this email already exists in CPF and cannot be invited as a new Guidance Counselor.',
-        );
-
         $token = Str::random(48);
         $otpCode = str_pad((string) random_int(0, 999999), 6, '0', STR_PAD_LEFT);
         $expiresAt = now()->addHours(24);
 
         $invitation = DB::transaction(function () use ($membership, $user, $email, $counselorName, $token, $otpCode, $expiresAt): CounselorInvitation {
+            $existingUser = User::query()->where('email', $email)->lockForUpdate()->first();
+
+            if ($existingUser !== null) {
+                abort_if(
+                    $existingUser->id === $user->id,
+                    422,
+                    'You cannot send a Guidance Counselor invitation to your own account.',
+                );
+
+                $hasProtectedMembership = CampusMembership::query()
+                    ->where('user_id', $existingUser->id)
+                    ->whereIn('status', [
+                        MembershipStatus::Approved->value,
+                        MembershipStatus::Alumni->value,
+                    ])
+                    ->lockForUpdate()
+                    ->exists();
+
+                abort_if(
+                    $hasProtectedMembership,
+                    422,
+                    'An account with this email already holds an approved or alumni CPF membership and cannot be invited as a new Guidance Counselor.',
+                );
+            }
+
             CounselorInvitation::query()
                 ->where('campus_id', $membership->campus_id)
                 ->where('email', $email)
@@ -71,6 +90,7 @@ class CounselorInvitationController extends Controller
                 'counselor_name' => $counselorName,
                 'token' => $token,
                 'otp_hash' => Hash::make($otpCode),
+                'failed_attempts' => 0,
                 'expires_at' => $expiresAt,
             ]);
         });
@@ -180,17 +200,16 @@ class CounselorInvitationController extends Controller
             'password' => ['required', 'string', 'min:8', 'confirmed'],
         ]);
 
-        $counselorUser = DB::transaction(function () use ($token, $validated, $tenureService): User {
+        /** @var array{ok: bool, reason?: string, user?: User} $outcome */
+        $outcome = DB::transaction(function () use ($token, $validated, $tenureService): array {
             $invitation = CounselorInvitation::query()
                 ->where('token', $token)
                 ->lockForUpdate()
                 ->firstOrFail();
 
-            abort_unless(
-                $invitation->isPendingAndActive(),
-                422,
-                'This Guidance Counselor invitation has already been accepted or has expired.',
-            );
+            if (! $invitation->isPendingAndActive()) {
+                return ['ok' => false, 'reason' => 'inactive'];
+            }
 
             $inviterStillAdviser = CampusMembership::query()
                 ->where('user_id', $invitation->invited_by_user_id)
@@ -199,16 +218,24 @@ class CounselorInvitationController extends Controller
                 ->where('status', MembershipStatus::Approved->value)
                 ->exists();
 
-            abort_unless(
-                $inviterStillAdviser,
-                403,
-                'This invitation is no longer valid because the inviting Club Adviser is no longer active on this campus.',
-            );
+            if (! $inviterStillAdviser) {
+                return ['ok' => false, 'reason' => 'inviter_inactive'];
+            }
 
             if (! Hash::check((string) $validated['otp_code'], $invitation->otp_hash)) {
-                throw ValidationException::withMessages([
-                    'otp_code' => 'Invalid 6-digit OTP verification code.',
-                ]);
+                $attempts = (int) $invitation->failed_attempts + 1;
+                $updates = ['failed_attempts' => $attempts];
+
+                if ($attempts >= 5) {
+                    $updates['expires_at'] = now()->subSecond();
+                }
+
+                $invitation->update($updates);
+
+                return [
+                    'ok' => false,
+                    'reason' => $attempts >= 5 ? 'locked_out' : 'invalid_otp',
+                ];
             }
 
             $fullName = CampusMembership::formatLastFirstMi(
@@ -218,21 +245,42 @@ class CounselorInvitationController extends Controller
             );
             $phone = trim((string) ($validated['cellphone_number'] ?? ''));
 
-            abort_if(
-                User::query()->where('email', $invitation->email)->lockForUpdate()->exists(),
-                422,
-                'An account with this email already exists and cannot be overwritten via counselor invitation.',
-            );
+            $existingUser = User::query()->where('email', $invitation->email)->lockForUpdate()->first();
 
-            $user = new User([
-                'name' => $fullName,
-                'email' => $invitation->email,
-                'password' => Hash::make((string) $validated['password']),
-                'must_change_password' => false,
-                'temporary_password_issued_at' => null,
-            ]);
-            $user->email_verified_at = now();
-            $user->save();
+            if ($existingUser !== null) {
+                $hasProtectedMembership = CampusMembership::query()
+                    ->where('user_id', $existingUser->id)
+                    ->whereIn('status', [
+                        MembershipStatus::Approved->value,
+                        MembershipStatus::Alumni->value,
+                    ])
+                    ->lockForUpdate()
+                    ->exists();
+
+                if ($hasProtectedMembership) {
+                    return ['ok' => false, 'reason' => 'protected_user'];
+                }
+
+                $existingUser->forceFill([
+                    'name' => $fullName,
+                    'password' => Hash::make((string) $validated['password']),
+                    'email_verified_at' => $existingUser->email_verified_at ?? now(),
+                    'must_change_password' => false,
+                    'temporary_password_issued_at' => null,
+                ])->save();
+
+                $user = $existingUser;
+            } else {
+                $user = new User([
+                    'name' => $fullName,
+                    'email' => $invitation->email,
+                    'password' => Hash::make((string) $validated['password']),
+                    'must_change_password' => false,
+                    'temporary_password_issued_at' => null,
+                ]);
+                $user->email_verified_at = now();
+                $user->save();
+            }
 
             $membership = CampusMembership::updateOrCreate(
                 [
@@ -298,9 +346,24 @@ class CounselorInvitationController extends Controller
                 'accepted_user_id' => $user->id,
             ]);
 
-            return $user;
+            return ['ok' => true, 'user' => $user];
         });
 
+        if (! $outcome['ok']) {
+            return match ($outcome['reason'] ?? 'inactive') {
+                'inviter_inactive' => abort(403, 'This invitation is no longer valid because the inviting Club Adviser is no longer active on this campus.'),
+                'protected_user' => abort(422, 'An account with this email already holds an approved or alumni CPF membership and cannot be overwritten via counselor invitation.'),
+                'locked_out' => throw ValidationException::withMessages([
+                    'otp_code' => 'Too many failed verification attempts. This invitation has been locked and invalidated.',
+                ]),
+                'invalid_otp' => throw ValidationException::withMessages([
+                    'otp_code' => 'Invalid 6-digit OTP verification code.',
+                ]),
+                default => abort(422, 'This Guidance Counselor invitation has already been accepted or has expired.'),
+            };
+        }
+
+        $counselorUser = $outcome['user'];
         Auth::login($counselorUser);
         $request->session()->regenerate();
 

@@ -13,7 +13,7 @@ import {
     Users,
     X,
 } from '@lucide/vue';
-import { computed, nextTick, onMounted, ref, watch } from 'vue';
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
 import { apiRequest } from '@/lib/csrfFetch';
 
 export interface MessengerOfficerMessage {
@@ -38,7 +38,15 @@ const props = withDefaults(
         } | null;
         initialMessages: MessengerOfficerMessage[];
         counselorMessages?: MessengerOfficerMessage[];
+        counselorPeers?: Array<{
+            user_id: number;
+            name: string;
+            role: string;
+            role_label: string;
+        }>;
         canAccessCounselorGc?: boolean;
+        hideOfficersGc?: boolean;
+        officersGcPaused?: boolean;
         defaultThread?: 'officers' | 'counselors';
         currentUserId?: number | null;
         campusName?: string;
@@ -47,7 +55,10 @@ const props = withDefaults(
     }>(),
     {
         counselorMessages: () => [],
+        counselorPeers: () => [],
         canAccessCounselorGc: false,
+        hideOfficersGc: false,
+        officersGcPaused: false,
         defaultThread: 'officers',
         currentUserId: null,
         campusName: 'CHMSU Alijis Campus',
@@ -64,9 +75,17 @@ const emit = defineEmits<{
 
 const officerMsgs = ref<MessengerOfficerMessage[]>([...props.initialMessages]);
 const counselorMsgs = ref<MessengerOfficerMessage[]>([...props.counselorMessages]);
-const activeThread = ref<'officers' | 'counselors'>(
-    props.defaultThread === 'counselors' && props.canAccessCounselorGc ? 'counselors' : 'officers',
+const dmMessagesByPeer = ref<Record<number, MessengerOfficerMessage[]>>({});
+const activeDmPeerId = ref<number | null>(null);
+const activeThread = ref<'officers' | 'counselors' | 'counselor_dm'>(
+    (props.hideOfficersGc || props.defaultThread === 'counselors') && props.canAccessCounselorGc
+        ? 'counselors'
+        : 'officers',
 );
+const activeDmPeer = computed(
+    () => props.counselorPeers.find((p) => p.user_id === activeDmPeerId.value) ?? null,
+);
+let liveSyncTimer: ReturnType<typeof setInterval> | null = null;
 const draft = ref('');
 const sending = ref(false);
 const errorText = ref<string | null>(null);
@@ -148,9 +167,13 @@ watch(
     },
 );
 
-const displayedMessages = computed(() =>
-    activeThread.value === 'counselors' ? counselorMsgs.value : officerMsgs.value,
-);
+const displayedMessages = computed(() => {
+    if (activeThread.value === 'counselors') return counselorMsgs.value;
+    if (activeThread.value === 'counselor_dm' && activeDmPeerId.value !== null) {
+        return dmMessagesByPeer.value[activeDmPeerId.value] ?? [];
+    }
+    return officerMsgs.value;
+});
 
 const comingSoonCampuses = [
     {
@@ -218,19 +241,99 @@ function scrollToBottom() {
     });
 }
 
+function mergeMessages(target: MessengerOfficerMessage[], incoming: MessengerOfficerMessage[]) {
+    if (!incoming.length) return false;
+    const seen = new Set(target.map((m) => m.id));
+    let added = false;
+    for (const msg of incoming) {
+        if (!seen.has(msg.id)) {
+            target.push(msg);
+            seen.add(msg.id);
+            added = true;
+        }
+    }
+    return added;
+}
+
+async function syncActiveThreadMessages() {
+    if (typeof document !== 'undefined' && document.hidden) return;
+    if (activeThread.value === 'officers') {
+        if (props.hideOfficersGc || !props.channel?.id) return;
+        const afterId = officerMsgs.value.length ? officerMsgs.value[officerMsgs.value.length - 1].id : 0;
+        const { ok, data } = await apiRequest<{ messages?: MessengerOfficerMessage[] }>(
+            `/officers-gc/${props.channel.id}/messages?after_id=${afterId}`,
+            'GET',
+        );
+        if (ok && Array.isArray(data.messages) && mergeMessages(officerMsgs.value, data.messages)) {
+            scrollToBottom();
+        }
+    } else if (activeThread.value === 'counselors') {
+        if (!props.canAccessCounselorGc) return;
+        const afterId = counselorMsgs.value.length ? counselorMsgs.value[counselorMsgs.value.length - 1].id : 0;
+        const { ok, data } = await apiRequest<{ messages?: MessengerOfficerMessage[] }>(
+            `/counselors-gc/messages?after_id=${afterId}`,
+            'GET',
+        );
+        if (ok && Array.isArray(data.messages) && mergeMessages(counselorMsgs.value, data.messages)) {
+            scrollToBottom();
+        }
+    } else if (activeThread.value === 'counselor_dm' && activeDmPeerId.value !== null) {
+        const peerId = activeDmPeerId.value;
+        const currentList = dmMessagesByPeer.value[peerId] ?? [];
+        const afterId = currentList.length ? currentList[currentList.length - 1].id : 0;
+        const { ok, data } = await apiRequest<{ messages?: MessengerOfficerMessage[] }>(
+            `/counselors-dm/${peerId}/messages?after_id=${afterId}`,
+            'GET',
+        );
+        if (ok && Array.isArray(data.messages)) {
+            if (!dmMessagesByPeer.value[peerId]) dmMessagesByPeer.value[peerId] = [];
+            if (mergeMessages(dmMessagesByPeer.value[peerId], data.messages)) {
+                scrollToBottom();
+            }
+        }
+    }
+}
+
 onMounted(() => {
     scrollToBottom();
+    liveSyncTimer = setInterval(() => {
+        void syncActiveThreadMessages();
+    }, 2500);
+});
+
+onBeforeUnmount(() => {
+    if (liveSyncTimer) {
+        clearInterval(liveSyncTimer);
+        liveSyncTimer = null;
+    }
 });
 
 function switchThread(target: 'officers' | 'counselors') {
+    if (target === 'officers' && props.hideOfficersGc) {
+        return;
+    }
     if (target === 'counselors' && !props.canAccessCounselorGc) {
         selectComingSoon('Counselors Private GC (Adviser & Guidance Counselors Only)');
         return;
     }
     comingSoonNotice.value = null;
     errorText.value = null;
+    activeDmPeerId.value = null;
     activeThread.value = target;
     scrollToBottom();
+    void syncActiveThreadMessages();
+}
+
+function openCounselorDm(peerUserId: number) {
+    comingSoonNotice.value = null;
+    errorText.value = null;
+    activeDmPeerId.value = peerUserId;
+    activeThread.value = 'counselor_dm';
+    if (!dmMessagesByPeer.value[peerUserId]) {
+        dmMessagesByPeer.value[peerUserId] = [];
+    }
+    scrollToBottom();
+    void syncActiveThreadMessages();
 }
 
 function selectComingSoon(title: string) {
@@ -246,7 +349,10 @@ const canSendInCurrentThread = computed(() => {
     if (activeThread.value === 'counselors') {
         return props.canAccessCounselorGc;
     }
-    return Boolean(props.channel && props.channel.is_active !== false);
+    if (activeThread.value === 'counselor_dm') {
+        return props.canAccessCounselorGc && activeDmPeerId.value !== null;
+    }
+    return Boolean(!props.hideOfficersGc && !props.officersGcPaused && props.channel && props.channel.is_active !== false);
 });
 
 async function sendMessage() {
@@ -256,28 +362,35 @@ async function sendMessage() {
     const url =
         activeThread.value === 'counselors'
             ? '/counselors-gc/messages'
-            : `/officers-gc/${props.channel?.id}/messages`;
+            : activeThread.value === 'counselor_dm' && activeDmPeerId.value !== null
+              ? `/counselors-dm/${activeDmPeerId.value}/messages`
+              : `/officers-gc/${props.channel?.id}/messages`;
 
     sending.value = true;
     errorText.value = null;
 
-    const { ok, data } = await apiRequest<{ status?: string }>(url, 'POST', {
+    const { ok, data } = await apiRequest<{ status?: string; errors?: Record<string, string[]> }>(url, 'POST', {
         message_body: body,
     });
 
     sending.value = false;
 
     if (!ok) {
-        errorText.value = data.message ?? 'Unable to send message.';
+        errorText.value = data.errors?.message_body?.[0] ?? data.message ?? 'Unable to send message.';
         return;
     }
 
     const payload = data as unknown as { message?: MessengerOfficerMessage };
     if (payload.message && typeof payload.message === 'object') {
         if (activeThread.value === 'counselors') {
-            counselorMsgs.value.push(payload.message);
+            mergeMessages(counselorMsgs.value, [payload.message]);
+        } else if (activeThread.value === 'counselor_dm' && activeDmPeerId.value !== null) {
+            if (!dmMessagesByPeer.value[activeDmPeerId.value]) {
+                dmMessagesByPeer.value[activeDmPeerId.value] = [];
+            }
+            mergeMessages(dmMessagesByPeer.value[activeDmPeerId.value], [payload.message]);
         } else {
-            officerMsgs.value.push(payload.message);
+            mergeMessages(officerMsgs.value, [payload.message]);
         }
         emit('message-sent', payload.message);
     }
@@ -318,6 +431,7 @@ async function sendMessage() {
                 <div class="flex-1 space-y-1 p-2.5">
                     <!-- ACTIVE THREAD 1: MAIN OFFICERS GC (ALIJIS) -->
                     <button
+                        v-if="!hideOfficersGc"
                         type="button"
                         @click="switchThread('officers')"
                         class="flex w-full items-center gap-3 rounded-xl p-2.5 text-left transition"
@@ -385,7 +499,32 @@ async function sendMessage() {
                         </div>
                     </button>
 
-                    <!-- COMING SOON CAMPUS CHANNELS -->
+                    <!-- AUTOMATIC 1-ON-1 COUNSELOR DIRECT CHATS -->
+                    <template v-if="canAccessCounselorGc && counselorPeers.length > 0">
+                        <div class="px-2 pt-3 pb-1 text-xs font-bold tracking-wider text-slate-500 uppercase">
+                            Direct Counselor Chats
+                        </div>
+                        <button
+                            v-for="peer in counselorPeers"
+                            :key="`dm-${peer.user_id}`"
+                            type="button"
+                            @click="openCounselorDm(peer.user_id)"
+                            class="flex w-full items-center gap-3 rounded-xl p-2.5 text-left transition"
+                            :class="activeThread === 'counselor_dm' && activeDmPeerId === peer.user_id ? 'bg-[#1A8F26]/14' : 'hover:bg-black/5'"
+                        >
+                            <div class="relative flex size-10 shrink-0 items-center justify-center rounded-full bg-[#1A8F26]/85 text-xs font-extrabold text-white">
+                                <span>{{ getInitials(peer.name) }}</span>
+                                <span class="absolute right-0 bottom-0 size-2.5 rounded-full border-2 border-white bg-[#1A8F26]" />
+                            </div>
+                            <div class="min-w-0 flex-1">
+                                <div class="truncate text-xs font-bold text-slate-900">{{ peer.name }}</div>
+                                <div class="truncate text-[11px] font-medium text-[#1A8F26]">{{ peer.role_label }}</div>
+                            </div>
+                        </button>
+                    </template>
+
+                    <!-- COMING SOON CAMPUS CHANNELS (Hidden for Guidance Counselors) -->
+                    <template v-if="!hideOfficersGc">
                     <div class="px-2 pt-3 pb-1 text-[10px] font-bold tracking-wider text-slate-400 uppercase">
                         Other Campus Groups (Coming Soon)
                     </div>
@@ -414,6 +553,7 @@ async function sendMessage() {
                             </div>
                         </div>
                     </button>
+                    </template>
                 </div>
             </aside>
 
@@ -436,7 +576,9 @@ async function sendMessage() {
                                     {{
                                         activeThread === 'counselors'
                                             ? `Counselors Private GC — ${campusName}`
-                                            : `Main Officers GC — ${campusName}`
+                                            : activeThread === 'counselor_dm' && activeDmPeer
+                                              ? `Direct Chat: ${activeDmPeer.name}`
+                                              : `Main Officers GC — ${campusName}`
                                     }}
                                 </h3>
                                 <span

@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'counselor_name',
     'token',
     'otp_hash',
+    'failed_attempts',
     'expires_at',
     'accepted_at',
     'accepted_user_id',
@@ -24,6 +25,7 @@ class CounselorInvitation extends Model
     protected function casts(): array
     {
         return [
+            'failed_attempts' => 'integer',
             'expires_at' => 'datetime',
             'accepted_at' => 'datetime',
         ];
@@ -31,7 +33,10 @@ class CounselorInvitation extends Model
 
     public function isPendingAndActive(): bool
     {
-        return $this->accepted_at === null && $this->expires_at !== null && $this->expires_at->isFuture();
+        return $this->accepted_at === null
+            && (int) $this->failed_attempts < 5
+            && $this->expires_at !== null
+            && $this->expires_at->isFuture();
     }
 
     public function campus(): BelongsTo

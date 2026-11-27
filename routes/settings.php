@@ -11,6 +11,7 @@ Route::middleware(['auth', EnsureTemporaryPasswordChanged::class])->group(functi
 
     Route::get('settings/profile', [ProfileController::class, 'edit'])->name('profile.edit');
     Route::patch('settings/profile', [ProfileController::class, 'update'])->name('profile.update');
+    Route::patch('settings/campus-tour', [ProfileController::class, 'updateCampusSettings'])->name('settings.campus-tour.update');
 });
 
 Route::middleware(['auth', 'verified', EnsureTemporaryPasswordChanged::class])->group(function () {

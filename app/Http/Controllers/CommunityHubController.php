@@ -208,6 +208,7 @@ class CommunityHubController extends Controller
 
         $schoolYearArchives = SchoolYearArchive::query()
             ->where('campus_id', $campusId)
+            ->where('archive_type', '!=', 'counselor_gc')
             ->orderByDesc('archived_at')
             ->get();
 

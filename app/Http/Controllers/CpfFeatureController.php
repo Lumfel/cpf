@@ -9,7 +9,11 @@ use App\Actions\Support\RequestTestingRoom;
 use App\Actions\Support\SubmitGuidanceReferral;
 use App\Enums\MembershipStatus;
 use App\Enums\ReferralPriority;
+use App\Events\CounselorDmMessageSent;
+use App\Events\CounselorGcMessageSent;
 use App\Events\OfficerGcMessageSent;
+use App\Models\CounselorDirectMessage;
+use App\Services\ProfanityFilterService;
 use App\Models\CampusCounselor;
 use App\Models\CampusMembership;
 use App\Models\CampusRoom;
@@ -74,17 +78,22 @@ class CpfFeatureController extends Controller
 
     public function requestTestingRoom(Request $request, RequestTestingRoom $action): JsonResponse
     {
+        $user = $request->user();
         abort_if(
-            $request->user()?->isAlumni(),
+            $user?->isAlumni(),
             403,
             'Former member and officer accounts have read-only archive access.',
         );
 
-        $membership = $request->user()?->primaryMembership;
+        $membership = $user?->primaryMembership;
         abort_unless(
-            $membership !== null,
+            $user !== null
+            && $user->verifiedRole() !== null
+            && $membership !== null
+            && $membership->status === MembershipStatus::Approved
+            && $membership->campus_id !== null,
             403,
-            'A campus membership record is required for Testing Room requests.',
+            'An approved campus membership is required for Testing Room requests.',
         );
 
         $validated = $request->validate([
@@ -96,13 +105,12 @@ class CpfFeatureController extends Controller
             'end_time' => ['required', 'date_format:H:i', 'after:start_time'],
         ]);
 
-        if (! empty($validated['campus_id'])) {
-            abort_unless(
-                (int) $validated['campus_id'] === $membership->campus_id,
-                403,
-                'Testing Room requests must be submitted to your assigned campus chapter.',
-            );
-        }
+        $campusId = $validated['campus_id'] ?? $membership->campus_id;
+        abort_unless(
+            (int) $campusId === $membership->campus_id,
+            403,
+            'Testing Room requests must be submitted to your assigned campus chapter.',
+        );
 
         $campusId = $membership->campus_id;
 
@@ -117,7 +125,7 @@ class CpfFeatureController extends Controller
             );
         }
 
-        $roomRequest = $action->handle($request->user(), $campusId, $validated);
+        $roomRequest = $action->handle($user, $campusId, $validated);
 
         return response()->json(['status' => 'pending', 'room_request' => $roomRequest], 201);
     }
@@ -128,15 +136,14 @@ class CpfFeatureController extends Controller
         $role = $user?->verifiedRole();
         $membership = $user?->primaryMembership;
 
-        $isReferralLinked = GuidanceReferral::query()
-            ->where('room_request_id', $roomRequest->id)
-            ->exists();
+        $isCounselingBooking = $roomRequest->counselor_id !== null
+            || GuidanceReferral::query()->where('room_request_id', $roomRequest->id)->exists();
 
-        if ($isReferralLinked) {
+        if ($isCounselingBooking) {
             abort_unless(
                 $role && $role->canCoordinateGuidance() && $membership && $membership->campus_id === $roomRequest->campus_id,
                 403,
-                'Only the Club Adviser or a campus Guidance Counselor can review referral-linked Testing Room requests.',
+                'Only the Club Adviser or a campus Guidance Counselor can review counseling Testing Room requests.',
             );
         } else {
             abort_unless(
@@ -151,11 +158,20 @@ class CpfFeatureController extends Controller
             'review_notes' => ['nullable', 'string', 'max:255'],
         ]);
 
-        $updated = DB::transaction(function () use ($roomRequest, $validated, $user): RoomRequest {
+        $updated = DB::transaction(function () use ($roomRequest, $validated, $user, $role): RoomRequest {
             $lockedRequest = RoomRequest::query()
                 ->whereKey($roomRequest->id)
                 ->lockForUpdate()
                 ->firstOrFail();
+
+            $lockedIsCounseling = $lockedRequest->counselor_id !== null
+                || GuidanceReferral::query()->where('room_request_id', $lockedRequest->id)->exists();
+
+            abort_if(
+                $lockedIsCounseling && ! $role->canCoordinateGuidance(),
+                403,
+                'Only the Club Adviser or a campus Guidance Counselor can review counseling Testing Room requests.',
+            );
 
             abort_unless(
                 $lockedRequest->status === 'pending',
@@ -203,17 +219,22 @@ class CpfFeatureController extends Controller
 
     public function submitReferral(Request $request, SubmitGuidanceReferral $action): JsonResponse
     {
+        $user = $request->user();
         abort_if(
-            $request->user()?->isAlumni(),
+            $user?->isAlumni(),
             403,
             'Former member and officer accounts have read-only archive access.',
         );
 
-        $membership = $request->user()?->primaryMembership;
+        $membership = $user?->primaryMembership;
         abort_unless(
-            $membership !== null,
+            $user !== null
+            && $user->verifiedRole() !== null
+            && $membership !== null
+            && $membership->status === MembershipStatus::Approved
+            && $membership->campus_id !== null,
             403,
-            'A campus membership record is required to submit a guidance referral.',
+            'An approved campus membership is required to submit a guidance referral.',
         );
 
         $validated = $request->validate([
@@ -248,7 +269,7 @@ class CpfFeatureController extends Controller
             );
         }
 
-        $referral = $action->handle($request->user(), $campusId, $validated, $request->ip());
+        $referral = $action->handle($user, $campusId, $validated, $request->ip());
 
         return response()->json([
             'status' => 'submitted',
@@ -319,6 +340,22 @@ class CpfFeatureController extends Controller
                     : null;
             }
 
+            if ($referral->room_request_id !== null && $feedbackStatus === 'completed') {
+                $pendingRoomRequest = RoomRequest::query()
+                    ->whereKey($referral->room_request_id)
+                    ->lockForUpdate()
+                    ->first();
+
+                if ($pendingRoomRequest !== null && $pendingRoomRequest->status === 'pending') {
+                    $pendingRoomRequest->update([
+                        'status' => 'rejected',
+                        'reviewed_by' => $user->id,
+                        'reviewed_at' => now(),
+                        'review_notes' => 'Auto-released upon direct referral completion.',
+                    ]);
+                }
+            }
+
             if ($referral->room_request_id !== null && $feedbackStatus === 'ongoing') {
                 $linkedRoomRequest = RoomRequest::query()
                     ->whereKey($referral->room_request_id)
@@ -373,7 +410,7 @@ class CpfFeatureController extends Controller
         ]);
     }
 
-    public function sendOfficerGcMessage(Request $request, OfficerGcChannel $channel): JsonResponse
+    public function fetchOfficerGcMessages(Request $request, OfficerGcChannel $channel): JsonResponse
     {
         $user = $request->user();
         $role = $user?->verifiedRole();
@@ -382,10 +419,50 @@ class CpfFeatureController extends Controller
         abort_unless(
             $role && $role->isOfficerOrAdviser() && $membership && $membership->campus_id === $channel->campus_id,
             403,
+            'Only active campus Officers and the Club Adviser may read this Officers Private GC.',
+        );
+
+        $afterId = max(0, (int) $request->query('after_id', 0));
+        $messages = $channel->messages()
+            ->with('sender:id,name')
+            ->when($afterId > 0, fn ($q) => $q->where('id', '>', $afterId))
+            ->orderBy('id')
+            ->limit(100)
+            ->get()
+            ->map(fn (OfficerGcMessage $msg) => [
+                'id' => $msg->id,
+                'sender_user_id' => $msg->sender_user_id,
+                'sender_name' => $msg->sender?->name ?? 'Officer',
+                'sender' => $msg->sender ? ['id' => $msg->sender->id, 'name' => $msg->sender->name] : null,
+                'sender_role' => $msg->sender_role,
+                'message_body' => $msg->message_body,
+                'created_at' => (string) $msg->created_at,
+            ])
+            ->values();
+
+        return response()->json(['messages' => $messages]);
+    }
+
+    public function sendOfficerGcMessage(Request $request, OfficerGcChannel $channel, ProfanityFilterService $profanityFilter): JsonResponse
+    {
+        $user = $request->user();
+        $role = $user?->verifiedRole();
+        $membership = $user?->primaryMembership;
+
+        abort_if(
+            (bool) config('cpf.features.officers_gc_paused', false),
+            423,
+            'Officers Private GC is currently paused by chapter configuration.',
+        );
+
+        abort_unless(
+            $role && $role->isOfficerOrAdviser() && $membership && $membership->campus_id === $channel->campus_id,
+            403,
             'Only active campus Officers and the Club Adviser may message this Officers Private GC.',
         );
 
         $validated = $request->validate(['message_body' => ['required', 'string', 'max:2000']]);
+        $profanityFilter->assertClean((string) $validated['message_body'], 'message_body');
 
         $msg = DB::transaction(function () use ($channel, $user, $role, $validated): OfficerGcMessage {
             $lockedChannel = OfficerGcChannel::query()
@@ -461,7 +538,40 @@ class CpfFeatureController extends Controller
         ]);
     }
 
-    public function sendCounselorGcMessage(Request $request): JsonResponse
+    public function fetchCounselorGcMessages(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $membership = $user?->primaryMembership;
+
+        abort_unless(
+            $user?->canCoordinateGuidance() && $membership !== null,
+            403,
+            'Counselors Private GC is restricted to the campus Club Adviser and Guidance Counselors.',
+        );
+
+        $afterId = max(0, (int) $request->query('after_id', 0));
+        $messages = CounselorGcMessage::query()
+            ->with('sender:id,name')
+            ->where('campus_id', $membership->campus_id)
+            ->when($afterId > 0, fn ($q) => $q->where('id', '>', $afterId))
+            ->orderBy('id')
+            ->limit(100)
+            ->get()
+            ->map(fn (CounselorGcMessage $msg) => [
+                'id' => $msg->id,
+                'sender_user_id' => $msg->sender_user_id,
+                'sender_name' => $msg->sender?->name ?? 'Guidance Counselor',
+                'sender' => $msg->sender ? ['id' => $msg->sender->id, 'name' => $msg->sender->name] : null,
+                'sender_role' => $msg->sender_role,
+                'message_body' => $msg->message_body,
+                'created_at' => (string) $msg->created_at,
+            ])
+            ->values();
+
+        return response()->json(['messages' => $messages]);
+    }
+
+    public function sendCounselorGcMessage(Request $request, ProfanityFilterService $profanityFilter): JsonResponse
     {
         $user = $request->user();
         $role = $user?->verifiedRole();
@@ -474,6 +584,7 @@ class CpfFeatureController extends Controller
         );
 
         $validated = $request->validate(['message_body' => ['required', 'string', 'max:2000']]);
+        $profanityFilter->assertClean((string) $validated['message_body'], 'message_body');
 
         $msg = CounselorGcMessage::create([
             'campus_id' => $membership->campus_id,
@@ -483,6 +594,7 @@ class CpfFeatureController extends Controller
         ]);
 
         $msg->load('sender:id,name');
+        CounselorGcMessageSent::dispatch((int) $membership->campus_id, $msg);
 
         return response()->json([
             'status' => 'sent',
@@ -494,6 +606,102 @@ class CpfFeatureController extends Controller
                     'id' => $user->id,
                     'name' => $msg->sender?->name ?? $user->name,
                 ],
+                'sender_role' => $msg->sender_role,
+                'message_body' => $msg->message_body,
+                'created_at' => (string) $msg->created_at,
+            ],
+        ], 201);
+    }
+
+    public function fetchCounselorDmMessages(Request $request, \App\Models\User $peerUser): JsonResponse
+    {
+        $user = $request->user();
+        $membership = $user?->primaryMembership;
+        $peerMembership = $peerUser->primaryMembership;
+
+        abort_unless(
+            $user?->canCoordinateGuidance()
+            && $membership !== null
+            && $peerUser->canCoordinateGuidance()
+            && $peerMembership !== null
+            && $peerMembership->campus_id === $membership->campus_id
+            && $peerUser->id !== $user->id,
+            403,
+            'Direct Counselor Chat is restricted to verified Guidance Counselors and the Club Adviser of the same campus.',
+        );
+
+        $threadKey = CounselorDirectMessage::makeThreadKey($user->id, $peerUser->id);
+        $afterId = max(0, (int) $request->query('after_id', 0));
+
+        $messages = CounselorDirectMessage::query()
+            ->with('sender:id,name')
+            ->where('campus_id', $membership->campus_id)
+            ->where('thread_key', $threadKey)
+            ->when($afterId > 0, fn ($q) => $q->where('id', '>', $afterId))
+            ->orderBy('id')
+            ->limit(100)
+            ->get()
+            ->map(fn (CounselorDirectMessage $msg) => [
+                'id' => $msg->id,
+                'thread_key' => $msg->thread_key,
+                'sender_user_id' => $msg->sender_user_id,
+                'recipient_user_id' => $msg->recipient_user_id,
+                'sender_name' => $msg->sender?->name ?? 'Guidance Counselor',
+                'sender' => $msg->sender ? ['id' => $msg->sender->id, 'name' => $msg->sender->name] : null,
+                'sender_role' => $msg->sender_role,
+                'message_body' => $msg->message_body,
+                'created_at' => (string) $msg->created_at,
+            ])
+            ->values();
+
+        return response()->json(['thread_key' => $threadKey, 'messages' => $messages]);
+    }
+
+    public function sendCounselorDmMessage(Request $request, \App\Models\User $peerUser, ProfanityFilterService $profanityFilter): JsonResponse
+    {
+        $user = $request->user();
+        $role = $user?->verifiedRole();
+        $membership = $user?->primaryMembership;
+        $peerMembership = $peerUser->primaryMembership;
+
+        abort_unless(
+            $user?->canCoordinateGuidance()
+            && $membership !== null
+            && $peerUser->canCoordinateGuidance()
+            && $peerMembership !== null
+            && $peerMembership->campus_id === $membership->campus_id
+            && $peerUser->id !== $user->id,
+            403,
+            'Direct Counselor Chat is restricted to verified Guidance Counselors and the Club Adviser of the same campus.',
+        );
+
+        $validated = $request->validate(['message_body' => ['required', 'string', 'max:2000']]);
+        $profanityFilter->assertClean((string) $validated['message_body'], 'message_body');
+
+        $threadKey = CounselorDirectMessage::makeThreadKey($user->id, $peerUser->id);
+
+        $msg = CounselorDirectMessage::create([
+            'campus_id' => $membership->campus_id,
+            'thread_key' => $threadKey,
+            'sender_user_id' => $user->id,
+            'recipient_user_id' => $peerUser->id,
+            'sender_role' => $role?->value ?? 'guidance_counselor',
+            'message_body' => trim($validated['message_body']),
+        ]);
+
+        $msg->load('sender:id,name');
+        CounselorDmMessageSent::dispatch($msg);
+
+        return response()->json([
+            'status' => 'sent',
+            'thread_key' => $threadKey,
+            'message' => [
+                'id' => $msg->id,
+                'thread_key' => $msg->thread_key,
+                'sender_user_id' => $msg->sender_user_id,
+                'recipient_user_id' => $msg->recipient_user_id,
+                'sender_name' => $msg->sender?->name ?? $user->name,
+                'sender' => ['id' => $user->id, 'name' => $msg->sender?->name ?? $user->name],
                 'sender_role' => $msg->sender_role,
                 'message_body' => $msg->message_body,
                 'created_at' => (string) $msg->created_at,

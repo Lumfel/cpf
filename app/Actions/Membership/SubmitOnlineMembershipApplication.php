@@ -6,6 +6,8 @@ use App\Enums\CpfRole;
 use App\Enums\MembershipStatus;
 use App\Models\CampusMembership;
 use App\Models\User;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\ValidationException;
 
 class SubmitOnlineMembershipApplication
 {
@@ -23,35 +25,68 @@ class SubmitOnlineMembershipApplication
         $fbUrl = trim((string) $validated['facebook_profile_url']);
         $fbDisplay = trim((string) ($validated['active_fb_account'] ?? ''));
 
-        return CampusMembership::updateOrCreate(
-            [
-                'user_id' => $user->id,
-                'campus_id' => (int) $validated['campus_id'],
-            ],
-            [
-                'role' => CpfRole::Member,
-                'status' => MembershipStatus::Pending,
-                'enrollment_source' => $enrollmentSource,
-                'recorded_email' => $validated['recorded_email'] ?? $user->email,
-                'first_name' => $first,
-                'middle_name' => $middle !== '' ? $middle : null,
-                'last_name' => $last,
-                'full_name_last_first_mi' => CampusMembership::formatLastFirstMi($first, $middle, $last),
-                'course' => $course,
-                'year_level' => $yearLevel,
-                'section' => $section,
-                'course_year_section' => $courseYearSection,
-                'sex' => $validated['sex'],
-                'gender_identity' => $validated['gender_identity'] ?? null,
-                'gender_identity_other' => ($validated['gender_identity'] ?? null) === 'Others'
-                    ? trim((string) ($validated['gender_identity_other'] ?? ''))
-                    : null,
-                'birthdate' => $validated['birthdate'],
-                'active_email' => trim((string) $validated['active_email']),
-                'facebook_profile_url' => $fbUrl,
-                'active_fb_account' => $fbDisplay !== '' ? $fbDisplay : $fbUrl,
-                'cellphone_number' => trim((string) $validated['cellphone_number']),
-            ],
-        );
+        return DB::transaction(function () use (
+            $user,
+            $validated,
+            $enrollmentSource,
+            $first,
+            $middle,
+            $last,
+            $course,
+            $yearLevel,
+            $section,
+            $courseYearSection,
+            $fbUrl,
+            $fbDisplay,
+        ): CampusMembership {
+            User::query()->whereKey($user->id)->lockForUpdate()->first();
+
+            $existingMemberships = CampusMembership::query()
+                ->where('user_id', $user->id)
+                ->lockForUpdate()
+                ->get();
+
+            $hasProtectedMembership = $existingMemberships->contains(
+                fn (CampusMembership $m): bool => in_array($m->status, [MembershipStatus::Approved, MembershipStatus::Alumni], true)
+                    || in_array($m->role, [CpfRole::Adviser, CpfRole::GuidanceCounselor], true),
+            );
+
+            if ($hasProtectedMembership) {
+                throw ValidationException::withMessages([
+                    'active_email' => ['This account holds a protected CPF membership (Approved, Alumni, Club Adviser, or Guidance Counselor) and cannot be overwritten.'],
+                ]);
+            }
+
+            return CampusMembership::updateOrCreate(
+                [
+                    'user_id' => $user->id,
+                    'campus_id' => (int) $validated['campus_id'],
+                ],
+                [
+                    'role' => CpfRole::Member,
+                    'status' => MembershipStatus::Pending,
+                    'enrollment_source' => $enrollmentSource,
+                    'recorded_email' => $validated['recorded_email'] ?? $user->email,
+                    'first_name' => $first,
+                    'middle_name' => $middle !== '' ? $middle : null,
+                    'last_name' => $last,
+                    'full_name_last_first_mi' => CampusMembership::formatLastFirstMi($first, $middle, $last),
+                    'course' => $course,
+                    'year_level' => $yearLevel,
+                    'section' => $section,
+                    'course_year_section' => $courseYearSection,
+                    'sex' => $validated['sex'],
+                    'gender_identity' => $validated['gender_identity'] ?? null,
+                    'gender_identity_other' => ($validated['gender_identity'] ?? null) === 'Others'
+                        ? trim((string) ($validated['gender_identity_other'] ?? ''))
+                        : null,
+                    'birthdate' => $validated['birthdate'],
+                    'active_email' => trim((string) $validated['active_email']),
+                    'facebook_profile_url' => $fbUrl,
+                    'active_fb_account' => $fbDisplay !== '' ? $fbDisplay : $fbUrl,
+                    'cellphone_number' => trim((string) $validated['cellphone_number']),
+                ],
+            );
+        });
     }
 }

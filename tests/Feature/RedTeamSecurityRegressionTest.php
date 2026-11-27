@@ -181,11 +181,14 @@ class RedTeamSecurityRegressionTest extends TestCase
             ->assertStatus(422)
             ->assertJsonValidationErrors('campus_id');
 
-        // Once ANY user exists (even without an approved Adviser), first-boot is permanently latched
+        // Unapproved / ordinary users do NOT lock out first-boot setup (C-03); only an Approved Adviser latches it
         User::factory()->create(['email' => 'ordinary@chmsu.edu.ph']);
-        $this->assertFalse(FirstBootSetupController::needsAdviserSetup());
+        $this->assertTrue(FirstBootSetupController::needsAdviserSetup());
 
         $active = Campus::where('is_active', true)->firstOrFail();
+        $this->createCampusUser(CpfRole::Adviser, 'Montemayor, Elena V.', MembershipStatus::Approved, $active);
+        $this->assertFalse(FirstBootSetupController::needsAdviserSetup());
+
         $this->postJson('/first-boot/setup-adviser', [
             'campus_id' => $active->id,
             'academic_year' => '2026-2027',
@@ -296,6 +299,7 @@ class RedTeamSecurityRegressionTest extends TestCase
 
     public function test_public_apply_refuses_existing_email_without_acting_as_existing_user(): void
     {
+        $this->createCampusUser(CpfRole::Adviser, 'Montemayor, Elena V.');
         [, $pendingMembership] = $this->createCampusUser(CpfRole::Member, 'Pending, User A.', MembershipStatus::Pending);
         [$ordinaryUser] = [User::factory()->create(['email' => 'ordinary.existing@chmsu.edu.ph'])];
 
@@ -385,21 +389,22 @@ class RedTeamSecurityRegressionTest extends TestCase
         [$vp, $vpMembership] = $this->createCampusUser(CpfRole::VicePresident, 'Bautista, Miguel A.');
         [$member, $memberMembership] = $this->createCampusUser(CpfRole::Member, 'Reyes, Katrina M.');
 
-        // VP cannot demote President (rank 80 <= 90)
+        // Policy rank hierarchy: VP cannot assign/demote President (rank 80 <= 90)
+        $this->assertFalse(Gate::forUser($vp)->allows('assignRole', [$presidentMembership, CpfRole::Member]));
+
+        // Manual role endpoint blocks VP, President, and Adviser overrides across student and counselor roles
         $this->actingAs($vp)
-            ->patch("/membership/{$presidentMembership->id}/role", ['role' => 'member'])
+            ->patchJson("/membership/{$presidentMembership->id}/role", ['role' => 'member'])
             ->assertForbidden();
         $this->assertSame(CpfRole::President, $presidentMembership->fresh()->role);
 
-        // President CAN demote VP (rank 90 > 80)
         $this->actingAs($president)
-            ->patch("/membership/{$vpMembership->id}/role", ['role' => 'member'])
-            ->assertRedirect('/membership');
-        $this->assertSame(CpfRole::Member, $vpMembership->fresh()->role);
+            ->patchJson("/membership/{$vpMembership->id}/role", ['role' => 'member'])
+            ->assertForbidden();
+        $this->assertSame(CpfRole::VicePresident, $vpMembership->fresh()->role);
 
-        // Adviser cannot move a Guidance Counselor into student club roles -> 422
         $this->actingAs($adviser)
-            ->patch("/membership/{$counselorMembership->id}/role", ['role' => 'secretary'])
+            ->patchJson("/membership/{$counselorMembership->id}/role", ['role' => 'secretary'])
             ->assertStatus(422);
         $this->assertSame(CpfRole::GuidanceCounselor, $counselorMembership->fresh()->role);
 

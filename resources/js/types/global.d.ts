@@ -1,5 +1,5 @@
 import type { Directive } from 'vue';
-import type { Auth } from '@/types/auth';
+import type { Auth, HeaderNotificationsState } from '@/types/auth';
 
 // Extend ImportMeta interface for Vite...
 declare module 'vite/client' {
@@ -19,6 +19,7 @@ declare module '@inertiajs/core' {
         sharedPageProps: {
             name: string;
             auth: Auth;
+            notifications?: HeaderNotificationsState;
             sidebarOpen: boolean;
             [key: string]: unknown;
         };

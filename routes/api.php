@@ -27,7 +27,7 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
                 'app' => 'CPF',
                 'database' => 'connected',
             ]);
-        } catch (\Throwable) {
+        } catch (Throwable) {
             return response()->json([
                 'ok' => false,
                 'app' => 'CPF',
@@ -37,16 +37,19 @@ Route::prefix('v1')->name('api.v1.')->group(function () {
     })->name('health');
 
     Route::post('auth/login', [AuthController::class, 'login'])
-        ->middleware('throttle:10,1')
+        ->middleware('throttle:api-login')
         ->name('auth.login');
 
     Route::post('auth/passkey-code', [AuthController::class, 'passkeyCode'])
-        ->middleware('throttle:5,1')
+        ->middleware('throttle:api-passkey-code')
         ->name('auth.passkey-code');
 
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('auth/me', [AuthController::class, 'me'])->name('auth.me');
         Route::post('auth/logout', [AuthController::class, 'logout'])->name('auth.logout');
+        Route::post('auth/password/force-change', [AuthController::class, 'forceChangePassword'])
+            ->middleware('throttle:10,1')
+            ->name('auth.password.force-change');
 
         Route::middleware(EnsureTemporaryPasswordChanged::class)->group(function () {
             // Campus Events & Officer 2-Stage QR Attendance

@@ -8,10 +8,12 @@ use App\Actions\Membership\ToggleMessengerGcChecklist;
 use App\Enums\CpfRole;
 use App\Enums\MembershipStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\FirstBootSetupController;
 use App\Http\Requests\Membership\OfficerAddMemberRequest;
 use App\Http\Requests\Membership\SubmitMembershipApplicationRequest;
 use App\Models\Campus;
 use App\Models\CampusMembership;
+use App\Models\DuesAuditLog;
 use App\Models\MemberInfoChangeRequest;
 use App\Models\User;
 use App\Services\ClubTenureService;
@@ -22,6 +24,7 @@ use BaconQrCode\Writer;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
 use Illuminate\Support\Facades\Hash;
@@ -64,7 +67,7 @@ class CampusMembershipController extends Controller
         $signature = substr(hash_hmac('sha256', $rawPayload, (string) config('app.key')), 0, 16);
         $qrPayload = "{$rawPayload}|sig:{$signature}";
 
-        $writer = new Writer(new ImageRenderer(new RendererStyle(220, 1), new SvgImageBackEnd()));
+        $writer = new Writer(new ImageRenderer(new RendererStyle(220, 1), new SvgImageBackEnd));
         $qrSvg = $writer->writeString($qrPayload);
 
         return response()->json([
@@ -168,47 +171,67 @@ class CampusMembershipController extends Controller
 
     public function storeApplication(SubmitMembershipApplicationRequest $request, SubmitOnlineMembershipApplication $action): RedirectResponse
     {
+        abort_if(
+            FirstBootSetupController::needsAdviserSetup(),
+            503,
+            'Campus portal is awaiting Club Adviser initialization.',
+        );
+
         $validated = $request->validated();
         $actor = $request->user();
 
-        if ($actor) {
-            $existingMembership = $actor->primaryMembership;
-            if ($existingMembership?->status === MembershipStatus::Approved) {
-                throw ValidationException::withMessages([
-                    'active_email' => 'You are already an official CPF member. Please submit an Information Change Request for Club Adviser approval instead.',
+        DB::transaction(function () use ($actor, $validated, $action): void {
+            if ($actor) {
+                User::query()->whereKey($actor->id)->lockForUpdate()->first();
+                $existingMemberships = CampusMembership::query()
+                    ->where('user_id', $actor->id)
+                    ->lockForUpdate()
+                    ->get();
+
+                if ($existingMemberships->contains(
+                    fn (CampusMembership $m): bool => $m->status === MembershipStatus::Alumni
+                        || in_array($m->role, [CpfRole::Adviser, CpfRole::GuidanceCounselor], true),
+                )) {
+                    throw ValidationException::withMessages([
+                        'active_email' => 'Former CPF members, Guidance Counselors, and Club Advisers cannot submit a student membership application overwrite.',
+                    ]);
+                }
+
+                if ($existingMemberships->contains(fn (CampusMembership $m): bool => $m->status === MembershipStatus::Approved)) {
+                    throw ValidationException::withMessages([
+                        'active_email' => 'You are already an official CPF member. Please submit an Information Change Request for Club Adviser approval instead.',
+                    ]);
+                }
+
+                if ($existingMemberships->contains(fn (CampusMembership $m): bool => $m->status === MembershipStatus::Pending)) {
+                    throw ValidationException::withMessages([
+                        'active_email' => 'Your CPF Membership Application is already pending review by your campus officers.',
+                    ]);
+                }
+            } else {
+                $email = strtolower(trim((string) $validated['active_email']));
+
+                if (User::query()->where('email', $email)->lockForUpdate()->exists()) {
+                    throw ValidationException::withMessages([
+                        'active_email' => 'An account with this email already exists. Please sign in.',
+                    ]);
+                }
+
+                $actor = new User([
+                    'name' => CampusMembership::formatLastFirstMi(
+                        (string) $validated['first_name'],
+                        $validated['middle_name'] ?? null,
+                        (string) $validated['last_name'],
+                    ),
+                    'email' => $email,
+                    'password' => Hash::make(Str::password(16)),
+                    'must_change_password' => true,
                 ]);
+                $actor->save();
             }
 
-            if ($existingMembership?->status === MembershipStatus::Pending) {
-                throw ValidationException::withMessages([
-                    'active_email' => 'Your CPF Membership Application is already pending review by your campus officers.',
-                ]);
-            }
-        }
-
-        if (! $actor) {
-            $email = strtolower(trim((string) $validated['active_email']));
-
-            if (User::query()->where('email', $email)->exists()) {
-                throw ValidationException::withMessages([
-                    'active_email' => 'An account with this email already exists. Please sign in.',
-                ]);
-            }
-
-            $actor = new User([
-                'name' => CampusMembership::formatLastFirstMi(
-                    (string) $validated['first_name'],
-                    $validated['middle_name'] ?? null,
-                    (string) $validated['last_name'],
-                ),
-                'email' => $email,
-                'password' => Hash::make(Str::password(16)),
-            ]);
-            $actor->email_verified_at = now();
-            $actor->save();
-        }
-
-        $action->handle($actor, $validated);
+            $action->handle($actor, $validated);
+        });
 
         return back(fallback: route('membership.index'))->with('status', 'Your CPF Membership Application has been submitted.');
     }
@@ -298,62 +321,122 @@ class CampusMembershipController extends Controller
         $actor = $this->resolveActor($request);
         abort_if(! $actor, 401);
         Gate::forUser($actor)->authorize('confirmDues', $membership);
-        $action->toggleDues($actor, $membership);
+
+        $validated = $request->validate([
+            'reason' => ['nullable', 'string', 'max:255'],
+            'payment_submission_id' => ['nullable', 'integer', 'exists:payment_submissions,id'],
+        ]);
+
+        $action->toggleDues(
+            $actor,
+            $membership,
+            isset($validated['reason']) ? trim((string) $validated['reason']) : null,
+            isset($validated['payment_submission_id']) ? (int) $validated['payment_submission_id'] : null,
+        );
 
         return back(fallback: route('membership.index'));
     }
 
-    public function updateRole(Request $request, CampusMembership $membership, ToggleMessengerGcChecklist $action): RedirectResponse
+    /**
+     * Adviser-only Conflict Freeze failsafe: suspend or restore an officer's write privileges
+     * and immediately revoke their Sanctum mobile tokens on suspension.
+     */
+    public function toggleOfficerSuspension(Request $request, CampusMembership $membership): JsonResponse|RedirectResponse
     {
         $actor = $this->resolveActor($request);
         abort_if(! $actor, 401);
-        $validated = $request->validate(['role' => ['required', Rule::enum(CpfRole::class)]]);
-        $newRole = CpfRole::from($validated['role']);
-        Gate::forUser($actor)->authorize('assignRole', [$membership, $newRole]);
 
-        abort_if(
-            $membership->role === CpfRole::GuidanceCounselor && $newRole !== CpfRole::GuidanceCounselor,
-            422,
-            'Guidance Counselors cannot be moved into student club roles. Use the Adviser Handover tab to transfer Club Adviser authority.',
+        abort_unless(
+            $actor->isClubAdviser() && $actor->primaryMembership?->campus_id === $membership->campus_id,
+            403,
+            'Only the campus Club Adviser may suspend or restore officer privileges.',
         );
 
         abort_if(
-            $newRole === CpfRole::Adviser && $membership->role !== CpfRole::Adviser,
+            in_array($membership->role, [CpfRole::Adviser, CpfRole::GuidanceCounselor, CpfRole::Member], true),
             422,
-            'Club Adviser authority can only be transferred to an incoming Guidance Counselor via the Adviser Handover tab.',
+            'Privilege suspension applies only to elected student officers.',
         );
 
-        abort_if(
-            $newRole === CpfRole::GuidanceCounselor && $membership->role !== CpfRole::GuidanceCounselor,
-            422,
-            'Guidance Counselors must be registered via the Club Adviser Email + OTP Counselor Invitation flow.',
+        $validated = $request->validate([
+            'suspend' => ['required', 'boolean'],
+            'reason' => ['nullable', 'string', 'max:255'],
+        ]);
+
+        $suspend = (bool) $validated['suspend'];
+
+        $membership->update([
+            'privileges_suspended_at' => $suspend ? now() : null,
+            'suspension_reason' => $suspend ? trim((string) ($validated['reason'] ?? 'Suspended by Club Adviser for governance review.')) : null,
+            'suspended_by' => $suspend ? $actor->id : null,
+        ]);
+
+        if ($suspend) {
+            $membership->user?->tokens()->delete();
+        }
+
+        if ($request->expectsJson()) {
+            return response()->json([
+                'status' => $suspend ? 'suspended' : 'restored',
+                'privileges_suspended_at' => $membership->fresh()?->privileges_suspended_at?->toIso8601String(),
+                'suspension_reason' => $membership->fresh()?->suspension_reason,
+            ]);
+        }
+
+        return back(fallback: route('membership.index'));
+    }
+
+    /**
+     * Read-only immutable financial dues audit trail for Auditor & Club Adviser.
+     */
+    public function duesAuditLogs(Request $request): JsonResponse
+    {
+        $actor = $this->resolveActor($request);
+        abort_if(! $actor, 401);
+        $membership = $actor->primaryMembership;
+
+        abort_unless(
+            $actor->canAuditFinances() && $membership !== null,
+            403,
+            'Dues audit logs are restricted to the Club Adviser and Auditor.',
         );
 
-        DB::transaction(function () use ($membership, $newRole, $actor, $action): void {
-            $lockedMembership = CampusMembership::query()
-                ->whereKey($membership->id)
-                ->lockForUpdate()
-                ->firstOrFail();
+        $logs = DuesAuditLog::query()
+            ->with(['actor:id,name', 'target:id,name'])
+            ->where('campus_id', $membership->campus_id)
+            ->orderByDesc('id')
+            ->limit(100)
+            ->get()
+            ->map(fn (DuesAuditLog $log) => [
+                'id' => $log->id,
+                'actor_name' => $log->actor?->name ?? 'Officer',
+                'target_name' => $log->target?->name ?? 'Member',
+                'old_status' => $log->old_status,
+                'new_status' => $log->new_status,
+                'payment_submission_id' => $log->payment_submission_id,
+                'reason' => $log->reason,
+                'created_at' => $log->created_at?->toDateTimeString(),
+            ])
+            ->values();
 
-            if ($lockedMembership->role === CpfRole::Adviser && $newRole !== CpfRole::Adviser) {
-                $adviserCount = CampusMembership::query()
-                    ->where('campus_id', $lockedMembership->campus_id)
-                    ->where('status', MembershipStatus::Approved->value)
-                    ->where('role', CpfRole::Adviser->value)
-                    ->lockForUpdate()
-                    ->count();
+        return response()->json(['logs' => $logs]);
+    }
 
-                abort_if(
-                    $adviserCount <= 1,
-                    422,
-                    'Cannot demote the sole Club Adviser for this campus. Use the Adviser Role Handover process to safely transfer authority to a successor.',
-                );
-            }
+    public function updateRole(Request $request, CampusMembership $membership): RedirectResponse
+    {
+        $actor = $this->resolveActor($request);
+        abort_if(! $actor, 401);
 
-            $action->updateRole($lockedMembership, $newRole, $actor);
-        });
+        abort_unless(
+            $actor->isClubAdviser() && $actor->primaryMembership?->campus_id === $membership->campus_id,
+            403,
+            'Officer roles are assigned through General Assembly Elections, Adviser Handover, or Counselor Invitations.',
+        );
 
-        return to_route('membership.index')->with('status', "Updated role to {$newRole->label()}.");
+        abort(
+            422,
+            'Officer roles are assigned through General Assembly Elections, Adviser Handover, or Counselor Invitations.',
+        );
     }
 
     public function transitionToAlumni(
@@ -395,7 +478,7 @@ class CampusMembershipController extends Controller
 
         $reason = (string) ($validated['reason'] ?? 'graduated');
         $endedAt = ! empty($validated['ended_at'])
-            ? \Illuminate\Support\Carbon::parse((string) $validated['ended_at'])->endOfDay()
+            ? Carbon::parse((string) $validated['ended_at'])->endOfDay()
             : null;
 
         $updated = $tenureService->transitionToAlumni($membership, $actor, $reason, $endedAt);

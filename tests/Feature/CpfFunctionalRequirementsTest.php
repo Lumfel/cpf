@@ -7,24 +7,26 @@ use App\Enums\MembershipStatus;
 use App\Enums\ReferralPriority;
 use App\Events\OfficerGcMessageSent;
 use App\Models\Campus;
+use App\Models\CampusCounselor;
 use App\Models\CampusMembership;
 use App\Models\CampusRoom;
 use App\Models\Election;
 use App\Models\ElectionCandidate;
-use App\Models\GuidanceReferral;
 use App\Models\MemberInfoChangeRequest;
+use App\Models\OfficerGcArchive;
 use App\Models\OfficerGcChannel;
 use App\Models\PasskeyIssuance;
-use App\Models\PaymentDestination;
-use App\Models\PaymentSubmission;
 use App\Models\PeerQuote;
 use App\Models\TimeCapsule;
 use App\Models\User;
+use App\Notifications\MembershipApprovedPasskeyNotification;
+use Carbon\CarbonInterface;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -96,6 +98,8 @@ class CpfFunctionalRequirementsTest extends TestCase
 
     public function test_fr01_public_landing_and_atomic_membership_application(): void
     {
+        $this->createMember($this->talisay, CpfRole::Adviser, 'Montemayor, Elena V.');
+
         $this->get('/')->assertOk();
 
         // Missing separate fields or invalid Facebook link are rejected
@@ -179,14 +183,16 @@ class CpfFunctionalRequirementsTest extends TestCase
             ->assertOk()
             ->assertJsonStructure(['status', 'issuance_id', 'enrollment_code', 'require_2fa', 'expires_at']);
 
-        // Only Adviser assigns officer roles (zero Admin role)
+        // Manual officer role overrides are disabled server-side (roles come from Elections, Handover, or Counselor Invites)
         $this->actingAs($president)
-            ->patch("/membership/{$targetMembership->id}/role", ['role' => 'secretary'])
+            ->patchJson("/membership/{$targetMembership->id}/role", ['role' => 'secretary'])
             ->assertForbidden();
 
         $this->actingAs($adviser)
-            ->patch("/membership/{$targetMembership->id}/role", ['role' => 'secretary'])
-            ->assertRedirect('/membership');
+            ->patchJson("/membership/{$targetMembership->id}/role", ['role' => 'secretary'])
+            ->assertStatus(422);
+
+        $this->assertSame(CpfRole::Member, $targetMembership->fresh()->role);
     }
 
     public function test_fr04_and_fr08_dashboard_qr_quote_and_payment_validation(): void
@@ -362,7 +368,7 @@ class CpfFunctionalRequirementsTest extends TestCase
             ->assertJsonPath('status', 'archived')
             ->assertJsonMissingPath('archive.hdd_storage_path');
 
-        $archive = \App\Models\OfficerGcArchive::findOrFail((int) $archiveRes->json('archive.id'));
+        $archive = OfficerGcArchive::findOrFail((int) $archiveRes->json('archive.id'));
         $zipPath = (string) $archive->hdd_storage_path;
         $this->assertFileExists($zipPath);
         $this->assertDatabaseCount('officer_gc_messages', 0);
@@ -546,6 +552,7 @@ class CpfFunctionalRequirementsTest extends TestCase
         ])->assertUnauthorized();
 
         // Valid Google Forms submission with separate course/year/section and Facebook link
+        config()->set('cpf.google_forms.webhook_secret', 'test-cpf-forms-secret');
         $secret = (string) config('cpf.google_forms.webhook_secret');
         $webhookRes = $this->postJson('/api/google-forms/membership', [
             'campus_code' => 'TALISAY',
@@ -676,7 +683,7 @@ class CpfFunctionalRequirementsTest extends TestCase
         $this->assertAuthenticatedAs($member);
         $this->assertTrue((bool) $member->fresh()->must_change_password);
 
-        $claimedIssuance = \App\Models\PasskeyIssuance::findOrFail($regenerated->json('issuance_id'));
+        $claimedIssuance = PasskeyIssuance::findOrFail($regenerated->json('issuance_id'));
         $this->assertSame('claimed', $claimedIssuance->status);
         $this->assertNotNull($claimedIssuance->claimed_at);
 
@@ -713,7 +720,7 @@ class CpfFunctionalRequirementsTest extends TestCase
         $sergeantAtArms = $this->createMember($this->talisay, CpfRole::from('sergeant_at_arms'), 'Castillo, Marco J.');
         $member = $this->createMember($this->talisay, CpfRole::Member, 'Reyes, Katrina M.');
 
-        $channel = \App\Models\OfficerGcChannel::updateOrCreate(
+        $channel = OfficerGcChannel::updateOrCreate(
             [
                 'campus_id' => $this->talisay->id,
                 'academic_year' => '2026-2027',
@@ -835,7 +842,7 @@ class CpfFunctionalRequirementsTest extends TestCase
             ])
             ->assertRedirect('/membership');
 
-        $changeRequest = \App\Models\MemberInfoChangeRequest::query()
+        $changeRequest = MemberInfoChangeRequest::query()
             ->where('campus_membership_id', $membership->id)
             ->latest()
             ->firstOrFail();
@@ -879,7 +886,7 @@ class CpfFunctionalRequirementsTest extends TestCase
 
     public function test_approving_application_delivers_passkey_code_to_email_one_time_only(): void
     {
-        \Illuminate\Support\Facades\Notification::fake();
+        Notification::fake();
 
         $adviser = $this->createMember($this->talisay, CpfRole::Adviser, 'Montemayor, Elena V.');
 
@@ -923,15 +930,15 @@ class CpfFunctionalRequirementsTest extends TestCase
         $notice = session('passkey_issued_notice');
         $passkeyCode = $notice['passkey_code'];
 
-        \Illuminate\Support\Facades\Notification::assertSentOnDemand(
-            \App\Notifications\MembershipApprovedPasskeyNotification::class,
-            function (\App\Notifications\MembershipApprovedPasskeyNotification $notification, array $channels, object $notifiable) use ($passkeyCode): bool {
+        Notification::assertSentOnDemand(
+            MembershipApprovedPasskeyNotification::class,
+            function (MembershipApprovedPasskeyNotification $notification, array $channels, object $notifiable) use ($passkeyCode): bool {
                 return ($notifiable->routes['mail'] ?? null) === 'paulfelippegtibooc@gmail.com'
                     && $notification->passkeyCode === $passkeyCode;
             },
         );
-        \Illuminate\Support\Facades\Notification::assertSentOnDemandTimes(
-            \App\Notifications\MembershipApprovedPasskeyNotification::class,
+        Notification::assertSentOnDemandTimes(
+            MembershipApprovedPasskeyNotification::class,
             1,
         );
 
@@ -940,15 +947,15 @@ class CpfFunctionalRequirementsTest extends TestCase
             ->patch("/membership/{$pending->id}/approve")
             ->assertStatus(422);
 
-        \Illuminate\Support\Facades\Notification::assertSentOnDemandTimes(
-            \App\Notifications\MembershipApprovedPasskeyNotification::class,
+        Notification::assertSentOnDemandTimes(
+            MembershipApprovedPasskeyNotification::class,
             1,
         );
     }
 
     public function test_placeholder_smtp_password_reports_failure_without_stamping_emailed_at(): void
     {
-        \Illuminate\Support\Facades\Notification::fake();
+        Notification::fake();
 
         config()->set('mail.default', 'smtp');
         config()->set('mail.mailers.smtp.password', 'PASTE_YOUR_16_CHAR_GOOGLE_APP_PASSWORD_HERE');
@@ -994,7 +1001,7 @@ class CpfFunctionalRequirementsTest extends TestCase
 
         $notice = session('passkey_issued_notice');
         $this->assertNotEmpty($notice['email_error']);
-        \Illuminate\Support\Facades\Notification::assertNothingSent();
+        Notification::assertNothingSent();
         $this->assertDatabaseHas('passkey_issuances', [
             'target_user_id' => $applicantUser->id,
             'emailed_at' => null,
@@ -1044,14 +1051,16 @@ class CpfFunctionalRequirementsTest extends TestCase
             ->assertSessionHas('passkey_issued_notice.emailed', true)
             ->assertSessionHas('passkey_issued_notice.email_status', 'sent');
 
-        \Illuminate\Support\Facades\Notification::assertSentOnDemandTimes(
-            \App\Notifications\MembershipApprovedPasskeyNotification::class,
+        Notification::assertSentOnDemandTimes(
+            MembershipApprovedPasskeyNotification::class,
             1,
         );
     }
 
     public function test_google_forms_webhook_health_and_real_form_payload_normalization(): void
     {
+        $this->createMember($this->talisay, CpfRole::Adviser, 'Montemayor, Elena V.');
+        config()->set('cpf.google_forms.webhook_secret', 'test-cpf-forms-secret');
         $secret = (string) config('cpf.google_forms.webhook_secret');
 
         // Health endpoint rejects missing/wrong secret and succeeds with valid header
@@ -1091,7 +1100,7 @@ class CpfFunctionalRequirementsTest extends TestCase
         $this->assertSame('2005-05-14', $membership->birthdate->format('Y-m-d'));
 
         // Explicitly targeting an inactive (on-hold) campus is rejected with 422
-        $inactiveCampus = \App\Models\Campus::create([
+        $inactiveCampus = Campus::create([
             'code' => 'ON_HOLD',
             'name' => 'On Hold Campus',
             'slug' => 'on-hold',
@@ -1118,13 +1127,13 @@ class CpfFunctionalRequirementsTest extends TestCase
 
     public function test_campus_hub_counselor_availability_and_anonymous_monthly_calendar_bookings(): void
     {
-        $counselors = \App\Models\CampusCounselor::ensureDefaultCounselorsForCampus($this->talisay->id);
+        $counselors = CampusCounselor::ensureDefaultCounselorsForCampus($this->talisay->id);
         $this->assertCount(3, $counselors);
 
         $katrina = $this->createMember($this->talisay, CpfRole::Member, 'Reyes, Katrina M.');
         $otherMember = $this->createMember($this->talisay, CpfRole::Member, 'Bautista, Miguel A.');
 
-        $targetDate = now()->next(\Carbon\CarbonInterface::WEDNESDAY)->format('Y-m-d');
+        $targetDate = now()->next(CarbonInterface::WEDNESDAY)->format('Y-m-d');
         $chosenCounselor = $counselors->first();
 
         $this->actingAs($katrina)->postJson('/testing-room/request', [

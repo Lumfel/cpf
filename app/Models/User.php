@@ -120,8 +120,21 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
     /**
      * Check if the user is an approved Adviser, President, or Secretary who can add/approve members.
      */
+    public function hasSuspendedOfficerPrivileges(): bool
+    {
+        if ($this->isClubAdviser()) {
+            return false;
+        }
+
+        return $this->primaryMembership?->isPrivilegesSuspended() ?? false;
+    }
+
     public function canManageCampusMembers(): bool
     {
+        if ($this->hasSuspendedOfficerPrivileges()) {
+            return false;
+        }
+
         return $this->verifiedRole()?->canApproveMembers() ?? false;
     }
 
@@ -130,11 +143,19 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
      */
     public function canIssuePasskeys(): bool
     {
+        if ($this->hasSuspendedOfficerPrivileges()) {
+            return false;
+        }
+
         return $this->verifiedRole()?->canIssuePasskeys() ?? false;
     }
 
     public function canConfirmMessengerGc(): bool
     {
+        if ($this->hasSuspendedOfficerPrivileges()) {
+            return false;
+        }
+
         return $this->verifiedRole()?->canConfirmMessengerGc() ?? false;
     }
 
@@ -143,6 +164,10 @@ class User extends Authenticatable implements MustVerifyEmail, PasskeyUser
      */
     public function canValidatePayments(): bool
     {
+        if ($this->hasSuspendedOfficerPrivileges()) {
+            return false;
+        }
+
         return $this->verifiedRole()?->canValidatePayments() ?? false;
     }
 

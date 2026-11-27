@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\MembershipStatus;
 use App\Enums\ReferralPriority;
 use App\Models\Campus;
 use App\Models\CampusCounselor;
@@ -24,10 +25,22 @@ class CampusOperationsController extends Controller
         $membership = $user->primaryMembership()->with('campus:id,code,name')->first();
 
         abort_unless(
-            $membership !== null,
+            $user !== null
+            && $user->verifiedRole() !== null
+            && $membership !== null
+            && $membership->status === MembershipStatus::Approved
+            && $membership->campus_id !== null,
             403,
-            'A campus membership record is required to access the Campus Hub.',
+            'An approved campus membership is required to access the Campus Hub.',
         );
+
+        if ($request->filled('campus_id')) {
+            abort_unless(
+                (int) $request->input('campus_id') === $membership->campus_id,
+                403,
+                'You may only access operations for your assigned campus chapter.',
+            );
+        }
 
         $campuses = Campus::query()
             ->where('is_active', true)
@@ -97,8 +110,8 @@ class CampusOperationsController extends Controller
             ->get()
             ->map(function (RoomRequest $req) use ($user, $canReviewTestingRoom, $canCoordinateGuidance, $referralLinkedRoomRequestIds): array {
                 $isMine = $req->requested_by_user_id === $user->id;
-                $isReferralLinked = $referralLinkedRoomRequestIds->has($req->id);
-                $canSeeDetails = $isReferralLinked
+                $isCounselingBooking = $req->counselor_id !== null || $referralLinkedRoomRequestIds->has($req->id);
+                $canSeeDetails = $isCounselingBooking
                     ? ($canCoordinateGuidance || $isMine)
                     : ($canReviewTestingRoom || $isMine);
 
@@ -213,6 +226,25 @@ class CampusOperationsController extends Controller
                 ->values();
         }
 
+        $counselorPeers = collect();
+        if ($canCoordinateGuidance && $campusId !== null) {
+            $counselorPeers = CampusMembership::query()
+                ->with('user:id,name')
+                ->where('campus_id', $campusId)
+                ->where('status', MembershipStatus::Approved->value)
+                ->whereIn('role', [CpfRole::Adviser->value, CpfRole::GuidanceCounselor->value])
+                ->where('user_id', '!=', $user->id)
+                ->alphabetical()
+                ->get()
+                ->map(fn (CampusMembership $cm) => [
+                    'user_id' => $cm->user_id,
+                    'name' => $cm->user?->name ?? $cm->full_name_last_first_mi,
+                    'role' => $cm->role->value,
+                    'role_label' => $cm->role->label(),
+                ])
+                ->values();
+        }
+
         $officerChannel = null;
         $officerMessages = collect();
         $gcArchives = collect();
@@ -279,6 +311,8 @@ class CampusOperationsController extends Controller
             'myReferrals' => $myReferrals,
             'counselorInbox' => $counselorInbox,
             'counselorGcMessages' => $counselorGcMessages,
+            'counselorPeers' => $counselorPeers,
+            'officersGcPaused' => (bool) config('cpf.features.officers_gc_paused', false),
             'priorityTiers' => $priorityTiers,
             'officerChannel' => $officerChannel,
             'officerMessages' => $officerMessages,

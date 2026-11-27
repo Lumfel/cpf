@@ -148,6 +148,28 @@ class ProfileController extends Controller
     /**
      * Account deletion is disabled to protect CPF records and governance continuity.
      */
+    public function updateCampusSettings(Request $request): RedirectResponse
+    {
+        $user = $request->user();
+        $membership = $user?->primaryMembership;
+
+        abort_unless(
+            $user?->isClubAdviser() && $membership !== null,
+            403,
+            'Only the campus Club Adviser can change chapter tour settings.',
+        );
+
+        $validated = $request->validate([
+            'mandatory_tour_enabled' => ['required', 'boolean'],
+        ]);
+
+        \App\Models\Campus::query()
+            ->whereKey($membership->campus_id)
+            ->update(['mandatory_tour_enabled' => (bool) $validated['mandatory_tour_enabled']]);
+
+        return back()->with('status', 'campus-settings-updated');
+    }
+
     public function destroy(Request $request): RedirectResponse
     {
         abort(403, 'Account deletion is currently disabled to protect CPF chapter records and governance continuity.');

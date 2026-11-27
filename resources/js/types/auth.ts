@@ -190,6 +190,23 @@ export type Passkey = {
     last_used_at_diff: string | null;
 };
 
+export type HeaderNotificationItem = {
+    id: number;
+    campus_event_id: number | null;
+    type: string;
+    title: string;
+    message: string;
+    read_at: string | null;
+    is_read: boolean;
+    created_at: string | null;
+    created_at_iso: string | null;
+};
+
+export type HeaderNotificationsState = {
+    items: HeaderNotificationItem[];
+    unread_count: number;
+};
+
 export type TwoFactorConfigContent = {
     title: string;
     description: string;

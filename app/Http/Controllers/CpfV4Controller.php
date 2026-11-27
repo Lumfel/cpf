@@ -29,10 +29,22 @@ class CpfV4Controller extends Controller
 {
     public function storeAchievement(Request $request): JsonResponse
     {
+        $user = $request->user();
         abort_if(
-            $request->user()?->isAlumni(),
+            $user?->isAlumni(),
             403,
             'Former member and officer accounts have read-only archive access.',
+        );
+
+        $membership = $user?->primaryMembership;
+        abort_unless(
+            $user !== null
+            && $user->verifiedRole() !== null
+            && $membership !== null
+            && $membership->status === MembershipStatus::Approved
+            && $membership->campus_id !== null,
+            403,
+            'An approved campus membership is required to record achievements.',
         );
 
         $validated = $request->validate([
@@ -43,26 +55,35 @@ class CpfV4Controller extends Controller
             'description' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        $membership = $request->user()?->primaryMembership;
-        if ($membership !== null) {
-            abort_unless(
-                (int) $validated['campus_id'] === $membership->campus_id,
-                403,
-                'Records must belong to your assigned campus chapter.',
-            );
-        }
+        abort_unless(
+            (int) $validated['campus_id'] === $membership->campus_id,
+            403,
+            'Records must belong to your assigned campus chapter.',
+        );
 
-        $item = MemberAchievement::create([...$validated, 'user_id' => $request->user()->id]);
+        $item = MemberAchievement::create([...$validated, 'user_id' => $user->id]);
 
         return response()->json(['status' => 'created', 'achievement' => $item], 201);
     }
 
     public function storeTimeCapsule(Request $request): JsonResponse
     {
+        $user = $request->user();
         abort_if(
-            $request->user()?->isAlumni(),
+            $user?->isAlumni(),
             403,
             'Former member and officer accounts have read-only archive access.',
+        );
+
+        $membership = $user?->primaryMembership;
+        abort_unless(
+            $user !== null
+            && $user->verifiedRole() !== null
+            && $membership !== null
+            && $membership->status === MembershipStatus::Approved
+            && $membership->campus_id !== null,
+            403,
+            'An approved campus membership is required to create a time capsule.',
         );
 
         $validated = $request->validate([
@@ -73,18 +94,15 @@ class CpfV4Controller extends Controller
             'unlock_at' => ['required', 'date', 'after:now'],
         ]);
 
-        $membership = $request->user()?->primaryMembership;
-        if ($membership !== null) {
-            abort_unless(
-                (int) $validated['campus_id'] === $membership->campus_id,
-                403,
-                'Records must belong to your assigned campus chapter.',
-            );
-        }
+        abort_unless(
+            (int) $validated['campus_id'] === $membership->campus_id,
+            403,
+            'Records must belong to your assigned campus chapter.',
+        );
 
         $capsule = TimeCapsule::create([
-            'campus_id' => $validated['campus_id'],
-            'user_id' => $request->user()->id,
+            'campus_id' => $membership->campus_id,
+            'user_id' => $user->id,
             'title' => $validated['title'],
             'letter_style' => $validated['letter_style'] ?? 'classic',
             'encrypted_message' => $validated['message'],
@@ -1128,14 +1146,36 @@ class CpfV4Controller extends Controller
     public function submitPayment(Request $request): JsonResponse
     {
         $user = $request->user();
+        abort_if(
+            $user?->isAlumni(),
+            403,
+            'Former member and officer accounts have read-only archive access.',
+        );
+
         $membership = $user?->primaryMembership;
 
-        abort_unless($membership !== null, 403, 'A campus membership record is required before submitting dues.');
+        abort_unless(
+            $user !== null
+            && $user->verifiedRole() !== null
+            && $membership !== null
+            && $membership->status === MembershipStatus::Approved
+            && $membership->campus_id !== null,
+            403,
+            'An approved campus membership is required before submitting dues.',
+        );
         abort_if(
-            $user?->verifiedRole() === CpfRole::GuidanceCounselor,
+            $user->verifiedRole() === CpfRole::GuidanceCounselor,
             403,
             'Guidance Counselors are coordination-only and are blocked from student club dues.',
         );
+
+        if ($request->filled('campus_id')) {
+            abort_unless(
+                (int) $request->input('campus_id') === $membership->campus_id,
+                403,
+                'Payments must belong to your assigned campus chapter.',
+            );
+        }
 
         $validated = $request->validate([
             'destination_id' => ['required', 'integer', 'exists:payment_destinations,id'],
@@ -1277,11 +1317,31 @@ class CpfV4Controller extends Controller
 
     public function storeQuote(Request $request): JsonResponse
     {
+        $user = $request->user();
         abort_if(
-            $request->user()?->isAlumni(),
+            $user?->isAlumni(),
             403,
             'Former member and officer accounts have read-only archive access.',
         );
+
+        $membership = $user?->primaryMembership;
+        abort_unless(
+            $user !== null
+            && $user->verifiedRole() !== null
+            && $membership !== null
+            && $membership->status === MembershipStatus::Approved
+            && $membership->campus_id !== null,
+            403,
+            'An approved campus membership is required to submit quotes.',
+        );
+
+        if ($request->filled('campus_id')) {
+            abort_unless(
+                (int) $request->input('campus_id') === $membership->campus_id,
+                403,
+                'Quotes must belong to your assigned campus chapter.',
+            );
+        }
 
         $validated = $request->validate([
             'quote_text' => ['required', 'string', 'max:400'],
@@ -1289,13 +1349,15 @@ class CpfV4Controller extends Controller
             'mood_tag' => ['nullable', 'string', 'max:40'],
         ]);
 
+        app(\App\Services\ProfanityFilterService::class)->assertClean((string) $validated['quote_text'], 'quote_text');
+
         $quote = PeerQuote::create([
-            'campus_id' => $request->user()?->primaryMembership?->campus_id,
-            'submitted_by_user_id' => $request->user()?->id,
+            'campus_id' => $membership->campus_id,
+            'submitted_by_user_id' => $user->id,
             'quote_text' => trim($validated['quote_text']),
             'author_name' => trim((string) ($validated['author_name'] ?? 'CPF Peer Circle')),
             'mood_tag' => trim((string) ($validated['mood_tag'] ?? 'Calm')),
-            'is_approved' => true,
+            'is_approved' => $user->verifiedRole()?->isOfficerOrAdviser() ?? false,
         ]);
 
         return response()->json(['status' => 'created', 'quote' => $quote], 201);

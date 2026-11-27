@@ -129,7 +129,7 @@ const footerNavItems: NavItem[] = [
         <SidebarHeader>
             <SidebarMenu>
                 <SidebarMenuItem>
-                    <SidebarMenuButton size="lg" as-child>
+                    <SidebarMenuButton size="lg" as-child class="group-data-[collapsible=icon]:justify-center">
                         <Link :href="dashboard()">
                             <AppLogo />
                         </Link>
@@ -137,7 +137,7 @@ const footerNavItems: NavItem[] = [
                 </SidebarMenuItem>
             </SidebarMenu>
 
-            <div class="mx-2 mt-2 rounded-xl border border-[#0384C5]/20 bg-[#FBF6EE] px-3 py-2 text-xs text-slate-800 dark:border-[#4AA8D8]/25 dark:bg-[#1C252E] dark:text-[#EDE6DB]">
+            <div class="mx-2 mt-2 rounded-xl border border-[#0384C5]/20 bg-[#FBF6EE] px-3 py-2 text-xs text-slate-800 group-data-[collapsible=icon]:hidden dark:border-[#4AA8D8]/25 dark:bg-[#1C252E] dark:text-[#EDE6DB]">
                 <div class="flex items-center gap-1.5 font-semibold text-[#0384C5] dark:text-[#4AA8D8]">
                     <ShieldCheck class="size-3.5 shrink-0" />
                     <span class="truncate">{{ roleLabel }}</span>
@@ -145,6 +145,14 @@ const footerNavItems: NavItem[] = [
                 <div class="mt-0.5 truncate text-[11px] text-slate-600 dark:text-[#A8B3BE]">
                     {{ campusName }}
                 </div>
+            </div>
+
+            <div
+                class="hidden size-8 shrink-0 items-center justify-center rounded-lg border border-[#0384C5]/20 bg-[#FBF6EE] text-[#0384C5] group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:mt-1 group-data-[collapsible=icon]:flex dark:border-[#4AA8D8]/25 dark:bg-[#1C252E] dark:text-[#4AA8D8]"
+                :title="`${roleLabel} • ${campusName}`"
+                :aria-label="`${roleLabel} — ${campusName}`"
+            >
+                <ShieldCheck class="size-4 shrink-0" />
             </div>
         </SidebarHeader>
 

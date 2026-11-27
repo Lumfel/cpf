@@ -13,9 +13,11 @@ use App\Models\OfficerGcArchive;
 use App\Models\OfficerGcChannel;
 use App\Models\SchoolYearArchive;
 use App\Models\TimeCapsule;
+use App\Models\User;
 use App\Services\ClubTenureService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Inertia\Inertia;
 use Inertia\Response;
 use ZipArchive;
@@ -205,7 +207,7 @@ class AlumniArchiveController extends Controller
             ->values();
 
         $archiverNames = $archivedByUserIds->isNotEmpty()
-            ? \App\Models\User::query()->whereIn('id', $archivedByUserIds)->pluck('name', 'id')
+            ? User::query()->whereIn('id', $archivedByUserIds)->pluck('name', 'id')
             : collect();
 
         $gcArchives = OfficerGcArchive::query()
@@ -226,6 +228,7 @@ class AlumniArchiveController extends Controller
 
         $schoolYearArchives = SchoolYearArchive::query()
             ->where('campus_id', $campusId)
+            ->where('archive_type', '!=', 'counselor_gc')
             ->orderByDesc('archived_at')
             ->get()
             ->map(fn (SchoolYearArchive $arc): array => [
@@ -235,30 +238,35 @@ class AlumniArchiveController extends Controller
                 'title' => $arc->title,
                 'zip_file_name' => $arc->zip_file_name,
                 'sha256_checksum' => $arc->sha256_checksum,
-                'archived_at' => $arc->archived_at ? \Illuminate\Support\Carbon::parse($arc->archived_at)->toDayDateTimeString() : null,
+                'archived_at' => $arc->archived_at ? Carbon::parse($arc->archived_at)->toDayDateTimeString() : null,
             ])
             ->values();
 
-        $inactiveGcChannels = OfficerGcChannel::query()
-            ->with(['messages' => fn ($q) => $q->with('sender:id,name')->orderBy('created_at')])
-            ->where('campus_id', $campusId)
-            ->where('is_active', false)
-            ->orderByDesc('reset_at')
-            ->get()
-            ->filter(fn (OfficerGcChannel $ch) => $ch->messages->isNotEmpty())
-            ->map(fn (OfficerGcChannel $ch): array => [
-                'id' => $ch->id,
-                'academic_year' => $ch->academic_year,
-                'reset_at' => $ch->reset_at?->toDayDateTimeString(),
-                'messages' => $ch->messages->map(fn ($msg): array => [
-                    'id' => $msg->id,
-                    'sender_name' => $msg->sender?->name ?? 'Officer',
-                    'sender_role' => $msg->sender_role,
-                    'message_body' => $msg->message_body,
-                    'created_at' => (string) $msg->created_at,
-                ])->values(),
-            ])
-            ->values();
+        $canViewOfficerGcTranscripts = ($user->verifiedRole()?->isOfficerOrAdviser() ?? false)
+            || ($user->formerRole()?->isOfficerOrAdviser() ?? false);
+
+        $inactiveGcChannels = $canViewOfficerGcTranscripts
+            ? OfficerGcChannel::query()
+                ->with(['messages' => fn ($q) => $q->with('sender:id,name')->orderBy('created_at')])
+                ->where('campus_id', $campusId)
+                ->where('is_active', false)
+                ->orderByDesc('reset_at')
+                ->get()
+                ->filter(fn (OfficerGcChannel $ch) => $ch->messages->isNotEmpty())
+                ->map(fn (OfficerGcChannel $ch): array => [
+                    'id' => $ch->id,
+                    'academic_year' => $ch->academic_year,
+                    'reset_at' => $ch->reset_at?->toDayDateTimeString(),
+                    'messages' => $ch->messages->map(fn ($msg): array => [
+                        'id' => $msg->id,
+                        'sender_name' => $msg->sender?->name ?? 'Officer',
+                        'sender_role' => $msg->sender_role,
+                        'message_body' => $msg->message_body,
+                        'created_at' => (string) $msg->created_at,
+                    ])->values(),
+                ])
+                ->values()
+            : collect();
 
         // 5. Dynamic Former Advisers, Officers & Members Directory with Verified Tenure
         $alumniMemberships = CampusMembership::query()
@@ -377,13 +385,19 @@ class AlumniArchiveController extends Controller
         $user = $request->user();
         $membership = $user?->primaryMembership;
 
-        abort_unless(
-            $user
+        $canViewTranscript = $user !== null
             && $user->verifiedRole() !== CpfRole::GuidanceCounselor
             && $user->canAccessAlumniArchive()
-            && $membership?->campus_id === $archive->campus_id,
+            && $membership?->campus_id === $archive->campus_id
+            && (
+                ($user->verifiedRole()?->isOfficerOrAdviser() ?? false)
+                || ($user->formerRole()?->isOfficerOrAdviser() ?? false)
+            );
+
+        abort_unless(
+            $canViewTranscript,
             403,
-            'Only verified active or former club members and the Club Adviser may view archived Officers GC transcripts.',
+            'Only verified active or former officers and the Club Adviser may view archived Officers GC transcripts.',
         );
 
         $path = $archive->hdd_storage_path;
@@ -402,7 +416,15 @@ class AlumniArchiveController extends Controller
             ]);
         }
 
-        $zip = new ZipArchive();
+        $expectedChecksum = (string) $archive->sha256_checksum;
+        $actualChecksum = (string) hash_file('sha256', $path);
+        abort_unless(
+            $expectedChecksum !== '' && hash_equals($expectedChecksum, $actualChecksum),
+            422,
+            'Archive ZIP bundle failed SHA-256 integrity verification.',
+        );
+
+        $zip = new ZipArchive;
         if ($zip->open($path) !== true) {
             return response()->json([
                 'available' => false,

@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 
 use App\Enums\CpfRole;
 use App\Enums\MembershipStatus;
-use App\Models\Campus;
 use App\Models\CampusEvent;
 use App\Models\CampusEventAttendance;
 use App\Models\CampusEventNotification;
@@ -31,11 +30,27 @@ class EventActivityController extends Controller
             403,
             'Guidance Counselors have coordination-only access to Counselors GC, Testing Room schedules, and Guidance Referrals.',
         );
-        $membership = $user->primaryMembership()->with('campus:id,code,name')->first();
-        $campus = $membership?->campus
-            ?? Campus::query()->where('is_active', true)->orderBy('id')->first();
+        $membership = $user?->primaryMembership()->with('campus:id,code,name')->first();
+        abort_unless(
+            $user !== null
+            && $user->verifiedRole() !== null
+            && $membership !== null
+            && $membership->status === MembershipStatus::Approved
+            && $membership->campus_id !== null,
+            403,
+            'Only approved campus members may access Campus Events & Activities.',
+        );
 
-        $campusId = $campus?->id;
+        if ($request->filled('campus_id')) {
+            abort_unless(
+                (int) $request->input('campus_id') === $membership->campus_id,
+                403,
+                'You may only view events for your assigned campus chapter.',
+            );
+        }
+
+        $campus = $membership->campus;
+        $campusId = $membership->campus_id;
         $campusCode = $campus?->code ?? 'ALIJIS';
         $campusName = $campus?->name ?? 'CHMSU Alijis Campus';
 
@@ -51,6 +66,7 @@ class EventActivityController extends Controller
             $approvedMembers = CampusMembership::query()
                 ->where('campus_id', $campusId)
                 ->where('status', MembershipStatus::Approved->value)
+                ->where('role', '!=', CpfRole::GuidanceCounselor->value)
                 ->alphabetical()
                 ->get(['user_id', 'full_name_last_first_mi', 'course', 'year_level', 'section', 'course_year_section', 'role']);
 
@@ -80,29 +96,32 @@ class EventActivityController extends Controller
                 ->orderBy('start_time')
                 ->get();
 
-            $events = $rawEvents->map(function (CampusEvent $event) use ($approvedMembers, $campusCode, $user, $year): array {
+            $events = $rawEvents->map(function (CampusEvent $event) use ($approvedMembers, $campusCode, $user, $year, $isOfficerOrAdviser): array {
                 $event->syncLifecycleTimestamps();
 
                 $attendanceByUser = $event->attendances->keyBy('user_id');
                 $reflectionUserIds = $event->reflections->pluck('user_id')->flip();
                 $myReflection = $event->reflections->firstWhere('user_id', $user->id);
+                $myAttendance = $attendanceByUser->get($user->id);
 
-                $checklist = $approvedMembers->map(function (CampusMembership $m) use ($attendanceByUser, $reflectionUserIds, $campusCode, $year): array {
-                    $att = $attendanceByUser->get($m->user_id);
+                $checklist = $isOfficerOrAdviser
+                    ? $approvedMembers->map(function (CampusMembership $m) use ($attendanceByUser, $reflectionUserIds, $campusCode, $year): array {
+                        $att = $attendanceByUser->get($m->user_id);
 
-                    return [
-                        'user_id' => $m->user_id,
-                        'full_name_last_first_mi' => $m->full_name_last_first_mi,
-                        'course_year_section' => $m->course_year_section,
-                        'role' => $m->role->label(),
-                        'member_id_code' => sprintf('CPF-%s-%s-%04d', $campusCode, $year, $m->user_id),
-                        'logged_in_at' => $att?->logged_in_at?->format('M d, Y h:i A'),
-                        'logged_in_by' => $att?->loggedInBy?->name,
-                        'logged_out_at' => $att?->logged_out_at?->format('M d, Y h:i A'),
-                        'logged_out_by' => $att?->loggedOutBy?->name,
-                        'has_reflection' => $reflectionUserIds->has($m->user_id),
-                    ];
-                })->values();
+                        return [
+                            'user_id' => $m->user_id,
+                            'full_name_last_first_mi' => $m->full_name_last_first_mi,
+                            'course_year_section' => $m->course_year_section,
+                            'role' => $m->role->label(),
+                            'member_id_code' => sprintf('CPF-%s-%s-%04d', $campusCode, $year, $m->user_id),
+                            'logged_in_at' => $att?->logged_in_at?->format('M d, Y h:i A'),
+                            'logged_in_by' => $att?->loggedInBy?->name,
+                            'logged_out_at' => $att?->logged_out_at?->format('M d, Y h:i A'),
+                            'logged_out_by' => $att?->loggedOutBy?->name,
+                            'has_reflection' => $reflectionUserIds->has($m->user_id),
+                        ];
+                    })->values()
+                    : [];
 
                 $loggedInCount = $event->attendances->whereNotNull('logged_in_at')->count();
                 $loggedOutCount = $event->attendances->whereNotNull('logged_out_at')->count();
@@ -135,10 +154,12 @@ class EventActivityController extends Controller
                     'logged_in_count' => $loggedInCount,
                     'logged_out_count' => $loggedOutCount,
                     'reflection_count' => $event->reflections->count(),
+                    'my_logged_in_at' => $myAttendance?->logged_in_at?->format('M d, Y h:i A'),
+                    'my_logged_out_at' => $myAttendance?->logged_out_at?->format('M d, Y h:i A'),
                     'my_reflection_submitted' => $myReflection !== null,
                     'my_reflection_capsule_id' => $myReflection?->time_capsule_id,
                     'my_reflection_submitted_at' => $myReflection?->submitted_at?->format('M d, Y h:i A'),
-                    'checklist' => $checklist,
+                    'checklist' => $isOfficerOrAdviser ? $checklist : [],
                 ];
             })->values();
         }
@@ -674,6 +695,7 @@ class EventActivityController extends Controller
             ->where('campus_id', $event->campus_id)
             ->where('user_id', (int) $validated['user_id'])
             ->where('status', MembershipStatus::Approved->value)
+            ->where('role', '!=', CpfRole::GuidanceCounselor->value)
             ->first();
 
         abort_unless(
@@ -800,6 +822,8 @@ class EventActivityController extends Controller
             'unlock_at' => ['required', 'date', 'after:now'],
         ]);
 
+        app(\App\Services\ProfanityFilterService::class)->assertClean((string) ($validated['reflection_message'] ?? ''), 'reflection_message');
+
         $capsuleTitle = filled($validated['title'] ?? null)
             ? trim((string) $validated['title'])
             : Str::limit("Reflection: {$event->title}", 160, '');
@@ -863,54 +887,42 @@ class EventActivityController extends Controller
     {
         $event->loadMissing('campus:id,code');
         $campusCode = strtoupper((string) ($event->campus?->code ?? ''));
-        $targetUserId = null;
 
-        if (preg_match('/^CPF\|campus:([A-Z0-9_]+)\|user:(\d+)\|role:([a-z_]+)\|sig:([a-f0-9]{16})$/', $payload, $matches)) {
-            $scannedCampus = strtoupper($matches[1]);
-            $uid = (int) $matches[2];
-            $role = $matches[3];
-            $sig = $matches[4];
-
-            $raw = "CPF|campus:{$matches[1]}|user:{$uid}|role:{$role}";
-            $expected = substr(hash_hmac('sha256', $raw, (string) config('app.key')), 0, 16);
-
-            abort_unless(
-                hash_equals($expected, $sig),
-                422,
-                'Invalid or tampered CPF Attendance QR signature.',
-            );
-
-            abort_unless(
-                $scannedCampus === $campusCode,
-                422,
-                'This Attendance QR code belongs to a different CHMSU campus.',
-            );
-
-            $targetUserId = $uid;
-        } elseif (preg_match('/^CPF-([A-Z0-9_]+)-\d{4}-(\d+)$/i', $payload, $matches)) {
-            $scannedCampus = strtoupper($matches[1]);
-
-            abort_unless(
-                $scannedCampus === $campusCode,
-                422,
-                'This Member ID code belongs to a different CHMSU campus.',
-            );
-
-            $targetUserId = (int) $matches[2];
-        } else {
-            abort(422, 'Unrecognized or invalid CPF Attendance QR / Member ID code.');
+        if (! preg_match('/^CPF\|campus:([A-Z0-9_]+)\|user:(\d+)\|role:([a-z_]+)\|sig:([a-f0-9]{16})$/', $payload, $matches)) {
+            abort(422, 'Unrecognized or unsigned CPF Attendance QR payload.');
         }
+
+        $scannedCampus = strtoupper($matches[1]);
+        $targetUserId = (int) $matches[2];
+        $role = $matches[3];
+        $sig = $matches[4];
+
+        $raw = "CPF|campus:{$matches[1]}|user:{$targetUserId}|role:{$role}";
+        $expected = substr(hash_hmac('sha256', $raw, (string) config('app.key')), 0, 16);
+
+        abort_unless(
+            hash_equals($expected, $sig),
+            422,
+            'Invalid or tampered CPF Attendance QR signature.',
+        );
+
+        abort_unless(
+            $scannedCampus === $campusCode,
+            422,
+            'This Attendance QR code belongs to a different CHMSU campus.',
+        );
 
         $targetMembership = CampusMembership::query()
             ->where('campus_id', $event->campus_id)
             ->where('user_id', $targetUserId)
             ->where('status', MembershipStatus::Approved->value)
+            ->where('role', '!=', CpfRole::GuidanceCounselor->value)
             ->first();
 
         abort_unless(
             $targetMembership !== null,
             422,
-            'No approved member matching that QR / Member ID exists on this campus.',
+            'No eligible approved member matching that QR exists on this campus.',
         );
 
         return $targetMembership;

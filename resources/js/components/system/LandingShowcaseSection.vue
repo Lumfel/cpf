@@ -244,6 +244,12 @@ function handleKeydown(e: KeyboardEvent): void {
 }
 
 onMounted(() => {
+    if (
+        page.props.systemBootstrap?.mandatoryTourEnabled === false ||
+        page.props.systemBootstrap?.exemptFromMandatoryTour === true
+    ) {
+        return;
+    }
     if (typeof window !== 'undefined') {
         window.addEventListener('keydown', handleKeydown, true);
     }

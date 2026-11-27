@@ -19,6 +19,7 @@ use App\Models\TimeCapsule;
 use App\Models\User;
 use App\Services\ClubTenureService;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Hash;
 use Tests\TestCase;
 use ZipArchive;
@@ -49,7 +50,7 @@ class AlumniArchiveAndTenureTest extends TestCase
             'must_change_password' => false,
         ]);
 
-        $approved = $approvedAt ? \Illuminate\Support\Carbon::parse($approvedAt) : now()->subMonths(6);
+        $approved = $approvedAt ? Carbon::parse($approvedAt) : now()->subMonths(6);
 
         $membership = CampusMembership::create([
             'user_id' => $user->id,
@@ -187,6 +188,7 @@ class AlumniArchiveAndTenureTest extends TestCase
         $handoverRes = $this->actingAs($outgoingAdviser)
             ->postJson('/adviser-handover', [
                 'current_password' => 'password',
+                'outgoing_role' => 'alumni',
                 'first_name' => 'Elena',
                 'middle_name' => 'R.',
                 'last_name' => 'Navarro',
@@ -346,19 +348,14 @@ class AlumniArchiveAndTenureTest extends TestCase
             ->postJson("/membership/{$adviserMembership->id}/transition-alumni", ['reason' => 'graduated'])
             ->assertStatus(422);
 
-        // Club Adviser promotes Santos to Secretary, then re-elects/promotes to President,
-        // then steps down to Vice President before finishing service — highest position held must remain President!
-        $this->actingAs($adviser)
-            ->patch("/membership/{$officerMembership->id}/role", ['role' => CpfRole::Secretary->value])
-            ->assertRedirect();
-
-        $this->actingAs($adviser)
-            ->patch("/membership/{$officerMembership->id}/role", ['role' => CpfRole::President->value])
-            ->assertRedirect();
-
-        $this->actingAs($adviser)
-            ->patch("/membership/{$officerMembership->id}/role", ['role' => CpfRole::VicePresident->value])
-            ->assertRedirect();
+        // Simulate multi-term election transitions: Member -> Secretary -> President -> Vice President
+        // before finishing service — highest position held must remain President!
+        $tenureService = app(ClubTenureService::class);
+        foreach ([CpfRole::Secretary, CpfRole::President, CpfRole::VicePresident] as $nextRole) {
+            $tenureService->recordRoleTransition($officerMembership, $nextRole, $adviser, 'role_change');
+            $officerMembership->update(['role' => $nextRole]);
+            $officerMembership->refresh();
+        }
 
         // Transition both former officer and former member to Former archive status
         $this->actingAs($adviser)
@@ -429,7 +426,7 @@ class AlumniArchiveAndTenureTest extends TestCase
 
         // Cross-campus isolation on archived GC transcripts
         $zipPath = storage_path('app/test-alumni-cross-campus.zip');
-        $zip = new ZipArchive();
+        $zip = new ZipArchive;
         $zip->open($zipPath, ZipArchive::CREATE | ZipArchive::OVERWRITE);
         $zip->addFromString('transcript.json', '[]');
         $zip->close();

@@ -8,7 +8,6 @@ use App\Models\Campus;
 use App\Models\CampusEvent;
 use App\Models\CampusEventAttendance;
 use App\Models\CampusEventNotification;
-use App\Models\CampusEventReflection;
 use App\Models\CampusMembership;
 use App\Models\TimeCapsule;
 use App\Models\User;
@@ -317,11 +316,18 @@ class CampusEventsAndActivitiesTest extends TestCase
                 ->assertCreated()
                 ->assertJsonPath('status', 'logged_in');
 
-            // Member ID code logs member OUT at end of activity
+            // Unsigned Member ID code fallback is rejected (H-01); signed QR logs member OUT
             $idForYear = sprintf('CPF-TALISAY-%s-%04d', now()->format('Y'), $member->id);
             $this->actingAs($saa)
                 ->postJson("/events-activities/{$event->id}/scan", [
                     'qr_payload' => $idForYear,
+                    'scan_type' => 'logout',
+                ])
+                ->assertStatus(422);
+
+            $this->actingAs($saa)
+                ->postJson("/events-activities/{$event->id}/scan", [
+                    'qr_payload' => $signedPayload,
                     'scan_type' => 'logout',
                 ])
                 ->assertOk()
@@ -431,7 +437,7 @@ class CampusEventsAndActivitiesTest extends TestCase
                 ])
                 ->assertStatus(422);
 
-            // Verify Dashboard exposes campus events calendar & unread notifications
+            // Verify Dashboard exposes campus events calendar & unread notifications (including shared header notifications)
             $this->actingAs($member)
                 ->get('/dashboard')
                 ->assertOk()
@@ -441,7 +447,10 @@ class CampusEventsAndActivitiesTest extends TestCase
                     ->where('campusEvents.0.title', 'Empathy Listening Circle')
                     ->where('campusEvents.0.effective_status', 'completed')
                     ->has('eventNotifications', 1)
-                    ->where('unreadEventNotificationsCount', 1));
+                    ->where('unreadEventNotificationsCount', 1)
+                    ->where('notifications.unread_count', 1)
+                    ->has('notifications.items', 1)
+                    ->where('notifications.items.0.is_read', false));
 
             $notif = CampusEventNotification::where('user_id', $member->id)->firstOrFail();
             $this->actingAs($member)
@@ -467,6 +476,13 @@ class CampusEventsAndActivitiesTest extends TestCase
                 0,
                 CampusEventNotification::where('user_id', $member->id)->whereNull('read_at')->count(),
             );
+
+            $this->actingAs($member)
+                ->get('/dashboard')
+                ->assertOk()
+                ->assertInertia(fn ($page) => $page
+                    ->where('notifications.unread_count', 0)
+                    ->has('notifications.items', 2));
         } finally {
             $this->travelBack();
         }

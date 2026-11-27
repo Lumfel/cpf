@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { Link } from '@inertiajs/vue3';
+import { Link, usePage } from '@inertiajs/vue3';
+import { computed } from 'vue';
 import { ArrowLeft, Moon, Sparkles, Sun, Sunrise, Zap } from '@lucide/vue';
 import { useAppearance } from '@/composables/useAppearance';
 import { home } from '@/routes';
@@ -10,6 +11,8 @@ defineProps<{
 }>();
 
 const { resolvedAppearance, updateAppearance } = useAppearance();
+const page = usePage<{ auth?: { user?: unknown } }>();
+const isAuthenticated = computed(() => Boolean(page.props.auth?.user));
 
 const themeChoices = [
     { value: 'light', label: 'Light', title: 'Soft Cream Light Mode', Icon: Sun, iconClass: 'text-[#FF8D06]' },
@@ -35,11 +38,11 @@ const themeChoices = [
         <!-- Top Navigation & Theme Switcher -->
         <div class="relative z-10 mb-6 flex w-full max-w-md items-center justify-between gap-2">
             <Link
-                :href="home()"
+                :href="isAuthenticated ? '/settings/profile' : home()"
                 class="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card/80 px-3 py-1.5 text-xs font-semibold text-muted-foreground backdrop-blur-md transition hover:border-primary/40 hover:text-primary"
             >
                 <ArrowLeft class="size-3.5" />
-                Back to CPF Home
+                {{ isAuthenticated ? 'Back to Settings' : 'Back to CPF Home' }}
             </Link>
 
             <div

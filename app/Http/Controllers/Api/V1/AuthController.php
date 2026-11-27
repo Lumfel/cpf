@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers\Api\V1;
 
+use App\Concerns\PasswordValidationRules;
+use App\Enums\CpfRole;
 use App\Http\Controllers\Auth\PasskeyCodeLoginController;
 use App\Http\Controllers\Controller;
 use App\Models\PeerQuote;
@@ -13,12 +15,16 @@ use Illuminate\Validation\ValidationException;
 
 class AuthController extends Controller
 {
+    use PasswordValidationRules;
+
     public function login(Request $request): JsonResponse
     {
         $validated = $request->validate([
             'email' => ['required', 'email'],
             'password' => ['required', 'string'],
             'device_name' => ['required', 'string', 'max:120'],
+            'code' => ['nullable', 'string'],
+            'recovery_code' => ['nullable', 'string'],
         ]);
 
         $email = strtolower(trim((string) $validated['email']));
@@ -30,12 +36,36 @@ class AuthController extends Controller
             ]);
         }
 
+        if ($user->hasEnabledTwoFactorAuthentication()) {
+            $twoFactor = PasskeyCodeLoginController::verifyTwoFactorChallenge(
+                $user,
+                $validated['code'] ?? null,
+                $validated['recovery_code'] ?? null,
+            );
+
+            if (! $twoFactor['valid']) {
+                return response()->json([
+                    'message' => $twoFactor['missing']
+                        ? 'Two-factor authentication code is required.'
+                        : 'The provided two-factor authentication code was invalid.',
+                    'two_factor_required' => true,
+                    'errors' => [
+                        'code' => [
+                            $twoFactor['missing']
+                                ? 'A valid two-factor authentication code or recovery code is required.'
+                                : 'The provided two-factor authentication code was invalid.',
+                        ],
+                    ],
+                ], 422);
+            }
+        }
+
         $token = $user->createToken(trim((string) $validated['device_name']))->plainTextToken;
 
         return response()->json([
             'token_type' => 'Bearer',
             'token' => $token,
-            ...$this->buildProfilePayload($user),
+            ...$this->buildProfilePayload($user->fresh()),
         ]);
     }
 
@@ -45,11 +75,16 @@ class AuthController extends Controller
             'email' => ['required', 'email'],
             'passkey_code' => ['required', 'string'],
             'device_name' => ['required', 'string', 'max:120'],
+            'code' => ['nullable', 'string'],
+            'recovery_code' => ['nullable', 'string'],
         ]);
 
         $user = PasskeyCodeLoginController::claimPasskeyCode(
             (string) $validated['email'],
             (string) $validated['passkey_code'],
+            $validated['code'] ?? null,
+            $validated['recovery_code'] ?? null,
+            jsonTwoFactorFailure: true,
         );
 
         $token = $user->createToken(trim((string) $validated['device_name']))->plainTextToken;
@@ -59,6 +94,24 @@ class AuthController extends Controller
             'token' => $token,
             ...$this->buildProfilePayload($user),
         ]);
+    }
+
+    public function forceChangePassword(Request $request): JsonResponse
+    {
+        /** @var User $user */
+        $user = $request->user();
+
+        $validated = $request->validate([
+            'password' => $this->passwordRules(),
+        ]);
+
+        $user->forceFill([
+            'password' => Hash::make((string) $validated['password']),
+            'must_change_password' => false,
+            'temporary_password_issued_at' => null,
+        ])->save();
+
+        return response()->json($this->buildProfilePayload($user->fresh()));
     }
 
     public function me(Request $request): JsonResponse
@@ -100,6 +153,7 @@ class AuthController extends Controller
         $isAlumni = $user->isAlumni();
 
         $qrUnlocked = ! $isAlumni
+            && $verifiedRole !== CpfRole::GuidanceCounselor
             && $user->must_change_password === false
             && $verifiedRole !== null;
 

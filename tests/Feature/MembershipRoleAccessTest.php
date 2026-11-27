@@ -66,6 +66,8 @@ class MembershipRoleAccessTest extends TestCase
 
     public function test_ordinary_user_and_guest_can_submit_public_cpf_membership_form(): void
     {
+        $this->createMemberWithRole($this->campus, CpfRole::Adviser, 'Montemayor, Elena V.');
+
         $this->from('/')
             ->post('/membership/apply', [
                 'campus_id' => $this->campus->id,
@@ -142,24 +144,32 @@ class MembershipRoleAccessTest extends TestCase
         $this->assertFalse($treasurer->canManageCampusMembers());
     }
 
-    public function test_only_adviser_is_in_charge_of_assigning_officer_roles(): void
+    public function test_manual_role_switching_is_disabled_in_favor_of_elections_handover_and_invites(): void
     {
         $adviser = $this->createMemberWithRole($this->campus, CpfRole::Adviser, 'Montemayor, Elena V.');
         $president = $this->createMemberWithRole($this->campus, CpfRole::President, 'Mercado, Sofia R.');
         $memberUser = $this->createMemberWithRole($this->campus, CpfRole::Member, 'Reyes, Katrina M.');
         $membership = $memberUser->primaryMembership;
 
-        // President cannot promote a member to Secretary
+        // President cannot manually switch a member's role (403)
         $this->actingAs($president)
-            ->patch("/membership/{$membership->id}/role", ['role' => 'secretary'])
-            ->assertForbidden();
+            ->patchJson("/membership/{$membership->id}/role", ['role' => 'secretary'])
+            ->assertForbidden()
+            ->assertJsonPath(
+                'message',
+                'Officer roles are assigned through General Assembly Elections, Adviser Handover, or Counselor Invitations.',
+            );
 
-        // Club Adviser can promote a member to Secretary
+        // Even the Club Adviser cannot manually override roles via PATCH /membership/{id}/role (422)
         $this->actingAs($adviser)
-            ->patch("/membership/{$membership->id}/role", ['role' => 'secretary'])
-            ->assertRedirect('/membership');
+            ->patchJson("/membership/{$membership->id}/role", ['role' => 'secretary'])
+            ->assertStatus(422)
+            ->assertJsonPath(
+                'message',
+                'Officer roles are assigned through General Assembly Elections, Adviser Handover, or Counselor Invitations.',
+            );
 
-        $this->assertSame(CpfRole::Secretary, $membership->fresh()->role);
+        $this->assertSame(CpfRole::Member, $membership->fresh()->role);
     }
 
     public function test_unauthenticated_requests_to_officer_membership_routes_redirect_to_login(): void

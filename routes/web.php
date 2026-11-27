@@ -35,7 +35,7 @@ Route::get('/', function () {
             ->orderBy('id')
             ->get(['id', 'code', 'name', 'slug'])
             ->toArray();
-    } catch (\Throwable) {
+    } catch (Throwable) {
         // Fallback gracefully to default campus list if DB is not migrated yet
     }
 
@@ -64,7 +64,7 @@ Route::post('first-boot/setup-adviser', [FirstBootSetupController::class, 'store
     ->name('first-boot.setup-adviser');
 
 Route::post('login/passkey-code', [PasskeyCodeLoginController::class, 'store'])
-    ->middleware(['guest', 'throttle:5,1'])
+    ->middleware(['guest', 'throttle:api-passkey-code'])
     ->name('login.passkey-code');
 
 Route::get('counselor-invitations/{token}', [CounselorInvitationController::class, 'show'])
@@ -119,6 +119,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('membership/{membership}/approve', [CampusMembershipController::class, 'approve'])->name('membership.approve');
         Route::patch('membership/{membership}/toggle-gc', [CampusMembershipController::class, 'toggleGc'])->name('membership.toggle-gc');
         Route::patch('membership/{membership}/toggle-dues', [CampusMembershipController::class, 'toggleDues'])->name('membership.toggle-dues');
+        Route::patch('membership/{membership}/suspend-privileges', [CampusMembershipController::class, 'toggleOfficerSuspension'])->name('membership.suspend-privileges');
+        Route::get('membership/dues-audit-logs', [CampusMembershipController::class, 'duesAuditLogs'])->name('membership.dues-audit-logs');
         Route::patch('membership/{membership}/role', [CampusMembershipController::class, 'updateRole'])->name('membership.update-role');
         Route::post('membership/{membership}/transition-alumni', [CampusMembershipController::class, 'transitionToAlumni'])
             ->name('membership.transition-alumni');
@@ -140,10 +142,14 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::patch('testing-room/{roomRequest}/review', [CpfFeatureController::class, 'reviewTestingRoom'])->name('testing-room.review');
         Route::post('referrals/submit', [CpfFeatureController::class, 'submitReferral'])->name('referrals.submit');
         Route::patch('referrals/{referral}/confirm', [CpfFeatureController::class, 'confirmReferral'])->name('referrals.confirm');
+        Route::get('officers-gc/{channel}/messages', [CpfFeatureController::class, 'fetchOfficerGcMessages'])->name('officers-gc.fetch');
         Route::post('officers-gc/{channel}/messages', [CpfFeatureController::class, 'sendOfficerGcMessage'])->name('officers-gc.send');
         Route::post('officers-gc/{channel}/archive', [CpfFeatureController::class, 'archiveOfficerGc'])->name('officers-gc.archive');
+        Route::get('counselors-gc/messages', [CpfFeatureController::class, 'fetchCounselorGcMessages'])->name('counselors-gc.fetch');
         Route::post('counselors-gc/messages', [CpfFeatureController::class, 'sendCounselorGcMessage'])->name('counselors-gc.send');
         Route::post('counselors-gc/archive', [CpfFeatureController::class, 'archiveCounselorGc'])->name('counselors-gc.archive');
+        Route::get('counselors-dm/{peerUser}/messages', [CpfFeatureController::class, 'fetchCounselorDmMessages'])->name('counselors-dm.fetch');
+        Route::post('counselors-dm/{peerUser}/messages', [CpfFeatureController::class, 'sendCounselorDmMessage'])->name('counselors-dm.send');
 
         // v4 Community, Treasurer & Governance routes
         Route::post('achievements', [CpfV4Controller::class, 'storeAchievement'])->name('achievements.store');

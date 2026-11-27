@@ -1092,13 +1092,13 @@ function toggleDuesStatus(member: DuesRosterMember) {
 
             <div class="bento flex flex-col justify-between p-5">
                 <div>
-                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-black/10 pb-3">
-                        <div class="flex items-center gap-2 text-base font-bold text-slate-900">
+                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
+                        <div class="flex items-center gap-2 text-base font-bold text-foreground">
                             <Bell class="size-5 text-[#FF8D06]" />
                             Event Notifications
                             <span
                                 v-if="unreadEventNotificationsCount > 0"
-                                class="rounded-full bg-[#FF8D06] px-2 py-0.5 text-[11px] font-bold text-white"
+                                class="rounded-full bg-[#FF8D06] px-2.5 py-0.5 text-xs font-bold text-white"
                             >
                                 {{ unreadEventNotificationsCount }} New
                             </span>
@@ -1107,32 +1107,32 @@ function toggleDuesStatus(member: DuesRosterMember) {
                             v-if="unreadEventNotificationsCount > 0"
                             type="button"
                             @click="markAllDashboardNotificationsRead"
-                            class="rounded-xl border border-[#0384C5]/30 bg-[#0384C5]/10 px-2.5 py-1 text-[11px] font-semibold text-[#0384C5]"
+                            class="rounded-xl border border-primary/35 bg-primary/15 px-3 py-1 text-xs font-semibold text-primary transition hover:bg-primary hover:text-primary-foreground"
                         >
                             Mark All Read
                         </button>
                     </div>
 
-                    <div v-if="eventNotifications.length === 0" class="py-8 text-center text-xs text-slate-500">
+                    <div v-if="eventNotifications.length === 0" class="py-8 text-center text-sm text-muted-foreground">
                         No campus event notifications yet.
                     </div>
-                    <div v-else class="mt-3 flex max-h-80 flex-col gap-2 overflow-y-auto pr-1">
+                    <div v-else class="mt-3 flex max-h-80 flex-col gap-2.5 overflow-y-auto pr-1">
                         <div
                             v-for="notif in eventNotifications"
                             :key="`dash-notif-${notif.id}`"
-                            class="flex items-start justify-between gap-2 rounded-2xl border p-3 text-xs"
-                            :class="notif.is_unread ? 'border-[#FF8D06]/45 bg-[#FFF8EC]' : 'border-black/10 bg-white'"
+                            class="flex items-start justify-between gap-3 rounded-2xl border p-3.5 text-sm transition"
+                            :class="notif.is_unread ? 'border-primary/45 bg-primary/10' : 'border-border bg-card/85'"
                         >
-                            <div>
-                                <div class="font-bold text-slate-900">{{ notif.title }}</div>
-                                <p class="mt-0.5 text-slate-600">{{ notif.message }}</p>
-                                <div class="mt-1 text-[10px] text-slate-400">{{ notif.created_at }}</div>
+                            <div class="min-w-0 flex-1">
+                                <div class="font-bold text-foreground">{{ notif.title }}</div>
+                                <p class="mt-0.5 text-sm leading-snug text-muted-foreground">{{ notif.message }}</p>
+                                <div class="mt-1.5 text-xs text-muted-foreground/80">{{ notif.created_at }}</div>
                             </div>
                             <button
                                 v-if="notif.is_unread"
                                 type="button"
                                 @click="markDashboardNotificationRead(notif.id)"
-                                class="shrink-0 rounded-lg border border-black/15 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700"
+                                class="shrink-0 rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-semibold text-foreground transition hover:border-primary/50 hover:text-primary"
                             >
                                 Read
                             </button>

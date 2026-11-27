@@ -1,0 +1,2805 @@
+diff --git a/app/Actions/Membership/ToggleMessengerGcChecklist.php b/app/Actions/Membership/ToggleMessengerGcChecklist.php
+index af28f46..bd9573d 100644
+--- a/app/Actions/Membership/ToggleMessengerGcChecklist.php
++++ b/app/Actions/Membership/ToggleMessengerGcChecklist.php
+@@ -3,19 +3,20 @@
+ namespace App\Actions\Membership;
+ 
+ use App\Enums\CpfRole;
++use App\Enums\MembershipStatus;
++use App\Models\CampusEventNotification;
+ use App\Models\CampusMembership;
++use App\Models\DuesAuditLog;
+ use App\Models\User;
+ use App\Services\ClubTenureService;
++use Illuminate\Support\Facades\DB;
+ 
+ class ToggleMessengerGcChecklist
+ {
+     public function __construct(
+         private readonly ClubTenureService $tenureService,
+     ) {}
+-    /**
+-     * Confirm or unconfirm that a verified member is present in the campus
+-     * Messenger Group Chat (GC). Strictly restricted to Adviser or President.
+-     */
++
+     public function handle(User $actor, CampusMembership $membership): CampusMembership
+     {
+         $newState = ! $membership->is_in_messenger_gc;
+@@ -31,25 +32,74 @@ public function handle(User $actor, CampusMembership $membership): CampusMembers
+ 
+     /**
+      * Confirm or unconfirm that a verified member has settled membership dues.
+-     * Restricted to the Treasurer and Club Adviser.
++     * Records an immutable DuesAuditLog entry and alerts Adviser + Auditor
++     * whenever dues are marked paid without a linked payment receipt.
+      */
+-    public function toggleDues(User $actor, CampusMembership $membership): CampusMembership
+-    {
+-        $newState = ! $membership->has_paid_dues;
++    public function toggleDues(
++        User $actor,
++        CampusMembership $membership,
++        ?string $reason = null,
++        ?int $paymentSubmissionId = null,
++    ): CampusMembership {
++        return DB::transaction(function () use ($actor, $membership, $reason, $paymentSubmissionId): CampusMembership {
++            $locked = CampusMembership::query()->whereKey($membership->id)->lockForUpdate()->firstOrFail();
++            $oldState = (bool) $locked->has_paid_dues;
++            $newState = ! $oldState;
+ 
+-        $membership->update([
+-            'has_paid_dues' => $newState,
+-            'dues_confirmed_by' => $newState ? $actor->id : null,
+-            'dues_confirmed_at' => $newState ? now() : null,
+-        ]);
++            $locked->update([
++                'has_paid_dues' => $newState,
++                'dues_confirmed_by' => $newState ? $actor->id : null,
++                'dues_confirmed_at' => $newState ? now() : null,
++            ]);
+ 
+-        return $membership->refresh();
++            DuesAuditLog::create([
++                'campus_id' => $locked->campus_id,
++                'actor_user_id' => $actor->id,
++                'target_user_id' => $locked->user_id,
++                'campus_membership_id' => $locked->id,
++                'payment_submission_id' => $paymentSubmissionId,
++                'old_status' => $oldState,
++                'new_status' => $newState,
++                'reason' => $reason !== null ? trim($reason) : null,
++                'created_at' => now(),
++            ]);
++
++            // Alert Club Adviser & Auditor when dues are toggled paid without a linked receipt
++            if ($newState && $paymentSubmissionId === null) {
++                $oversightUserIds = CampusMembership::query()
++                    ->where('campus_id', $locked->campus_id)
++                    ->where('status', MembershipStatus::Approved->value)
++                    ->whereIn('role', [CpfRole::Adviser->value, CpfRole::Auditor->value])
++                    ->where('user_id', '!=', $actor->id)
++                    ->pluck('user_id');
++
++                if ($oversightUserIds->isNotEmpty()) {
++                    $now = now();
++                    $rows = $oversightUserIds->map(fn (int $uid) => [
++                        'campus_id' => $locked->campus_id,
++                        'campus_event_id' => null,
++                        'user_id' => $uid,
++                        'type' => 'dues_manual_override_alert',
++                        'title' => 'Manual Dues Override Recorded',
++                        'message' => sprintf(
++                            '%s marked %s as Dues Paid without a linked receipt. Reason: %s',
++                            $actor->name,
++                            $locked->full_name_last_first_mi ?? 'Member',
++                            $reason ?: 'None supplied',
++                        ),
++                        'read_at' => null,
++                        'created_at' => $now,
++                        'updated_at' => $now,
++                    ])->all();
++
++                    CampusEventNotification::query()->insert($rows);
++                }
++            }
++
++            return $locked->refresh();
++        });
+     }
+ 
+-    /**
+-     * Assign or update an officer role (President, Secretary, Treasurer, Member).
+-     * Strictly restricted to the Club Adviser (highest authority in charge; no Admin role).
+-     */
+     public function updateRole(CampusMembership $membership, CpfRole $newRole, ?User $actor = null): CampusMembership
+     {
+         if ($membership->role !== $newRole) {
+diff --git a/app/Events/CounselorDmMessageSent.php b/app/Events/CounselorDmMessageSent.php
+new file mode 100644
+index 0000000..615b883
+--- /dev/null
++++ b/app/Events/CounselorDmMessageSent.php
+@@ -0,0 +1,50 @@
++<?php
++
++namespace App\Events;
++
++use App\Models\CounselorDirectMessage;
++use Illuminate\Broadcasting\InteractsWithSockets;
++use Illuminate\Broadcasting\PrivateChannel;
++use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
++use Illuminate\Foundation\Events\Dispatchable;
++use Illuminate\Queue\SerializesModels;
++
++class CounselorDmMessageSent implements ShouldBroadcastNow
++{
++    use Dispatchable, InteractsWithSockets, SerializesModels;
++
++    public function __construct(
++        public CounselorDirectMessage $message,
++    ) {}
++
++    public function broadcastOn(): array
++    {
++        return [
++            new PrivateChannel("campus.{$this->message->campus_id}.counselor-dm.{$this->message->thread_key}"),
++        ];
++    }
++
++    public function broadcastAs(): string
++    {
++        return 'counselor.dm.message.sent';
++    }
++
++    public function broadcastWith(): array
++    {
++        return [
++            'id' => $this->message->id,
++            'campus_id' => $this->message->campus_id,
++            'thread_key' => $this->message->thread_key,
++            'sender_user_id' => $this->message->sender_user_id,
++            'recipient_user_id' => $this->message->recipient_user_id,
++            'sender_name' => $this->message->sender?->name ?? 'Guidance Counselor',
++            'sender' => $this->message->sender ? [
++                'id' => $this->message->sender->id,
++                'name' => $this->message->sender->name,
++            ] : null,
++            'sender_role' => $this->message->sender_role,
++            'message_body' => $this->message->message_body,
++            'created_at' => $this->message->created_at?->toIso8601String(),
++        ];
++    }
++}
+diff --git a/app/Events/CounselorGcMessageSent.php b/app/Events/CounselorGcMessageSent.php
+new file mode 100644
+index 0000000..ce44c99
+--- /dev/null
++++ b/app/Events/CounselorGcMessageSent.php
+@@ -0,0 +1,49 @@
++<?php
++
++namespace App\Events;
++
++use App\Models\CounselorGcMessage;
++use Illuminate\Broadcasting\InteractsWithSockets;
++use Illuminate\Broadcasting\PrivateChannel;
++use Illuminate\Contracts\Broadcasting\ShouldBroadcastNow;
++use Illuminate\Foundation\Events\Dispatchable;
++use Illuminate\Queue\SerializesModels;
++
++class CounselorGcMessageSent implements ShouldBroadcastNow
++{
++    use Dispatchable, InteractsWithSockets, SerializesModels;
++
++    public function __construct(
++        public int $campusId,
++        public CounselorGcMessage $message,
++    ) {}
++
++    public function broadcastOn(): array
++    {
++        return [
++            new PrivateChannel("campus.{$this->campusId}.counselors-gc"),
++        ];
++    }
++
++    public function broadcastAs(): string
++    {
++        return 'counselor.gc.message.sent';
++    }
++
++    public function broadcastWith(): array
++    {
++        return [
++            'id' => $this->message->id,
++            'campus_id' => $this->campusId,
++            'sender_user_id' => $this->message->sender_user_id,
++            'sender_name' => $this->message->sender?->name ?? 'Guidance Counselor',
++            'sender' => $this->message->sender ? [
++                'id' => $this->message->sender->id,
++                'name' => $this->message->sender->name,
++            ] : null,
++            'sender_role' => $this->message->sender_role,
++            'message_body' => $this->message->message_body,
++            'created_at' => $this->message->created_at?->toIso8601String(),
++        ];
++    }
++}
+diff --git a/app/Http/Controllers/Api/V1/ElectionApiController.php b/app/Http/Controllers/Api/V1/ElectionApiController.php
+index bb2c167..bfc1d60 100644
+--- a/app/Http/Controllers/Api/V1/ElectionApiController.php
++++ b/app/Http/Controllers/Api/V1/ElectionApiController.php
+@@ -288,6 +288,7 @@ public function liveChatStore(Request $request, Election $election): JsonRespons
+ 
+         $body = trim((string) $validated['message_body']);
+         abort_if($body === '', 422, 'Message body cannot be empty.');
++        app(\App\Services\ProfanityFilterService::class)->assertClean($body, 'message_body');
+ 
+         $cache = Election::liveChatCache();
+         $cacheKey = Election::liveChatCacheKey((int) $election->id);
+diff --git a/app/Http/Controllers/CampusOperationsController.php b/app/Http/Controllers/CampusOperationsController.php
+index f93d86b..e6333b0 100644
+--- a/app/Http/Controllers/CampusOperationsController.php
++++ b/app/Http/Controllers/CampusOperationsController.php
+@@ -226,6 +226,25 @@ public function index(Request $request): Response
+                 ->values();
+         }
+ 
++        $counselorPeers = collect();
++        if ($canCoordinateGuidance && $campusId !== null) {
++            $counselorPeers = CampusMembership::query()
++                ->with('user:id,name')
++                ->where('campus_id', $campusId)
++                ->where('status', MembershipStatus::Approved->value)
++                ->whereIn('role', [CpfRole::Adviser->value, CpfRole::GuidanceCounselor->value])
++                ->where('user_id', '!=', $user->id)
++                ->alphabetical()
++                ->get()
++                ->map(fn (CampusMembership $cm) => [
++                    'user_id' => $cm->user_id,
++                    'name' => $cm->user?->name ?? $cm->full_name_last_first_mi,
++                    'role' => $cm->role->value,
++                    'role_label' => $cm->role->label(),
++                ])
++                ->values();
++        }
++
+         $officerChannel = null;
+         $officerMessages = collect();
+         $gcArchives = collect();
+@@ -292,6 +311,8 @@ public function index(Request $request): Response
+             'myReferrals' => $myReferrals,
+             'counselorInbox' => $counselorInbox,
+             'counselorGcMessages' => $counselorGcMessages,
++            'counselorPeers' => $counselorPeers,
++            'officersGcPaused' => (bool) config('cpf.features.officers_gc_paused', false),
+             'priorityTiers' => $priorityTiers,
+             'officerChannel' => $officerChannel,
+             'officerMessages' => $officerMessages,
+diff --git a/app/Http/Controllers/CpfFeatureController.php b/app/Http/Controllers/CpfFeatureController.php
+index fffa9d3..da79519 100644
+--- a/app/Http/Controllers/CpfFeatureController.php
++++ b/app/Http/Controllers/CpfFeatureController.php
+@@ -9,7 +9,11 @@
+ use App\Actions\Support\SubmitGuidanceReferral;
+ use App\Enums\MembershipStatus;
+ use App\Enums\ReferralPriority;
++use App\Events\CounselorDmMessageSent;
++use App\Events\CounselorGcMessageSent;
+ use App\Events\OfficerGcMessageSent;
++use App\Models\CounselorDirectMessage;
++use App\Services\ProfanityFilterService;
+ use App\Models\CampusCounselor;
+ use App\Models\CampusMembership;
+ use App\Models\CampusRoom;
+@@ -336,6 +340,22 @@ public function confirmReferral(Request $request, GuidanceReferral $referral): J
+                     : null;
+             }
+ 
++            if ($referral->room_request_id !== null && $feedbackStatus === 'completed') {
++                $pendingRoomRequest = RoomRequest::query()
++                    ->whereKey($referral->room_request_id)
++                    ->lockForUpdate()
++                    ->first();
++
++                if ($pendingRoomRequest !== null && $pendingRoomRequest->status === 'pending') {
++                    $pendingRoomRequest->update([
++                        'status' => 'rejected',
++                        'reviewed_by' => $user->id,
++                        'reviewed_at' => now(),
++                        'review_notes' => 'Auto-released upon direct referral completion.',
++                    ]);
++                }
++            }
++
+             if ($referral->room_request_id !== null && $feedbackStatus === 'ongoing') {
+                 $linkedRoomRequest = RoomRequest::query()
+                     ->whereKey($referral->room_request_id)
+@@ -390,12 +410,51 @@ public function confirmReferral(Request $request, GuidanceReferral $referral): J
+         ]);
+     }
+ 
+-    public function sendOfficerGcMessage(Request $request, OfficerGcChannel $channel): JsonResponse
++    public function fetchOfficerGcMessages(Request $request, OfficerGcChannel $channel): JsonResponse
+     {
+         $user = $request->user();
+         $role = $user?->verifiedRole();
+         $membership = $user?->primaryMembership;
+ 
++        abort_unless(
++            $role && $role->isOfficerOrAdviser() && $membership && $membership->campus_id === $channel->campus_id,
++            403,
++            'Only active campus Officers and the Club Adviser may read this Officers Private GC.',
++        );
++
++        $afterId = max(0, (int) $request->query('after_id', 0));
++        $messages = $channel->messages()
++            ->with('sender:id,name')
++            ->when($afterId > 0, fn ($q) => $q->where('id', '>', $afterId))
++            ->orderBy('id')
++            ->limit(100)
++            ->get()
++            ->map(fn (OfficerGcMessage $msg) => [
++                'id' => $msg->id,
++                'sender_user_id' => $msg->sender_user_id,
++                'sender_name' => $msg->sender?->name ?? 'Officer',
++                'sender' => $msg->sender ? ['id' => $msg->sender->id, 'name' => $msg->sender->name] : null,
++                'sender_role' => $msg->sender_role,
++                'message_body' => $msg->message_body,
++                'created_at' => (string) $msg->created_at,
++            ])
++            ->values();
++
++        return response()->json(['messages' => $messages]);
++    }
++
++    public function sendOfficerGcMessage(Request $request, OfficerGcChannel $channel, ProfanityFilterService $profanityFilter): JsonResponse
++    {
++        $user = $request->user();
++        $role = $user?->verifiedRole();
++        $membership = $user?->primaryMembership;
++
++        abort_if(
++            (bool) config('cpf.features.officers_gc_paused', false),
++            423,
++            'Officers Private GC is currently paused by chapter configuration.',
++        );
++
+         abort_unless(
+             $role && $role->isOfficerOrAdviser() && $membership && $membership->campus_id === $channel->campus_id,
+             403,
+@@ -403,6 +462,7 @@ public function sendOfficerGcMessage(Request $request, OfficerGcChannel $channel
+         );
+ 
+         $validated = $request->validate(['message_body' => ['required', 'string', 'max:2000']]);
++        $profanityFilter->assertClean((string) $validated['message_body'], 'message_body');
+ 
+         $msg = DB::transaction(function () use ($channel, $user, $role, $validated): OfficerGcMessage {
+             $lockedChannel = OfficerGcChannel::query()
+@@ -478,7 +538,40 @@ public function archiveCounselorGc(Request $request, ArchiveCounselorGc $action)
+         ]);
+     }
+ 
+-    public function sendCounselorGcMessage(Request $request): JsonResponse
++    public function fetchCounselorGcMessages(Request $request): JsonResponse
++    {
++        $user = $request->user();
++        $membership = $user?->primaryMembership;
++
++        abort_unless(
++            $user?->canCoordinateGuidance() && $membership !== null,
++            403,
++            'Counselors Private GC is restricted to the campus Club Adviser and Guidance Counselors.',
++        );
++
++        $afterId = max(0, (int) $request->query('after_id', 0));
++        $messages = CounselorGcMessage::query()
++            ->with('sender:id,name')
++            ->where('campus_id', $membership->campus_id)
++            ->when($afterId > 0, fn ($q) => $q->where('id', '>', $afterId))
++            ->orderBy('id')
++            ->limit(100)
++            ->get()
++            ->map(fn (CounselorGcMessage $msg) => [
++                'id' => $msg->id,
++                'sender_user_id' => $msg->sender_user_id,
++                'sender_name' => $msg->sender?->name ?? 'Guidance Counselor',
++                'sender' => $msg->sender ? ['id' => $msg->sender->id, 'name' => $msg->sender->name] : null,
++                'sender_role' => $msg->sender_role,
++                'message_body' => $msg->message_body,
++                'created_at' => (string) $msg->created_at,
++            ])
++            ->values();
++
++        return response()->json(['messages' => $messages]);
++    }
++
++    public function sendCounselorGcMessage(Request $request, ProfanityFilterService $profanityFilter): JsonResponse
+     {
+         $user = $request->user();
+         $role = $user?->verifiedRole();
+@@ -491,6 +584,7 @@ public function sendCounselorGcMessage(Request $request): JsonResponse
+         );
+ 
+         $validated = $request->validate(['message_body' => ['required', 'string', 'max:2000']]);
++        $profanityFilter->assertClean((string) $validated['message_body'], 'message_body');
+ 
+         $msg = CounselorGcMessage::create([
+             'campus_id' => $membership->campus_id,
+@@ -500,6 +594,7 @@ public function sendCounselorGcMessage(Request $request): JsonResponse
+         ]);
+ 
+         $msg->load('sender:id,name');
++        CounselorGcMessageSent::dispatch((int) $membership->campus_id, $msg);
+ 
+         return response()->json([
+             'status' => 'sent',
+@@ -517,4 +612,100 @@ public function sendCounselorGcMessage(Request $request): JsonResponse
+             ],
+         ], 201);
+     }
++
++    public function fetchCounselorDmMessages(Request $request, \App\Models\User $peerUser): JsonResponse
++    {
++        $user = $request->user();
++        $membership = $user?->primaryMembership;
++        $peerMembership = $peerUser->primaryMembership;
++
++        abort_unless(
++            $user?->canCoordinateGuidance()
++            && $membership !== null
++            && $peerUser->canCoordinateGuidance()
++            && $peerMembership !== null
++            && $peerMembership->campus_id === $membership->campus_id
++            && $peerUser->id !== $user->id,
++            403,
++            'Direct Counselor Chat is restricted to verified Guidance Counselors and the Club Adviser of the same campus.',
++        );
++
++        $threadKey = CounselorDirectMessage::makeThreadKey($user->id, $peerUser->id);
++        $afterId = max(0, (int) $request->query('after_id', 0));
++
++        $messages = CounselorDirectMessage::query()
++            ->with('sender:id,name')
++            ->where('campus_id', $membership->campus_id)
++            ->where('thread_key', $threadKey)
++            ->when($afterId > 0, fn ($q) => $q->where('id', '>', $afterId))
++            ->orderBy('id')
++            ->limit(100)
++            ->get()
++            ->map(fn (CounselorDirectMessage $msg) => [
++                'id' => $msg->id,
++                'thread_key' => $msg->thread_key,
++                'sender_user_id' => $msg->sender_user_id,
++                'recipient_user_id' => $msg->recipient_user_id,
++                'sender_name' => $msg->sender?->name ?? 'Guidance Counselor',
++                'sender' => $msg->sender ? ['id' => $msg->sender->id, 'name' => $msg->sender->name] : null,
++                'sender_role' => $msg->sender_role,
++                'message_body' => $msg->message_body,
++                'created_at' => (string) $msg->created_at,
++            ])
++            ->values();
++
++        return response()->json(['thread_key' => $threadKey, 'messages' => $messages]);
++    }
++
++    public function sendCounselorDmMessage(Request $request, \App\Models\User $peerUser, ProfanityFilterService $profanityFilter): JsonResponse
++    {
++        $user = $request->user();
++        $role = $user?->verifiedRole();
++        $membership = $user?->primaryMembership;
++        $peerMembership = $peerUser->primaryMembership;
++
++        abort_unless(
++            $user?->canCoordinateGuidance()
++            && $membership !== null
++            && $peerUser->canCoordinateGuidance()
++            && $peerMembership !== null
++            && $peerMembership->campus_id === $membership->campus_id
++            && $peerUser->id !== $user->id,
++            403,
++            'Direct Counselor Chat is restricted to verified Guidance Counselors and the Club Adviser of the same campus.',
++        );
++
++        $validated = $request->validate(['message_body' => ['required', 'string', 'max:2000']]);
++        $profanityFilter->assertClean((string) $validated['message_body'], 'message_body');
++
++        $threadKey = CounselorDirectMessage::makeThreadKey($user->id, $peerUser->id);
++
++        $msg = CounselorDirectMessage::create([
++            'campus_id' => $membership->campus_id,
++            'thread_key' => $threadKey,
++            'sender_user_id' => $user->id,
++            'recipient_user_id' => $peerUser->id,
++            'sender_role' => $role?->value ?? 'guidance_counselor',
++            'message_body' => trim($validated['message_body']),
++        ]);
++
++        $msg->load('sender:id,name');
++        CounselorDmMessageSent::dispatch($msg);
++
++        return response()->json([
++            'status' => 'sent',
++            'thread_key' => $threadKey,
++            'message' => [
++                'id' => $msg->id,
++                'thread_key' => $msg->thread_key,
++                'sender_user_id' => $msg->sender_user_id,
++                'recipient_user_id' => $msg->recipient_user_id,
++                'sender_name' => $msg->sender?->name ?? $user->name,
++                'sender' => ['id' => $user->id, 'name' => $msg->sender?->name ?? $user->name],
++                'sender_role' => $msg->sender_role,
++                'message_body' => $msg->message_body,
++                'created_at' => (string) $msg->created_at,
++            ],
++        ], 201);
++    }
+ }
+diff --git a/app/Http/Controllers/CpfV4Controller.php b/app/Http/Controllers/CpfV4Controller.php
+index bc8c366..1ca361f 100644
+--- a/app/Http/Controllers/CpfV4Controller.php
++++ b/app/Http/Controllers/CpfV4Controller.php
+@@ -1349,6 +1349,8 @@ public function storeQuote(Request $request): JsonResponse
+             'mood_tag' => ['nullable', 'string', 'max:40'],
+         ]);
+ 
++        app(\App\Services\ProfanityFilterService::class)->assertClean((string) $validated['quote_text'], 'quote_text');
++
+         $quote = PeerQuote::create([
+             'campus_id' => $membership->campus_id,
+             'submitted_by_user_id' => $user->id,
+diff --git a/app/Http/Controllers/EventActivityController.php b/app/Http/Controllers/EventActivityController.php
+index b6f1c2f..2835538 100644
+--- a/app/Http/Controllers/EventActivityController.php
++++ b/app/Http/Controllers/EventActivityController.php
+@@ -822,6 +822,8 @@ public function storeReflection(Request $request, CampusEvent $event): JsonRespo
+             'unlock_at' => ['required', 'date', 'after:now'],
+         ]);
+ 
++        app(\App\Services\ProfanityFilterService::class)->assertClean((string) ($validated['reflection_message'] ?? ''), 'reflection_message');
++
+         $capsuleTitle = filled($validated['title'] ?? null)
+             ? trim((string) $validated['title'])
+             : Str::limit("Reflection: {$event->title}", 160, '');
+diff --git a/app/Http/Controllers/Membership/CampusMembershipController.php b/app/Http/Controllers/Membership/CampusMembershipController.php
+index d0d618d..f1ec90e 100644
+--- a/app/Http/Controllers/Membership/CampusMembershipController.php
++++ b/app/Http/Controllers/Membership/CampusMembershipController.php
+@@ -13,6 +13,7 @@
+ use App\Http\Requests\Membership\SubmitMembershipApplicationRequest;
+ use App\Models\Campus;
+ use App\Models\CampusMembership;
++use App\Models\DuesAuditLog;
+ use App\Models\MemberInfoChangeRequest;
+ use App\Models\User;
+ use App\Services\ClubTenureService;
+@@ -320,11 +321,107 @@ public function toggleDues(Request $request, CampusMembership $membership, Toggl
+         $actor = $this->resolveActor($request);
+         abort_if(! $actor, 401);
+         Gate::forUser($actor)->authorize('confirmDues', $membership);
+-        $action->toggleDues($actor, $membership);
++
++        $validated = $request->validate([
++            'reason' => ['nullable', 'string', 'max:255'],
++            'payment_submission_id' => ['nullable', 'integer', 'exists:payment_submissions,id'],
++        ]);
++
++        $action->toggleDues(
++            $actor,
++            $membership,
++            isset($validated['reason']) ? trim((string) $validated['reason']) : null,
++            isset($validated['payment_submission_id']) ? (int) $validated['payment_submission_id'] : null,
++        );
+ 
+         return back(fallback: route('membership.index'));
+     }
+ 
++    /**
++     * Adviser-only Conflict Freeze failsafe: suspend or restore an officer's write privileges
++     * and immediately revoke their Sanctum mobile tokens on suspension.
++     */
++    public function toggleOfficerSuspension(Request $request, CampusMembership $membership): JsonResponse|RedirectResponse
++    {
++        $actor = $this->resolveActor($request);
++        abort_if(! $actor, 401);
++
++        abort_unless(
++            $actor->isClubAdviser() && $actor->primaryMembership?->campus_id === $membership->campus_id,
++            403,
++            'Only the campus Club Adviser may suspend or restore officer privileges.',
++        );
++
++        abort_if(
++            in_array($membership->role, [CpfRole::Adviser, CpfRole::GuidanceCounselor, CpfRole::Member], true),
++            422,
++            'Privilege suspension applies only to elected student officers.',
++        );
++
++        $validated = $request->validate([
++            'suspend' => ['required', 'boolean'],
++            'reason' => ['nullable', 'string', 'max:255'],
++        ]);
++
++        $suspend = (bool) $validated['suspend'];
++
++        $membership->update([
++            'privileges_suspended_at' => $suspend ? now() : null,
++            'suspension_reason' => $suspend ? trim((string) ($validated['reason'] ?? 'Suspended by Club Adviser for governance review.')) : null,
++            'suspended_by' => $suspend ? $actor->id : null,
++        ]);
++
++        if ($suspend) {
++            $membership->user?->tokens()->delete();
++        }
++
++        if ($request->expectsJson()) {
++            return response()->json([
++                'status' => $suspend ? 'suspended' : 'restored',
++                'privileges_suspended_at' => $membership->fresh()?->privileges_suspended_at?->toIso8601String(),
++                'suspension_reason' => $membership->fresh()?->suspension_reason,
++            ]);
++        }
++
++        return back(fallback: route('membership.index'));
++    }
++
++    /**
++     * Read-only immutable financial dues audit trail for Auditor & Club Adviser.
++     */
++    public function duesAuditLogs(Request $request): JsonResponse
++    {
++        $actor = $this->resolveActor($request);
++        abort_if(! $actor, 401);
++        $membership = $actor->primaryMembership;
++
++        abort_unless(
++            $actor->canAuditFinances() && $membership !== null,
++            403,
++            'Dues audit logs are restricted to the Club Adviser and Auditor.',
++        );
++
++        $logs = DuesAuditLog::query()
++            ->with(['actor:id,name', 'target:id,name'])
++            ->where('campus_id', $membership->campus_id)
++            ->orderByDesc('id')
++            ->limit(100)
++            ->get()
++            ->map(fn (DuesAuditLog $log) => [
++                'id' => $log->id,
++                'actor_name' => $log->actor?->name ?? 'Officer',
++                'target_name' => $log->target?->name ?? 'Member',
++                'old_status' => $log->old_status,
++                'new_status' => $log->new_status,
++                'payment_submission_id' => $log->payment_submission_id,
++                'reason' => $log->reason,
++                'created_at' => $log->created_at?->toDateTimeString(),
++            ])
++            ->values();
++
++        return response()->json(['logs' => $logs]);
++    }
++
+     public function updateRole(Request $request, CampusMembership $membership): RedirectResponse
+     {
+         $actor = $this->resolveActor($request);
+diff --git a/app/Http/Controllers/OfficersChatController.php b/app/Http/Controllers/OfficersChatController.php
+index f91dc83..b0f4ee0 100644
+--- a/app/Http/Controllers/OfficersChatController.php
++++ b/app/Http/Controllers/OfficersChatController.php
+@@ -82,7 +82,28 @@ public function index(Request $request): Response
+             ->orderByDesc('archived_at')
+             ->get();
+ 
++        $counselorPeers = collect();
++        if ($isClubAdviser) {
++            $counselorPeers = \App\Models\CampusMembership::query()
++                ->with('user:id,name')
++                ->where('campus_id', $campusId)
++                ->where('status', \App\Enums\MembershipStatus::Approved->value)
++                ->whereIn('role', [\App\Enums\CpfRole::Adviser->value, \App\Enums\CpfRole::GuidanceCounselor->value])
++                ->where('user_id', '!=', $user->id)
++                ->alphabetical()
++                ->get()
++                ->map(fn ($cm) => [
++                    'user_id' => $cm->user_id,
++                    'name' => $cm->user?->name ?? $cm->full_name_last_first_mi,
++                    'role' => $cm->role->value,
++                    'role_label' => $cm->role->label(),
++                ])
++                ->values();
++        }
++
+         return Inertia::render('officers-chat/Index', [
++            'counselorPeers' => $counselorPeers,
++            'officersGcPaused' => (bool) config('cpf.features.officers_gc_paused', false),
+             'campusName' => $membership->campus?->name ?? 'CHMSU Alijis Campus',
+             'isClubAdviser' => $isClubAdviser,
+             'officerChannel' => $officerChannel,
+diff --git a/app/Http/Controllers/Prototype/DemoBotController.php b/app/Http/Controllers/Prototype/DemoBotController.php
+new file mode 100644
+index 0000000..8d7b338
+--- /dev/null
++++ b/app/Http/Controllers/Prototype/DemoBotController.php
+@@ -0,0 +1,229 @@
++<?php
++
++namespace App\Http\Controllers\Prototype;
++
++use App\Enums\CpfRole;
++use App\Enums\MembershipStatus;
++use App\Http\Controllers\Controller;
++use App\Models\Campus;
++use App\Models\CampusMembership;
++use App\Models\CounselorGcMessage;
++use App\Models\OfficerGcChannel;
++use App\Models\OfficerGcMessage;
++use App\Services\ProfanityFilterService;
++use Illuminate\Http\JsonResponse;
++use Illuminate\Http\Request;
++use Illuminate\Support\Facades\Cache;
++use Inertia\Inertia;
++use Inertia\Response;
++
++/**
++ * Dev-only Bot Simulator for live demonstrations of GC messaging + profanity filter,
++ * parliamentary elections, and deferred awarding previews.
++ * Strictly unreachable when app()->isProduction() or cpf.prototype.enabled is false.
++ */
++class DemoBotController extends Controller
++{
++    private const DEMO_TAG = '[DEMO-BOT]';
++
++    private function guardPrototype(): void
++    {
++        abort_if(
++            app()->isProduction() || ! config('cpf.prototype.enabled'),
++            404,
++            'Prototype demo bots are disabled in production.',
++        );
++    }
++
++    public function index(Request $request): Response
++    {
++        $this->guardPrototype();
++
++        $campus = $request->user()?->primaryMembership?->campus
++            ?? Campus::query()->where('is_active', true)->first();
++
++        $demoLog = Cache::get($this->cacheKey($campus?->id ?? 0), [
++            'gc' => [],
++            'election' => null,
++            'awarding' => null,
++        ]);
++
++        return Inertia::render('prototype/DemoBots', [
++            'campusName' => $campus?->name ?? 'CHMSU Alijis Campus',
++            'demoLog' => $demoLog,
++        ]);
++    }
++
++    public function runGcBot(Request $request, ProfanityFilterService $profanityFilter): JsonResponse
++    {
++        $this->guardPrototype();
++
++        $user = $request->user();
++        $campusId = $user?->primaryMembership?->campus_id
++            ?? Campus::query()->where('is_active', true)->value('id');
++
++        abort_if(! $campusId, 422, 'No active campus available for GC bot simulation.');
++
++        $script = [
++            ['role' => 'adviser', 'label' => 'Bot Adviser', 'text' => self::DEMO_TAG.' Good morning team! Please finalize the CHMSU Alijis General Assembly QR checklist.'],
++            ['role' => 'president', 'label' => 'Bot President', 'text' => self::DEMO_TAG.' Copy Doc! Sergeant-at-Arms and Secretary are testing the 2-stage QR scanner now.'],
++            ['role' => 'member', 'label' => 'Bot Troll Test', 'text' => self::DEMO_TAG.' Testing multilingual filter: yawa gago putangina!'],
++            ['role' => 'guidance_counselor', 'label' => 'Bot Counselor', 'text' => self::DEMO_TAG.' Reminder: Testing Room 09:00-11:00 is reserved for confidential referrals.'],
++        ];
++
++        $results = [];
++        $channel = OfficerGcChannel::query()
++            ->where('campus_id', $campusId)
++            ->where('is_active', true)
++            ->latest('id')
++            ->first();
++
++        foreach ($script as $step) {
++            $blocked = $profanityFilter->containsProfanity($step['text']);
++            if ($blocked) {
++                $results[] = [
++                    'actor' => $step['label'],
++                    'text' => $step['text'],
++                    'status' => 'blocked_by_profanity_filter',
++                    'note' => 'Blocked automatically by 5-language ProfanityFilterService (EN/ES/HIL/CEB/TL).',
++                ];
++                continue;
++            }
++
++            if ($step['role'] === 'guidance_counselor' && $user) {
++                CounselorGcMessage::create([
++                    'campus_id' => $campusId,
++                    'sender_user_id' => $user->id,
++                    'sender_role' => CpfRole::GuidanceCounselor->value,
++                    'message_body' => $step['text'],
++                ]);
++            } elseif ($channel && $user) {
++                OfficerGcMessage::create([
++                    'channel_id' => $channel->id,
++                    'sender_user_id' => $user->id,
++                    'sender_role' => $step['role'],
++                    'message_body' => $step['text'],
++                ]);
++            }
++
++            $results[] = [
++                'actor' => $step['label'],
++                'text' => $step['text'],
++                'status' => 'delivered',
++                'note' => $step['role'] === 'guidance_counselor'
++                    ? 'Delivered to Main Counselors GC'
++                    : 'Delivered to Active Officers GC',
++            ];
++        }
++
++        $state = Cache::get($this->cacheKey($campusId), []);
++        $state['gc'] = $results;
++        Cache::put($this->cacheKey($campusId), $state, now()->addHours(4));
++
++        return response()->json(['status' => 'ok', 'results' => $results]);
++    }
++
++    public function runElectionBot(Request $request): JsonResponse
++    {
++        $this->guardPrototype();
++
++        $campusId = $request->user()?->primaryMembership?->campus_id
++            ?? Campus::query()->where('is_active', true)->value('id')
++            ?? 0;
++
++        $simulation = [
++            'title' => self::DEMO_TAG.' Simulated General Assembly Election (16 Bot Voters)',
++            'rounds' => [
++                [
++                    'position' => 'President',
++                    'round' => 1,
++                    'tallies' => ['Bot Candidate A' => 8, 'Bot Candidate B' => 8],
++                    'outcome' => 'Tie detected (8–8) → Automatic Runoff Triggered',
++                ],
++                [
++                    'position' => 'President (Runoff)',
++                    'round' => 2,
++                    'tallies' => ['Bot Candidate A' => 10, 'Bot Candidate B' => 6],
++                    'outcome' => 'Elected: Bot Candidate A → Auto Role Promotion & Winner Lock Active',
++                ],
++                [
++                    'position' => 'Vice President',
++                    'round' => 1,
++                    'tallies' => ['Bot Candidate B' => 11, 'Bot Candidate C' => 5],
++                    'outcome' => 'Elected: Bot Candidate B (Candidate A locked out as prior seat winner)',
++                ],
++            ],
++            'ephemeral_chat_purged' => true,
++            'simulated_at' => now()->toDateTimeString(),
++        ];
++
++        $state = Cache::get($this->cacheKey($campusId), []);
++        $state['election'] = $simulation;
++        Cache::put($this->cacheKey($campusId), $state, now()->addHours(4));
++
++        return response()->json(['status' => 'ok', 'simulation' => $simulation]);
++    }
++
++    public function runAwardingBot(Request $request): JsonResponse
++    {
++        $this->guardPrototype();
++
++        $campusId = $request->user()?->primaryMembership?->campus_id
++            ?? Campus::query()->where('is_active', true)->value('id')
++            ?? 0;
++
++        $preview = [
++            'badge' => 'PROTOTYPE / DEFERRED PREVIEW',
++            'notice' => 'Awards & Digital Certificates are intentionally deferred from the active CHMSU Alijis pilot and shown strictly for prototype walkthroughs.',
++            'sample_awards' => [
++                [
++                    'recipient' => 'Demo Peer Facilitator',
++                    'award' => 'Peer Support Excellence Badge',
++                    'verification_code' => 'PROTO-CPF-'.strtoupper(substr(md5((string) now()), 0, 8)),
++                    'status' => 'Simulated Prototype Preview Only',
++                ],
++                [
++                    'recipient' => 'Demo Outgoing Secretary',
++                    'award' => 'Certificate of Chapter Service (AY 2026–2027)',
++                    'verification_code' => 'PROTO-CPF-'.strtoupper(substr(md5((string) (now()->timestamp + 1)), 0, 8)),
++                    'status' => 'Simulated Prototype Preview Only',
++                ],
++            ],
++            'simulated_at' => now()->toDateTimeString(),
++        ];
++
++        $state = Cache::get($this->cacheKey($campusId), []);
++        $state['awarding'] = $preview;
++        Cache::put($this->cacheKey($campusId), $state, now()->addHours(4));
++
++        return response()->json(['status' => 'ok', 'preview' => $preview]);
++    }
++
++    public function reset(Request $request): JsonResponse
++    {
++        $this->guardPrototype();
++
++        $campusId = $request->user()?->primaryMembership?->campus_id
++            ?? Campus::query()->where('is_active', true)->value('id')
++            ?? 0;
++
++        $deletedOfficer = OfficerGcMessage::query()
++            ->where('message_body', 'like', self::DEMO_TAG.'%')
++            ->delete();
++        $deletedCounselor = CounselorGcMessage::query()
++            ->where('message_body', 'like', self::DEMO_TAG.'%')
++            ->delete();
++
++        Cache::forget($this->cacheKey($campusId));
++
++        return response()->json([
++            'status' => 'reset',
++            'deleted_messages' => $deletedOfficer + $deletedCounselor,
++        ]);
++    }
++
++    private function cacheKey(int $campusId): string
++    {
++        return "cpf:prototype:demo_bots:{$campusId}";
++    }
++}
+diff --git a/app/Http/Controllers/Settings/ProfileController.php b/app/Http/Controllers/Settings/ProfileController.php
+index 002e62b..dd8c8e6 100644
+--- a/app/Http/Controllers/Settings/ProfileController.php
++++ b/app/Http/Controllers/Settings/ProfileController.php
+@@ -148,6 +148,28 @@ public function showPhoto(Request $request, User $targetUser): StreamedResponse
+     /**
+      * Account deletion is disabled to protect CPF records and governance continuity.
+      */
++    public function updateCampusSettings(Request $request): RedirectResponse
++    {
++        $user = $request->user();
++        $membership = $user?->primaryMembership;
++
++        abort_unless(
++            $user?->isClubAdviser() && $membership !== null,
++            403,
++            'Only the campus Club Adviser can change chapter tour settings.',
++        );
++
++        $validated = $request->validate([
++            'mandatory_tour_enabled' => ['required', 'boolean'],
++        ]);
++
++        \App\Models\Campus::query()
++            ->whereKey($membership->campus_id)
++            ->update(['mandatory_tour_enabled' => (bool) $validated['mandatory_tour_enabled']]);
++
++        return back()->with('status', 'campus-settings-updated');
++    }
++
+     public function destroy(Request $request): RedirectResponse
+     {
+         abort(403, 'Account deletion is currently disabled to protect CPF chapter records and governance continuity.');
+diff --git a/app/Http/Middleware/HandleInertiaRequests.php b/app/Http/Middleware/HandleInertiaRequests.php
+index f762285..a53d2ee 100644
+--- a/app/Http/Middleware/HandleInertiaRequests.php
++++ b/app/Http/Middleware/HandleInertiaRequests.php
+@@ -59,10 +59,24 @@ public function share(Request $request): array
+         }
+         $needsAdviserSetup = FirstBootSetupController::needsAdviserSetup();
+ 
++        $mandatoryTourEnabled = true;
++        try {
++            $campusForTour = $membership?->campus
++                ?? Campus::query()->where('is_active', true)->first(['id', 'mandatory_tour_enabled']);
++            if ($campusForTour !== null && $campusForTour->mandatory_tour_enabled !== null) {
++                $mandatoryTourEnabled = (bool) $campusForTour->mandatory_tour_enabled;
++            }
++        } catch (\Throwable) {
++            $mandatoryTourEnabled = true;
++        }
++
+         $systemBootstrap = [
+             'needsAdviserSetup' => $needsAdviserSetup,
+             'activeCampus' => null,
+             'campuses' => [],
++            'mandatoryTourEnabled' => $mandatoryTourEnabled,
++            'exemptFromMandatoryTour' => $user?->verifiedRole() === CpfRole::GuidanceCounselor,
++            'officersGcPaused' => (bool) config('cpf.features.officers_gc_paused', false),
+         ];
+ 
+         if ($needsAdviserSetup) {
+@@ -211,6 +225,7 @@ public function share(Request $request): array
+                 'user' => $user,
+                 'membership' => $membership,
+                 'role' => $user?->verifiedRole()?->value,
++                'privilegesSuspended' => $user?->hasSuspendedOfficerPrivileges() ?? false,
+                 'formerRole' => $user?->formerRole()?->value,
+                 'isAlumni' => (bool) ($user?->isAlumni() ?? false),
+                 'roleLabel' => $user?->verifiedRole()?->label() ?? $user?->formerRoleLabel() ?? 'Ordinary Account',
+diff --git a/app/Models/Campus.php b/app/Models/Campus.php
+index f9d162e..bf71fa1 100644
+--- a/app/Models/Campus.php
++++ b/app/Models/Campus.php
+@@ -15,6 +15,7 @@
+     'adviser_name',
+     'gc_group_name',
+     'is_active',
++    'mandatory_tour_enabled',
+ ])]
+ class Campus extends Model
+ {
+@@ -22,6 +23,7 @@ protected function casts(): array
+     {
+         return [
+             'is_active' => 'boolean',
++            'mandatory_tour_enabled' => 'boolean',
+         ];
+     }
+ 
+diff --git a/app/Models/CampusMembership.php b/app/Models/CampusMembership.php
+index ab4e39f..74724ec 100644
+--- a/app/Models/CampusMembership.php
++++ b/app/Models/CampusMembership.php
+@@ -41,6 +41,9 @@
+     'has_paid_dues',
+     'dues_confirmed_by',
+     'dues_confirmed_at',
++    'privileges_suspended_at',
++    'suspension_reason',
++    'suspended_by',
+     'alumni_since',
+     'alumni_reason',
+     'alumni_transitioned_by',
+@@ -59,6 +62,7 @@ protected function casts(): array
+             'gc_confirmed_at' => 'datetime',
+             'has_paid_dues' => 'boolean',
+             'dues_confirmed_at' => 'datetime',
++            'privileges_suspended_at' => 'datetime',
+             'alumni_since' => 'datetime',
+         ];
+     }
+@@ -90,6 +94,11 @@ public static function formatCourseYearSection(string $course, string $yearLevel
+         return implode(' ', $parts);
+     }
+ 
++    public function isPrivilegesSuspended(): bool
++    {
++        return $this->privileges_suspended_at !== null;
++    }
++
+     public function user(): BelongsTo
+     {
+         return $this->belongsTo(User::class);
+diff --git a/app/Models/CounselorDirectMessage.php b/app/Models/CounselorDirectMessage.php
+new file mode 100644
+index 0000000..a4c8771
+--- /dev/null
++++ b/app/Models/CounselorDirectMessage.php
+@@ -0,0 +1,41 @@
++<?php
++
++namespace App\Models;
++
++use Illuminate\Database\Eloquent\Attributes\Fillable;
++use Illuminate\Database\Eloquent\Model;
++use Illuminate\Database\Eloquent\Relations\BelongsTo;
++
++#[Fillable([
++    'campus_id',
++    'thread_key',
++    'sender_user_id',
++    'recipient_user_id',
++    'sender_role',
++    'message_body',
++])]
++class CounselorDirectMessage extends Model
++{
++    public static function makeThreadKey(int $userIdA, int $userIdB): string
++    {
++        $low = min($userIdA, $userIdB);
++        $high = max($userIdA, $userIdB);
++
++        return "{$low}-{$high}";
++    }
++
++    public function campus(): BelongsTo
++    {
++        return $this->belongsTo(Campus::class);
++    }
++
++    public function sender(): BelongsTo
++    {
++        return $this->belongsTo(User::class, 'sender_user_id');
++    }
++
++    public function recipient(): BelongsTo
++    {
++        return $this->belongsTo(User::class, 'recipient_user_id');
++    }
++}
+diff --git a/app/Models/DuesAuditLog.php b/app/Models/DuesAuditLog.php
+new file mode 100644
+index 0000000..0090fbe
+--- /dev/null
++++ b/app/Models/DuesAuditLog.php
+@@ -0,0 +1,52 @@
++<?php
++
++namespace App\Models;
++
++use Illuminate\Database\Eloquent\Attributes\Fillable;
++use Illuminate\Database\Eloquent\Model;
++use Illuminate\Database\Eloquent\Relations\BelongsTo;
++
++#[Fillable([
++    'campus_id',
++    'actor_user_id',
++    'target_user_id',
++    'campus_membership_id',
++    'payment_submission_id',
++    'old_status',
++    'new_status',
++    'reason',
++    'created_at',
++])]
++class DuesAuditLog extends Model
++{
++    public $timestamps = false;
++
++    protected function casts(): array
++    {
++        return [
++            'old_status' => 'boolean',
++            'new_status' => 'boolean',
++            'created_at' => 'datetime',
++        ];
++    }
++
++    public function actor(): BelongsTo
++    {
++        return $this->belongsTo(User::class, 'actor_user_id');
++    }
++
++    public function target(): BelongsTo
++    {
++        return $this->belongsTo(User::class, 'target_user_id');
++    }
++
++    public function membership(): BelongsTo
++    {
++        return $this->belongsTo(CampusMembership::class, 'campus_membership_id');
++    }
++
++    public function paymentSubmission(): BelongsTo
++    {
++        return $this->belongsTo(PaymentSubmission::class, 'payment_submission_id');
++    }
++}
+diff --git a/app/Models/User.php b/app/Models/User.php
+index fa5d5ef..12c434b 100644
+--- a/app/Models/User.php
++++ b/app/Models/User.php
+@@ -120,8 +120,21 @@ public function verifiedRole(): ?CpfRole
+     /**
+      * Check if the user is an approved Adviser, President, or Secretary who can add/approve members.
+      */
++    public function hasSuspendedOfficerPrivileges(): bool
++    {
++        if ($this->isClubAdviser()) {
++            return false;
++        }
++
++        return $this->primaryMembership?->isPrivilegesSuspended() ?? false;
++    }
++
+     public function canManageCampusMembers(): bool
+     {
++        if ($this->hasSuspendedOfficerPrivileges()) {
++            return false;
++        }
++
+         return $this->verifiedRole()?->canApproveMembers() ?? false;
+     }
+ 
+@@ -130,11 +143,19 @@ public function canManageCampusMembers(): bool
+      */
+     public function canIssuePasskeys(): bool
+     {
++        if ($this->hasSuspendedOfficerPrivileges()) {
++            return false;
++        }
++
+         return $this->verifiedRole()?->canIssuePasskeys() ?? false;
+     }
+ 
+     public function canConfirmMessengerGc(): bool
+     {
++        if ($this->hasSuspendedOfficerPrivileges()) {
++            return false;
++        }
++
+         return $this->verifiedRole()?->canConfirmMessengerGc() ?? false;
+     }
+ 
+@@ -143,6 +164,10 @@ public function canConfirmMessengerGc(): bool
+      */
+     public function canValidatePayments(): bool
+     {
++        if ($this->hasSuspendedOfficerPrivileges()) {
++            return false;
++        }
++
+         return $this->verifiedRole()?->canValidatePayments() ?? false;
+     }
+ 
+diff --git a/app/Services/ProfanityFilterService.php b/app/Services/ProfanityFilterService.php
+new file mode 100644
+index 0000000..dfdd77d
+--- /dev/null
++++ b/app/Services/ProfanityFilterService.php
+@@ -0,0 +1,150 @@
++<?php
++
++namespace App\Services;
++
++use Illuminate\Validation\ValidationException;
++
++/**
++ * Lightweight, low-end-server-friendly multilingual profanity filter covering
++ * English, Spanish, Hiligaynon (Ilonggo), Cebuano (Bisaya), and Tagalog (Filipino).
++ * Normalizes case, diacritics, leetspeak, and spaced-out bypass attempts.
++ */
++class ProfanityFilterService
++{
++    /**
++     * Canonical normalized phrases and tokens blocked across all 5 languages.
++     *
++     * @var array<int, string>
++     */
++    private const BLOCKED_TERMS = [
++        // English
++        'fuck', 'fucker', 'fucking', 'motherfucker', 'shit', 'bullshit',
++        'bitch', 'bastard', 'asshole', 'dickhead', 'cunt', 'whore', 'slut',
++        'dumbass', 'jackass', 'stfu', 'gtfo',
++
++        // Spanish
++        'puta', 'puto', 'putamadre', 'pendejo', 'pendeja', 'cabron', 'chinga',
++        'chingada', 'chingar', 'mierda', 'cojones', 'culero', 'maricon',
++        'gilipollas', 'joder', 'verga', 'pinche', 'carajo', 'concha', 'malparido',
++
++        // Tagalog / Filipino
++        'putangina', 'putanginamo', 'tangina', 'tanginamo', 'punyeta', 'pakyu',
++        'gago', 'gaga', 'ulol', 'tarantado', 'tarantada', 'leche', 'letse',
++        'hayopka', 'bobo', 'tanga', 'inutil', 'kupal', 'hindot', 'kantot',
++        'jakol', 'pepe', 'tite', 'bayag', 'puki', 'puke', 'bwisit', 'hudas',
++
++        // Hiligaynon / Ilonggo
++        'yudiputa', 'yodiputa', 'diputa', 'linti', 'lintian', 'bilat', 'bilatibay',
++        'buray', 'burayni', 'buto', 'piste', 'pisti', 'pistingyawa', 'bwesit',
++        'udiputa', 'tunto', 'bigaon', 'iyot', 'kinanglan', 'bastoska',
++
++        // Cebuano / Bisaya
++        'yawa', 'yawaa', 'atay', 'ataya', 'piste', 'pisti', 'pistengyawa',
++        'giatay', 'buang', 'boang', 'animala', 'amaw', 'kayata', 'kayat',
++        'oten', 'utin', 'bisong', 'bilat', 'bogo', 'bugo', 'kolera', 'koleraha',
++        'hinampak', 'pakyu', 'lecheha',
++    ];
++
++    /**
++     * Terms that should match only as whole words (to prevent false positives
++     * like "assistant", "class", "hello", or "analysis").
++     *
++     * @var array<int, string>
++     */
++    private const WHOLE_WORD_ONLY = [
++        'ass', 'hell', 'crap', 'damn', 'buto', 'pepe', 'tite', 'oten', 'utin',
++        'atay', 'bobo', 'tanga', 'bogo', 'bugo', 'amaw', 'puto', 'puta',
++        'gago', 'gaga', 'ulol', 'puki', 'puke', 'iyot', 'leche', 'letse',
++        'linti', 'yawa', 'bilat', 'buray', 'piste', 'pisti', 'buang', 'boang',
++        'fuck', 'shit', 'cunt', 'slut', 'stfu', 'gtfo',
++    ];
++
++    public function normalize(string $text): string
++    {
++        $lower = mb_strtolower($text, 'UTF-8');
++
++        // Strip accents / diacritics
++        $transliterated = @iconv('UTF-8', 'ASCII//TRANSLIT//IGNORE', $lower);
++        if (is_string($transliterated) && $transliterated !== '') {
++            $lower = $transliterated;
++        }
++
++        // Decode common leetspeak substitutions
++        $decoded = strtr($lower, [
++            '@' => 'a',
++            '4' => 'a',
++            '3' => 'e',
++            '1' => 'i',
++            '!' => 'i',
++            '0' => 'o',
++            '$' => 's',
++            '5' => 's',
++            '7' => 't',
++            '+' => 't',
++        ]);
++
++        // Replace punctuation/symbols with spaces and collapse whitespace
++        $cleaned = (string) preg_replace('/[^a-z\s]+/', ' ', $decoded);
++
++        return trim((string) preg_replace('/\s+/', ' ', $cleaned));
++    }
++
++    /**
++     * Find the first matched restricted term (or null if clean).
++     */
++    public function detectRestrictedTerm(string $text): ?string
++    {
++        $normalized = $this->normalize($text);
++        if ($normalized === '') {
++            return null;
++        }
++
++        // Also build a collapsed version with repeated letters squeezed (e.g., "fuuuuck" -> "fuck", "y a w a" -> "yawa")
++        $squeezedWords = (string) preg_replace('/([a-z])\1{2,}/', '$1', $normalized);
++        $compact = str_replace(' ', '', $squeezedWords);
++
++        $wholeWordSet = array_flip(self::WHOLE_WORD_ONLY);
++
++        foreach (self::BLOCKED_TERMS as $term) {
++            // Check exact word boundary in both normalized and squeezed-repeat forms
++            if (
++                preg_match('/\b'.preg_quote($term, '/').'\b/', $normalized) === 1
++                || preg_match('/\b'.preg_quote($term, '/').'\b/', $squeezedWords) === 1
++            ) {
++                return $term;
++            }
++
++            // Check spaced-out or concatenated evasion for multi-char unambiguous terms (len >= 5 and not whole-word-only)
++            if (strlen($term) >= 5 && ! isset($wholeWordSet[$term]) && str_contains($compact, $term)) {
++                return $term;
++            }
++
++            // Catch single-letter spaced-out evasion (e.g. "f u c k", "y a w a", "g a g o")
++            if (strlen($term) >= 4) {
++                $spacedPattern = implode('\s+', str_split($term));
++                if (preg_match('/\b'.$spacedPattern.'\b/', $normalized) === 1) {
++                    return $term;
++                }
++            }
++        }
++
++        return null;
++    }
++
++    public function containsProfanity(string $text): bool
++    {
++        return $this->detectRestrictedTerm($text) !== null;
++    }
++
++    /**
++     * Throw a 422 ValidationException if restricted language is detected.
++     */
++    public function assertClean(string $text, string $field = 'message_body'): void
++    {
++        if ($this->containsProfanity($text)) {
++            throw ValidationException::withMessages([
++                $field => 'Message blocked: please keep campus communication respectful (restricted language detected across EN/ES/HIL/CEB/TL).',
++            ]);
++        }
++    }
++}
+diff --git a/bootstrap/app.php b/bootstrap/app.php
+index 847f017..f37b0d9 100644
+--- a/bootstrap/app.php
++++ b/bootstrap/app.php
+@@ -14,6 +14,7 @@
+         web: __DIR__.'/../routes/web.php',
+         api: __DIR__.'/../routes/api.php',
+         commands: __DIR__.'/../routes/console.php',
++        channels: __DIR__.'/../routes/channels.php',
+         health: '/up',
+     )
+ 
+diff --git a/config/cpf.php b/config/cpf.php
+index a1de9ef..7a68425 100644
+--- a/config/cpf.php
++++ b/config/cpf.php
+@@ -48,4 +48,8 @@
+ 
+     'archive_path' => env('CPF_ARCHIVE_HDD_PATH', storage_path('app/archives')),
+ 
++    'features' => [
++        'officers_gc_paused' => (bool) env('CPF_OFFICERS_GC_PAUSED', false),
++    ],
++
+ ];
+diff --git a/database/migrations/2026_11_26_000023_add_self_assessment_governance_and_counselor_dm.php b/database/migrations/2026_11_26_000023_add_self_assessment_governance_and_counselor_dm.php
+new file mode 100644
+index 0000000..d5e6a78
+--- /dev/null
++++ b/database/migrations/2026_11_26_000023_add_self_assessment_governance_and_counselor_dm.php
+@@ -0,0 +1,109 @@
++<?php
++
++use Illuminate\Database\Migrations\Migration;
++use Illuminate\Database\Schema\Blueprint;
++use Illuminate\Support\Facades\Schema;
++
++return new class extends Migration
++{
++    public function up(): void
++    {
++        Schema::table('campuses', function (Blueprint $table): void {
++            if (! Schema::hasColumn('campuses', 'mandatory_tour_enabled')) {
++                $table->boolean('mandatory_tour_enabled')->default(true)->after('is_active');
++            }
++        });
++
++        Schema::table('campus_memberships', function (Blueprint $table): void {
++            if (! Schema::hasColumn('campus_memberships', 'privileges_suspended_at')) {
++                $table->timestamp('privileges_suspended_at')->nullable()->after('dues_confirmed_at');
++            }
++            if (! Schema::hasColumn('campus_memberships', 'suspension_reason')) {
++                $table->string('suspension_reason', 255)->nullable()->after('privileges_suspended_at');
++            }
++            if (! Schema::hasColumn('campus_memberships', 'suspended_by')) {
++                $table->foreignId('suspended_by')->nullable()->after('suspension_reason')->constrained('users')->nullOnDelete();
++            }
++        });
++
++        if (! Schema::hasTable('dues_audit_logs')) {
++            Schema::create('dues_audit_logs', function (Blueprint $table): void {
++                $table->id();
++                $table->foreignId('campus_id')->constrained('campuses')->cascadeOnDelete();
++                $table->foreignId('actor_user_id')->constrained('users')->cascadeOnDelete();
++                $table->foreignId('target_user_id')->constrained('users')->cascadeOnDelete();
++                $table->foreignId('campus_membership_id')->constrained('campus_memberships')->cascadeOnDelete();
++                $table->foreignId('payment_submission_id')->nullable()->constrained('payment_submissions')->nullOnDelete();
++                $table->boolean('old_status');
++                $table->boolean('new_status');
++                $table->string('reason', 255)->nullable();
++                $table->timestamp('created_at')->useCurrent();
++
++                $table->index(['campus_id', 'created_at']);
++            });
++        }
++
++        if (! Schema::hasTable('counselor_direct_messages')) {
++            Schema::create('counselor_direct_messages', function (Blueprint $table): void {
++                $table->id();
++                $table->foreignId('campus_id')->constrained('campuses')->cascadeOnDelete();
++                $table->string('thread_key', 64)->index();
++                $table->foreignId('sender_user_id')->constrained('users')->cascadeOnDelete();
++                $table->foreignId('recipient_user_id')->constrained('users')->cascadeOnDelete();
++                $table->string('sender_role', 40);
++                $table->text('message_body');
++                $table->timestamps();
++
++                $table->index(['campus_id', 'thread_key', 'created_at'], 'cdm_campus_thread_created_idx');
++            });
++        }
++
++        Schema::table('guidance_referrals', function (Blueprint $table): void {
++            if (! Schema::hasColumn('guidance_referrals', 'sla_alerted_at')) {
++                $table->timestamp('sla_alerted_at')->nullable()->after('counselor_confirmed_at');
++            }
++        });
++
++        Schema::table('campus_events', function (Blueprint $table): void {
++            if (! Schema::hasColumn('campus_events', 'reminder_sent_at')) {
++                $table->timestamp('reminder_sent_at')->nullable()->after('completed_at');
++            }
++        });
++    }
++
++    public function down(): void
++    {
++        Schema::table('campus_events', function (Blueprint $table): void {
++            if (Schema::hasColumn('campus_events', 'reminder_sent_at')) {
++                $table->dropColumn('reminder_sent_at');
++            }
++        });
++
++        Schema::table('guidance_referrals', function (Blueprint $table): void {
++            if (Schema::hasColumn('guidance_referrals', 'sla_alerted_at')) {
++                $table->dropColumn('sla_alerted_at');
++            }
++        });
++
++        Schema::dropIfExists('counselor_direct_messages');
++        Schema::dropIfExists('dues_audit_logs');
++
++        Schema::table('campus_memberships', function (Blueprint $table): void {
++            if (Schema::hasColumn('campus_memberships', 'suspended_by')) {
++                $table->dropConstrainedForeignId('suspended_by');
++            }
++            if (Schema::hasColumn('campus_memberships', 'suspension_reason')) {
++                $table->dropColumn('suspension_reason');
++            }
++            if (Schema::hasColumn('campus_memberships', 'privileges_suspended_at')) {
++                $table->dropColumn('privileges_suspended_at');
++            }
++        });
++
++        Schema::table('campuses', function (Blueprint $table): void {
++            if (Schema::hasColumn('campuses', 'mandatory_tour_enabled')) {
++                $table->dropColumn('mandatory_tour_enabled');
++            }
++        });
++    }
++};
+diff --git a/resources/css/cpf-soft-cream.css b/resources/css/cpf-soft-cream.css
+index 4377f11..0f4875c 100644
+--- a/resources/css/cpf-soft-cream.css
++++ b/resources/css/cpf-soft-cream.css
+@@ -704,3 +704,17 @@ @media (prefers-reduced-motion: reduce) {
+     transition-duration: 0.01ms !important;
+   }
+ }
++
++/* Balanced visual scale: keep body/chat legible and prevent oversized chrome */
++.cpf-soft-cream {
++  font-size: 14px;
++  line-height: 1.5;
++}
++.cpf-soft-cream .text-\[10px\] {
++  font-size: 0.72rem;
++  line-height: 1.35;
++}
++.cpf-soft-cream .text-\[11px\] {
++  font-size: 0.78rem;
++  line-height: 1.4;
++}
+diff --git a/resources/js/components/AppSidebarHeader.vue b/resources/js/components/AppSidebarHeader.vue
+index 44bb8b7..9173857 100644
+--- a/resources/js/components/AppSidebarHeader.vue
++++ b/resources/js/components/AppSidebarHeader.vue
+@@ -3,6 +3,9 @@ import { Link, router, usePage } from '@inertiajs/vue3';
+ import { Bell, Check, CheckCheck } from '@lucide/vue';
+ import { computed, ref } from 'vue';
+ import Breadcrumbs from '@/components/Breadcrumbs.vue';
++import UserMenuContent from '@/components/UserMenuContent.vue';
++import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
++import { useInitials } from '@/composables/useInitials';
+ import {
+     DropdownMenu,
+     DropdownMenuContent,
+@@ -27,6 +30,8 @@ const page = usePage<{
+ }>();
+ 
+ const isAuthenticated = computed(() => Boolean(page.props.auth?.user));
++const currentUser = computed(() => page.props.auth?.user);
++const { getInitials } = useInitials();
+ const canOpenEvents = computed(
+     () => ! page.props.auth?.isAlumni && page.props.auth?.role !== 'guidance_counselor',
+ );
+@@ -80,7 +85,8 @@ async function markAllRead() {
+             </template>
+         </div>
+ 
+-        <DropdownMenu v-if="isAuthenticated">
++        <div v-if="isAuthenticated" class="flex items-center gap-2">
++        <DropdownMenu>
+             <DropdownMenuTrigger as-child>
+                 <button
+                     type="button"
+@@ -198,5 +204,35 @@ async function markAllRead() {
+                 </div>
+             </DropdownMenuContent>
+         </DropdownMenu>
++
++        <DropdownMenu v-if="currentUser">
++            <DropdownMenuTrigger as-child>
++                <button
++                    type="button"
++                    class="inline-flex size-9 items-center justify-center overflow-hidden rounded-xl border border-border bg-card text-foreground shadow-xs transition hover:border-[#0384C5]/40 focus-visible:ring-2 focus-visible:ring-[#0384C5]/40 focus-visible:outline-none"
++                    :title="currentUser.name"
++                    aria-label="Account profile menu"
++                >
++                    <Avatar class="size-8 rounded-lg">
++                        <AvatarImage
++                            v-if="currentUser.avatar"
++                            :src="currentUser.avatar"
++                            :alt="currentUser.name"
++                        />
++                        <AvatarFallback class="rounded-lg bg-primary/15 text-xs font-bold text-primary">
++                            {{ getInitials(currentUser.name) }}
++                        </AvatarFallback>
++                    </Avatar>
++                </button>
++            </DropdownMenuTrigger>
++            <DropdownMenuContent
++                align="end"
++                :side-offset="8"
++                class="w-56 rounded-2xl border border-border bg-card p-1 shadow-lg"
++            >
++                <UserMenuContent :user="currentUser" />
++            </DropdownMenuContent>
++        </DropdownMenu>
++        </div>
+     </header>
+ </template>
+diff --git a/resources/js/components/chat/OfficersMessengerChat.vue b/resources/js/components/chat/OfficersMessengerChat.vue
+index cf6e96a..6b6135f 100644
+--- a/resources/js/components/chat/OfficersMessengerChat.vue
++++ b/resources/js/components/chat/OfficersMessengerChat.vue
+@@ -13,7 +13,7 @@ import {
+     Users,
+     X,
+ } from '@lucide/vue';
+-import { computed, nextTick, onMounted, ref, watch } from 'vue';
++import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
+ import { apiRequest } from '@/lib/csrfFetch';
+ 
+ export interface MessengerOfficerMessage {
+@@ -38,7 +38,15 @@ const props = withDefaults(
+         } | null;
+         initialMessages: MessengerOfficerMessage[];
+         counselorMessages?: MessengerOfficerMessage[];
++        counselorPeers?: Array<{
++            user_id: number;
++            name: string;
++            role: string;
++            role_label: string;
++        }>;
+         canAccessCounselorGc?: boolean;
++        hideOfficersGc?: boolean;
++        officersGcPaused?: boolean;
+         defaultThread?: 'officers' | 'counselors';
+         currentUserId?: number | null;
+         campusName?: string;
+@@ -47,7 +55,10 @@ const props = withDefaults(
+     }>(),
+     {
+         counselorMessages: () => [],
++        counselorPeers: () => [],
+         canAccessCounselorGc: false,
++        hideOfficersGc: false,
++        officersGcPaused: false,
+         defaultThread: 'officers',
+         currentUserId: null,
+         campusName: 'CHMSU Alijis Campus',
+@@ -64,9 +75,17 @@ const emit = defineEmits<{
+ 
+ const officerMsgs = ref<MessengerOfficerMessage[]>([...props.initialMessages]);
+ const counselorMsgs = ref<MessengerOfficerMessage[]>([...props.counselorMessages]);
+-const activeThread = ref<'officers' | 'counselors'>(
+-    props.defaultThread === 'counselors' && props.canAccessCounselorGc ? 'counselors' : 'officers',
++const dmMessagesByPeer = ref<Record<number, MessengerOfficerMessage[]>>({});
++const activeDmPeerId = ref<number | null>(null);
++const activeThread = ref<'officers' | 'counselors' | 'counselor_dm'>(
++    (props.hideOfficersGc || props.defaultThread === 'counselors') && props.canAccessCounselorGc
++        ? 'counselors'
++        : 'officers',
+ );
++const activeDmPeer = computed(
++    () => props.counselorPeers.find((p) => p.user_id === activeDmPeerId.value) ?? null,
++);
++let liveSyncTimer: ReturnType<typeof setInterval> | null = null;
+ const draft = ref('');
+ const sending = ref(false);
+ const errorText = ref<string | null>(null);
+@@ -148,9 +167,13 @@ watch(
+     },
+ );
+ 
+-const displayedMessages = computed(() =>
+-    activeThread.value === 'counselors' ? counselorMsgs.value : officerMsgs.value,
+-);
++const displayedMessages = computed(() => {
++    if (activeThread.value === 'counselors') return counselorMsgs.value;
++    if (activeThread.value === 'counselor_dm' && activeDmPeerId.value !== null) {
++        return dmMessagesByPeer.value[activeDmPeerId.value] ?? [];
++    }
++    return officerMsgs.value;
++});
+ 
+ const comingSoonCampuses = [
+     {
+@@ -218,19 +241,99 @@ function scrollToBottom() {
+     });
+ }
+ 
++function mergeMessages(target: MessengerOfficerMessage[], incoming: MessengerOfficerMessage[]) {
++    if (!incoming.length) return false;
++    const seen = new Set(target.map((m) => m.id));
++    let added = false;
++    for (const msg of incoming) {
++        if (!seen.has(msg.id)) {
++            target.push(msg);
++            seen.add(msg.id);
++            added = true;
++        }
++    }
++    return added;
++}
++
++async function syncActiveThreadMessages() {
++    if (typeof document !== 'undefined' && document.hidden) return;
++    if (activeThread.value === 'officers') {
++        if (props.hideOfficersGc || !props.channel?.id) return;
++        const afterId = officerMsgs.value.length ? officerMsgs.value[officerMsgs.value.length - 1].id : 0;
++        const { ok, data } = await apiRequest<{ messages?: MessengerOfficerMessage[] }>(
++            `/officers-gc/${props.channel.id}/messages?after_id=${afterId}`,
++            'GET',
++        );
++        if (ok && Array.isArray(data.messages) && mergeMessages(officerMsgs.value, data.messages)) {
++            scrollToBottom();
++        }
++    } else if (activeThread.value === 'counselors') {
++        if (!props.canAccessCounselorGc) return;
++        const afterId = counselorMsgs.value.length ? counselorMsgs.value[counselorMsgs.value.length - 1].id : 0;
++        const { ok, data } = await apiRequest<{ messages?: MessengerOfficerMessage[] }>(
++            `/counselors-gc/messages?after_id=${afterId}`,
++            'GET',
++        );
++        if (ok && Array.isArray(data.messages) && mergeMessages(counselorMsgs.value, data.messages)) {
++            scrollToBottom();
++        }
++    } else if (activeThread.value === 'counselor_dm' && activeDmPeerId.value !== null) {
++        const peerId = activeDmPeerId.value;
++        const currentList = dmMessagesByPeer.value[peerId] ?? [];
++        const afterId = currentList.length ? currentList[currentList.length - 1].id : 0;
++        const { ok, data } = await apiRequest<{ messages?: MessengerOfficerMessage[] }>(
++            `/counselors-dm/${peerId}/messages?after_id=${afterId}`,
++            'GET',
++        );
++        if (ok && Array.isArray(data.messages)) {
++            if (!dmMessagesByPeer.value[peerId]) dmMessagesByPeer.value[peerId] = [];
++            if (mergeMessages(dmMessagesByPeer.value[peerId], data.messages)) {
++                scrollToBottom();
++            }
++        }
++    }
++}
++
+ onMounted(() => {
+     scrollToBottom();
++    liveSyncTimer = setInterval(() => {
++        void syncActiveThreadMessages();
++    }, 2500);
++});
++
++onBeforeUnmount(() => {
++    if (liveSyncTimer) {
++        clearInterval(liveSyncTimer);
++        liveSyncTimer = null;
++    }
+ });
+ 
+ function switchThread(target: 'officers' | 'counselors') {
++    if (target === 'officers' && props.hideOfficersGc) {
++        return;
++    }
+     if (target === 'counselors' && !props.canAccessCounselorGc) {
+         selectComingSoon('Counselors Private GC (Adviser & Guidance Counselors Only)');
+         return;
+     }
+     comingSoonNotice.value = null;
+     errorText.value = null;
++    activeDmPeerId.value = null;
+     activeThread.value = target;
+     scrollToBottom();
++    void syncActiveThreadMessages();
++}
++
++function openCounselorDm(peerUserId: number) {
++    comingSoonNotice.value = null;
++    errorText.value = null;
++    activeDmPeerId.value = peerUserId;
++    activeThread.value = 'counselor_dm';
++    if (!dmMessagesByPeer.value[peerUserId]) {
++        dmMessagesByPeer.value[peerUserId] = [];
++    }
++    scrollToBottom();
++    void syncActiveThreadMessages();
+ }
+ 
+ function selectComingSoon(title: string) {
+@@ -246,7 +349,10 @@ const canSendInCurrentThread = computed(() => {
+     if (activeThread.value === 'counselors') {
+         return props.canAccessCounselorGc;
+     }
+-    return Boolean(props.channel && props.channel.is_active !== false);
++    if (activeThread.value === 'counselor_dm') {
++        return props.canAccessCounselorGc && activeDmPeerId.value !== null;
++    }
++    return Boolean(!props.hideOfficersGc && !props.officersGcPaused && props.channel && props.channel.is_active !== false);
+ });
+ 
+ async function sendMessage() {
+@@ -256,28 +362,35 @@ async function sendMessage() {
+     const url =
+         activeThread.value === 'counselors'
+             ? '/counselors-gc/messages'
+-            : `/officers-gc/${props.channel?.id}/messages`;
++            : activeThread.value === 'counselor_dm' && activeDmPeerId.value !== null
++              ? `/counselors-dm/${activeDmPeerId.value}/messages`
++              : `/officers-gc/${props.channel?.id}/messages`;
+ 
+     sending.value = true;
+     errorText.value = null;
+ 
+-    const { ok, data } = await apiRequest<{ status?: string }>(url, 'POST', {
++    const { ok, data } = await apiRequest<{ status?: string; errors?: Record<string, string[]> }>(url, 'POST', {
+         message_body: body,
+     });
+ 
+     sending.value = false;
+ 
+     if (!ok) {
+-        errorText.value = data.message ?? 'Unable to send message.';
++        errorText.value = data.errors?.message_body?.[0] ?? data.message ?? 'Unable to send message.';
+         return;
+     }
+ 
+     const payload = data as unknown as { message?: MessengerOfficerMessage };
+     if (payload.message && typeof payload.message === 'object') {
+         if (activeThread.value === 'counselors') {
+-            counselorMsgs.value.push(payload.message);
++            mergeMessages(counselorMsgs.value, [payload.message]);
++        } else if (activeThread.value === 'counselor_dm' && activeDmPeerId.value !== null) {
++            if (!dmMessagesByPeer.value[activeDmPeerId.value]) {
++                dmMessagesByPeer.value[activeDmPeerId.value] = [];
++            }
++            mergeMessages(dmMessagesByPeer.value[activeDmPeerId.value], [payload.message]);
+         } else {
+-            officerMsgs.value.push(payload.message);
++            mergeMessages(officerMsgs.value, [payload.message]);
+         }
+         emit('message-sent', payload.message);
+     }
+@@ -318,6 +431,7 @@ async function sendMessage() {
+                 <div class="flex-1 space-y-1 p-2.5">
+                     <!-- ACTIVE THREAD 1: MAIN OFFICERS GC (ALIJIS) -->
+                     <button
++                        v-if="!hideOfficersGc"
+                         type="button"
+                         @click="switchThread('officers')"
+                         class="flex w-full items-center gap-3 rounded-xl p-2.5 text-left transition"
+@@ -385,7 +499,32 @@ async function sendMessage() {
+                         </div>
+                     </button>
+ 
+-                    <!-- COMING SOON CAMPUS CHANNELS -->
++                    <!-- AUTOMATIC 1-ON-1 COUNSELOR DIRECT CHATS -->
++                    <template v-if="canAccessCounselorGc && counselorPeers.length > 0">
++                        <div class="px-2 pt-3 pb-1 text-xs font-bold tracking-wider text-slate-500 uppercase">
++                            Direct Counselor Chats
++                        </div>
++                        <button
++                            v-for="peer in counselorPeers"
++                            :key="`dm-${peer.user_id}`"
++                            type="button"
++                            @click="openCounselorDm(peer.user_id)"
++                            class="flex w-full items-center gap-3 rounded-xl p-2.5 text-left transition"
++                            :class="activeThread === 'counselor_dm' && activeDmPeerId === peer.user_id ? 'bg-[#1A8F26]/14' : 'hover:bg-black/5'"
++                        >
++                            <div class="relative flex size-10 shrink-0 items-center justify-center rounded-full bg-[#1A8F26]/85 text-xs font-extrabold text-white">
++                                <span>{{ getInitials(peer.name) }}</span>
++                                <span class="absolute right-0 bottom-0 size-2.5 rounded-full border-2 border-white bg-[#1A8F26]" />
++                            </div>
++                            <div class="min-w-0 flex-1">
++                                <div class="truncate text-xs font-bold text-slate-900">{{ peer.name }}</div>
++                                <div class="truncate text-[11px] font-medium text-[#1A8F26]">{{ peer.role_label }}</div>
++                            </div>
++                        </button>
++                    </template>
++
++                    <!-- COMING SOON CAMPUS CHANNELS (Hidden for Guidance Counselors) -->
++                    <template v-if="!hideOfficersGc">
+                     <div class="px-2 pt-3 pb-1 text-[10px] font-bold tracking-wider text-slate-400 uppercase">
+                         Other Campus Groups (Coming Soon)
+                     </div>
+@@ -414,6 +553,7 @@ async function sendMessage() {
+                             </div>
+                         </div>
+                     </button>
++                    </template>
+                 </div>
+             </aside>
+ 
+@@ -436,7 +576,9 @@ async function sendMessage() {
+                                     {{
+                                         activeThread === 'counselors'
+                                             ? `Counselors Private GC — ${campusName}`
+-                                            : `Main Officers GC — ${campusName}`
++                                            : activeThread === 'counselor_dm' && activeDmPeer
++                                              ? `Direct Chat: ${activeDmPeer.name}`
++                                              : `Main Officers GC — ${campusName}`
+                                     }}
+                                 </h3>
+                                 <span
+diff --git a/resources/js/components/system/LandingShowcaseSection.vue b/resources/js/components/system/LandingShowcaseSection.vue
+index e5664f7..ff3897b 100644
+--- a/resources/js/components/system/LandingShowcaseSection.vue
++++ b/resources/js/components/system/LandingShowcaseSection.vue
+@@ -244,6 +244,12 @@ function handleKeydown(e: KeyboardEvent): void {
+ }
+ 
+ onMounted(() => {
++    if (
++        page.props.systemBootstrap?.mandatoryTourEnabled === false ||
++        page.props.systemBootstrap?.exemptFromMandatoryTour === true
++    ) {
++        return;
++    }
+     if (typeof window !== 'undefined') {
+         window.addEventListener('keydown', handleKeydown, true);
+     }
+diff --git a/resources/js/layouts/auth/AuthSimpleLayout.vue b/resources/js/layouts/auth/AuthSimpleLayout.vue
+index 90f49bf..eaabd4b 100644
+--- a/resources/js/layouts/auth/AuthSimpleLayout.vue
++++ b/resources/js/layouts/auth/AuthSimpleLayout.vue
+@@ -1,5 +1,6 @@
+ <script setup lang="ts">
+-import { Link } from '@inertiajs/vue3';
++import { Link, usePage } from '@inertiajs/vue3';
++import { computed } from 'vue';
+ import { ArrowLeft, Moon, Sparkles, Sun, Sunrise, Zap } from '@lucide/vue';
+ import { useAppearance } from '@/composables/useAppearance';
+ import { home } from '@/routes';
+@@ -10,6 +11,8 @@ defineProps<{
+ }>();
+ 
+ const { resolvedAppearance, updateAppearance } = useAppearance();
++const page = usePage<{ auth?: { user?: unknown } }>();
++const isAuthenticated = computed(() => Boolean(page.props.auth?.user));
+ 
+ const themeChoices = [
+     { value: 'light', label: 'Light', title: 'Soft Cream Light Mode', Icon: Sun, iconClass: 'text-[#FF8D06]' },
+@@ -35,11 +38,11 @@ const themeChoices = [
+         <!-- Top Navigation & Theme Switcher -->
+         <div class="relative z-10 mb-6 flex w-full max-w-md items-center justify-between gap-2">
+             <Link
+-                :href="home()"
++                :href="isAuthenticated ? '/settings/profile' : home()"
+                 class="inline-flex items-center gap-1.5 rounded-xl border border-border bg-card/80 px-3 py-1.5 text-xs font-semibold text-muted-foreground backdrop-blur-md transition hover:border-primary/40 hover:text-primary"
+             >
+                 <ArrowLeft class="size-3.5" />
+-                Back to CPF Home
++                {{ isAuthenticated ? 'Back to Settings' : 'Back to CPF Home' }}
+             </Link>
+ 
+             <div
+diff --git a/resources/js/pages/Dashboard.vue b/resources/js/pages/Dashboard.vue
+index 9c0d809..6d82638 100644
+--- a/resources/js/pages/Dashboard.vue
++++ b/resources/js/pages/Dashboard.vue
+@@ -1092,13 +1092,13 @@ function toggleDuesStatus(member: DuesRosterMember) {
+ 
+             <div class="bento flex flex-col justify-between p-5">
+                 <div>
+-                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-black/10 pb-3">
+-                        <div class="flex items-center gap-2 text-base font-bold text-slate-900">
++                    <div class="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-3">
++                        <div class="flex items-center gap-2 text-base font-bold text-foreground">
+                             <Bell class="size-5 text-[#FF8D06]" />
+                             Event Notifications
+                             <span
+                                 v-if="unreadEventNotificationsCount > 0"
+-                                class="rounded-full bg-[#FF8D06] px-2 py-0.5 text-[11px] font-bold text-white"
++                                class="rounded-full bg-[#FF8D06] px-2.5 py-0.5 text-xs font-bold text-white"
+                             >
+                                 {{ unreadEventNotificationsCount }} New
+                             </span>
+@@ -1107,32 +1107,32 @@ function toggleDuesStatus(member: DuesRosterMember) {
+                             v-if="unreadEventNotificationsCount > 0"
+                             type="button"
+                             @click="markAllDashboardNotificationsRead"
+-                            class="rounded-xl border border-[#0384C5]/30 bg-[#0384C5]/10 px-2.5 py-1 text-[11px] font-semibold text-[#0384C5]"
++                            class="rounded-xl border border-primary/35 bg-primary/15 px-3 py-1 text-xs font-semibold text-primary transition hover:bg-primary hover:text-primary-foreground"
+                         >
+                             Mark All Read
+                         </button>
+                     </div>
+ 
+-                    <div v-if="eventNotifications.length === 0" class="py-8 text-center text-xs text-slate-500">
++                    <div v-if="eventNotifications.length === 0" class="py-8 text-center text-sm text-muted-foreground">
+                         No campus event notifications yet.
+                     </div>
+-                    <div v-else class="mt-3 flex max-h-80 flex-col gap-2 overflow-y-auto pr-1">
++                    <div v-else class="mt-3 flex max-h-80 flex-col gap-2.5 overflow-y-auto pr-1">
+                         <div
+                             v-for="notif in eventNotifications"
+                             :key="`dash-notif-${notif.id}`"
+-                            class="flex items-start justify-between gap-2 rounded-2xl border p-3 text-xs"
+-                            :class="notif.is_unread ? 'border-[#FF8D06]/45 bg-[#FFF8EC]' : 'border-black/10 bg-white'"
++                            class="flex items-start justify-between gap-3 rounded-2xl border p-3.5 text-sm transition"
++                            :class="notif.is_unread ? 'border-primary/45 bg-primary/10' : 'border-border bg-card/85'"
+                         >
+-                            <div>
+-                                <div class="font-bold text-slate-900">{{ notif.title }}</div>
+-                                <p class="mt-0.5 text-slate-600">{{ notif.message }}</p>
+-                                <div class="mt-1 text-[10px] text-slate-400">{{ notif.created_at }}</div>
++                            <div class="min-w-0 flex-1">
++                                <div class="font-bold text-foreground">{{ notif.title }}</div>
++                                <p class="mt-0.5 text-sm leading-snug text-muted-foreground">{{ notif.message }}</p>
++                                <div class="mt-1.5 text-xs text-muted-foreground/80">{{ notif.created_at }}</div>
+                             </div>
+                             <button
+                                 v-if="notif.is_unread"
+                                 type="button"
+                                 @click="markDashboardNotificationRead(notif.id)"
+-                                class="shrink-0 rounded-lg border border-black/15 bg-white px-2 py-1 text-[10px] font-semibold text-slate-700"
++                                class="shrink-0 rounded-lg border border-border bg-background px-2.5 py-1 text-xs font-semibold text-foreground transition hover:border-primary/50 hover:text-primary"
+                             >
+                                 Read
+                             </button>
+diff --git a/resources/js/pages/campus/Operations.vue b/resources/js/pages/campus/Operations.vue
+index 3ce01cd..2737a35 100644
+--- a/resources/js/pages/campus/Operations.vue
++++ b/resources/js/pages/campus/Operations.vue
+@@ -99,6 +99,8 @@ const props = withDefaults(
+         myReferrals: SafePeerReferralItem[];
+         counselorInbox: CounselorInboxItem[];
+         counselorGcMessages: MessengerOfficerMessage[];
++    counselorPeers?: Array<{ user_id: number; name: string; role: string; role_label: string }>;
++    officersGcPaused?: boolean;
+         priorityTiers: Array<{ value: string; label: string; responseTarget: string }>;
+         officerChannel: {
+             id: number;
+@@ -825,7 +827,10 @@ async function archiveAndResetGc() {
+                 :channel="officerChannel"
+                 :initial-messages="officerMessages"
+                 :counselor-messages="counselorGcMessages"
++                :counselor-peers="counselorPeers ?? []"
+                 :can-access-counselor-gc="canCoordinateGuidance"
++                :hide-officers-gc="!isOfficerOrAdviser"
++                :officers-gc-paused="officersGcPaused ?? false"
+                 default-thread="counselors"
+                 :current-user-id="currentUserId"
+                 :campus-name="campusName"
+diff --git a/resources/js/pages/officers-chat/Index.vue b/resources/js/pages/officers-chat/Index.vue
+index bc17527..bed40a0 100644
+--- a/resources/js/pages/officers-chat/Index.vue
++++ b/resources/js/pages/officers-chat/Index.vue
+@@ -18,6 +18,8 @@ const props = defineProps<{
+     } | null;
+     officerMessages: MessengerOfficerMessage[];
+     counselorGcMessages: MessengerOfficerMessage[];
++    counselorPeers?: Array<{ user_id: number; name: string; role: string; role_label: string }>;
++    officersGcPaused?: boolean;
+     gcArchives: Array<{
+         id: number;
+         academic_year: string;
+@@ -105,7 +107,9 @@ function handleCounselorArchived() {
+             :channel="officerChannel"
+             :initial-messages="officerMessages"
+             :counselor-messages="counselorGcMessages"
++            :counselor-peers="counselorPeers ?? []"
+             :can-access-counselor-gc="isClubAdviser"
++            :officers-gc-paused="officersGcPaused ?? false"
+             :current-user-id="currentUserId"
+             :campus-name="campusName"
+             :can-archive="isClubAdviser"
+diff --git a/resources/js/pages/prototype/DemoBots.vue b/resources/js/pages/prototype/DemoBots.vue
+new file mode 100644
+index 0000000..964a6cf
+--- /dev/null
++++ b/resources/js/pages/prototype/DemoBots.vue
+@@ -0,0 +1,224 @@
++<script setup lang="ts">
++import { Head, Link } from '@inertiajs/vue3';
++import { Award, Bot, MessageSquare, RotateCcw, ShieldAlert, Vote } from '@lucide/vue';
++import { ref } from 'vue';
++import AppLayout from '@/layouts/AppLayout.vue';
++import { apiRequest } from '@/lib/csrfFetch';
++
++defineOptions({ layout: AppLayout });
++
++const props = defineProps<{
++    campusName: string;
++    demoLog: {
++        gc?: Array<{ actor: string; text: string; status: string; note: string }>;
++        election?: {
++            title: string;
++            rounds: Array<{ position: string; round: number; tallies: Record<string, number>; outcome: string }>;
++            ephemeral_chat_purged: boolean;
++            simulated_at: string;
++        } | null;
++        awarding?: {
++            badge: string;
++            notice: string;
++            sample_awards: Array<{ recipient: string; award: string; verification_code: string; status: string }>;
++            simulated_at: string;
++        } | null;
++    };
++}>();
++
++const gcResults = ref(props.demoLog.gc ?? []);
++const electionSim = ref(props.demoLog.election ?? null);
++const awardingSim = ref(props.demoLog.awarding ?? null);
++const busy = ref<string | null>(null);
++const banner = ref<string | null>(null);
++
++async function runBot(kind: 'gc' | 'election' | 'awarding' | 'reset') {
++    busy.value = kind;
++    banner.value = null;
++    const { ok, data } = await apiRequest<any>(`/prototype/demo-bots/${kind}`, 'POST', {});
++    busy.value = null;
++
++    if (!ok) {
++        banner.value = data?.message ?? 'Prototype bot request failed.';
++        return;
++    }
++
++    if (kind === 'gc') {
++        gcResults.value = data.results ?? [];
++        banner.value = 'GC Bot finished — live messages delivered and profanity test blocked automatically.';
++    } else if (kind === 'election') {
++        electionSim.value = data.simulation ?? null;
++        banner.value = 'Election Bot finished — tie-break runoff and auto role turnover simulated.';
++    } else if (kind === 'awarding') {
++        awardingSim.value = data.preview ?? null;
++        banner.value = 'Awarding Prototype Preview generated (deferred from active pilot).';
++    } else {
++        gcResults.value = [];
++        electionSim.value = null;
++        awardingSim.value = null;
++        banner.value = `Reset complete (${data.deleted_messages ?? 0} demo bot message(s) cleaned up).`;
++    }
++}
++</script>
++
++<template>
++    <Head title="Prototype Demo Bots" />
++
++    <div class="mx-auto flex w-full max-w-6xl flex-col gap-6 p-4 md:p-6">
++        <div class="bento flex flex-wrap items-center justify-between gap-4 p-5">
++            <div>
++                <div class="inline-flex items-center gap-2 rounded-full bg-amber-500/15 px-3 py-1 text-xs font-bold text-amber-600 dark:text-amber-300">
++                    <ShieldAlert class="size-3.5" />
++                    DEV-ONLY PROTOTYPE SANDBOX • DISABLED IN PRODUCTION
++                </div>
++                <h1 class="mt-2 font-editorial text-2xl font-bold text-foreground">
++                    CPF Interactive Demo Bot Runner — {{ campusName }}
++                </h1>
++                <p class="mt-1 text-sm text-muted-foreground">
++                    Simulate real-time GC + 5-language profanity filtering, floor election runoffs, and deferred awarding previews safely inside <code class="font-mono">/prototype</code>.
++                </p>
++            </div>
++
++            <div class="flex items-center gap-2">
++                <Link
++                    href="/dashboard"
++                    class="rounded-xl border border-border bg-card px-3.5 py-2 text-xs font-semibold text-foreground transition hover:border-primary/40"
++                >
++                    Back to Dashboard
++                </Link>
++                <button
++                    type="button"
++                    :disabled="busy !== null"
++                    @click="runBot('reset')"
++                    class="inline-flex items-center gap-1.5 rounded-xl border border-destructive/30 bg-destructive/10 px-3.5 py-2 text-xs font-semibold text-destructive transition hover:bg-destructive hover:text-white disabled:opacity-50"
++                >
++                    <RotateCcw class="size-3.5" />
++                    Reset Demo Data
++                </button>
++            </div>
++        </div>
++
++        <div
++            v-if="banner"
++            class="rounded-2xl border border-primary/30 bg-primary/10 px-4 py-3 text-sm font-medium text-foreground"
++        >
++            {{ banner }}
++        </div>
++
++        <div class="grid gap-5 lg:grid-cols-3">
++            <!-- 1. GC Bot -->
++            <section class="bento flex flex-col justify-between gap-4 p-5">
++                <div>
++                    <div class="flex items-center gap-2 text-base font-bold text-foreground">
++                        <MessageSquare class="size-5 text-[#0384C5]" />
++                        1. GC &amp; Profanity Filter Bot
++                    </div>
++                    <p class="mt-1.5 text-sm text-muted-foreground">
++                        Sends realistic Adviser, Officer, and Counselor messages and triggers a multilingual profanity test (EN/ES/HIL/CEB/TL).
++                    </p>
++
++                    <div v-if="gcResults.length" class="mt-4 flex flex-col gap-2">
++                        <div
++                            v-for="(item, idx) in gcResults"
++                            :key="idx"
++                            class="rounded-xl border p-3 text-xs"
++                            :class="
++                                item.status === 'blocked_by_profanity_filter'
++                                    ? 'border-destructive/40 bg-destructive/10 text-foreground'
++                                    : 'border-border bg-card text-foreground'
++                            "
++                        >
++                            <div class="font-bold">{{ item.actor }}</div>
++                            <div class="mt-0.5 text-muted-foreground">{{ item.text }}</div>
++                            <div class="mt-1 font-semibold">{{ item.note }}</div>
++                        </div>
++                    </div>
++                </div>
++
++                <button
++                    type="button"
++                    :disabled="busy !== null"
++                    @click="runBot('gc')"
++                    class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#0384C5] px-4 py-2.5 text-sm font-bold text-white transition hover:opacity-90 disabled:opacity-50"
++                >
++                    <Bot class="size-4" />
++                    {{ busy === 'gc' ? 'Running GC Bot...' : 'Run GC Bot Demo' }}
++                </button>
++            </section>
++
++            <!-- 2. Election Bot -->
++            <section class="bento flex flex-col justify-between gap-4 p-5">
++                <div>
++                    <div class="flex items-center gap-2 text-base font-bold text-foreground">
++                        <Vote class="size-5 text-[#FF8D06]" />
++                        2. Election Tie-Break Bot
++                    </div>
++                    <p class="mt-1.5 text-sm text-muted-foreground">
++                        Simulates 16 floor voters, triggers an 8–8 President tie-break runoff, and demonstrates winner lock + auto role turnover.
++                    </p>
++
++                    <div v-if="electionSim" class="mt-4 flex flex-col gap-2">
++                        <div
++                            v-for="(round, idx) in electionSim.rounds"
++                            :key="idx"
++                            class="rounded-xl border border-border bg-card p-3 text-xs text-foreground"
++                        >
++                            <div class="font-bold">{{ round.position }} (Round {{ round.round }})</div>
++                            <div class="mt-1 text-muted-foreground">{{ round.outcome }}</div>
++                        </div>
++                    </div>
++                </div>
++
++                <button
++                    type="button"
++                    :disabled="busy !== null"
++                    @click="runBot('election')"
++                    class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#FF8D06] px-4 py-2.5 text-sm font-bold text-white transition hover:opacity-90 disabled:opacity-50"
++                >
++                    <Bot class="size-4" />
++                    {{ busy === 'election' ? 'Simulating Election...' : 'Run Election Bot Demo' }}
++                </button>
++            </section>
++
++            <!-- 3. Awarding Preview Bot -->
++            <section class="bento flex flex-col justify-between gap-4 p-5">
++                <div>
++                    <div class="flex items-center justify-between gap-2">
++                        <div class="flex items-center gap-2 text-base font-bold text-foreground">
++                            <Award class="size-5 text-[#1A8F26]" />
++                            3. Awarding Preview
++                        </div>
++                        <span class="rounded-full bg-amber-500/15 px-2 py-0.5 text-[11px] font-bold text-amber-600 dark:text-amber-300">
++                            DEFERRED PREVIEW
++                        </span>
++                    </div>
++                    <p class="mt-1.5 text-sm text-muted-foreground">
++                        Safe prototype preview of future certificates/awards without mixing deferred scope into the active Alijis pilot.
++                    </p>
++
++                    <div v-if="awardingSim" class="mt-4 flex flex-col gap-2">
++                        <div
++                            v-for="(award, idx) in awardingSim.sample_awards"
++                            :key="idx"
++                            class="rounded-xl border border-border bg-card p-3 text-xs text-foreground"
++                        >
++                            <div class="font-bold">{{ award.award }}</div>
++                            <div class="mt-0.5 text-muted-foreground">{{ award.recipient }} • {{ award.verification_code }}</div>
++                            <div class="mt-1 font-semibold text-amber-600 dark:text-amber-300">{{ award.status }}</div>
++                        </div>
++                    </div>
++                </div>
++
++                <button
++                    type="button"
++                    :disabled="busy !== null"
++                    @click="runBot('awarding')"
++                    class="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-[#1A8F26] px-4 py-2.5 text-sm font-bold text-white transition hover:opacity-90 disabled:opacity-50"
++                >
++                    <Bot class="size-4" />
++                    {{ busy === 'awarding' ? 'Generating Preview...' : 'Run Awarding Preview' }}
++                </button>
++            </section>
++        </div>
++    </div>
++</template>
+diff --git a/resources/js/pages/settings/Profile.vue b/resources/js/pages/settings/Profile.vue
+index 02e91f3..5bda4ed 100644
+--- a/resources/js/pages/settings/Profile.vue
++++ b/resources/js/pages/settings/Profile.vue
+@@ -1,7 +1,6 @@
+ <script setup lang="ts">
+-import { Form, Head, usePage } from '@inertiajs/vue3';
+-import { Link } from '@inertiajs/vue3';
+-import { computed } from 'vue';
++import { Form, Head, Link, router, usePage } from '@inertiajs/vue3';
++import { computed, ref } from 'vue';
+ import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
+ import Heading from '@/components/Heading.vue';
+ import InputError from '@/components/InputError.vue';
+@@ -25,6 +24,28 @@ defineOptions({
+ 
+ const page = usePage();
+ const user = computed(() => page.props.auth.user);
++const isClubAdviser = computed(() => (page.props.auth as any)?.role === 'adviser');
++const mandatoryTourEnabled = ref<boolean>((page.props as any)?.systemBootstrap?.mandatoryTourEnabled !== false);
++const savingTourSetting = ref(false);
++
++function toggleMandatoryTour() {
++    if (!isClubAdviser.value || savingTourSetting.value) return;
++    savingTourSetting.value = true;
++    const nextValue = !mandatoryTourEnabled.value;
++    router.patch(
++        '/settings/campus-tour',
++        { mandatory_tour_enabled: nextValue },
++        {
++            preserveScroll: true,
++            onSuccess: () => {
++                mandatoryTourEnabled.value = nextValue;
++            },
++            onFinish: () => {
++                savingTourSetting.value = false;
++            },
++        },
++    );
++}
+ </script>
+ 
+ <template>
+@@ -103,6 +124,35 @@ const user = computed(() => page.props.auth.user);
+         </Form>
+     </div>
+ 
++    <div
++        v-if="isClubAdviser"
++        class="mt-6 rounded-xl border border-border bg-card p-4 text-sm text-foreground"
++    >
++        <div class="flex flex-wrap items-center justify-between gap-3">
++            <div>
++                <div class="font-semibold text-foreground">
++                    Mandatory System Tour (Club Adviser Only)
++                </div>
++                <p class="mt-1 text-xs text-muted-foreground">
++                    Control whether new visitors must watch the intro tour on first visit. Guidance Counselors are automatically exempt.
++                </p>
++            </div>
++            <button
++                type="button"
++                :disabled="savingTourSetting"
++                @click="toggleMandatoryTour"
++                class="rounded-xl border px-3.5 py-2 text-xs font-bold transition disabled:opacity-50"
++                :class="
++                    mandatoryTourEnabled
++                        ? 'border-[#1A8F26]/40 bg-[#1A8F26]/15 text-[#1A8F26]'
++                        : 'border-border bg-muted text-muted-foreground'
++                "
++            >
++                {{ mandatoryTourEnabled ? 'Mandatory Tour: ON' : 'Mandatory Tour: OFF' }}
++            </button>
++        </div>
++    </div>
++
+     <div
+         class="mt-6 rounded-xl border border-[#0384C5]/25 bg-[#0384C5]/5 p-4 text-xs text-slate-700 dark:border-[#56B4E3]/30 dark:bg-[#141C24] dark:text-[#C2CDD7]"
+     >
+diff --git a/routes/channels.php b/routes/channels.php
+index 454b9a6..f4f7afe 100644
+--- a/routes/channels.php
++++ b/routes/channels.php
+@@ -9,3 +9,25 @@
+         && $membership->campus_id === $campusId
+         && ($user->verifiedRole()?->isOfficerOrAdviser() ?? false);
+ });
++
++Broadcast::channel('campus.{campusId}.counselors-gc', function ($user, int $campusId): bool {
++    $membership = $user->primaryMembership;
++
++    return $membership !== null
++        && $membership->campus_id === $campusId
++        && $user->canCoordinateGuidance();
++});
++
++Broadcast::channel('campus.{campusId}.counselor-dm.{threadKey}', function ($user, int $campusId, string $threadKey): bool {
++    $membership = $user->primaryMembership;
++    if ($membership === null || $membership->campus_id !== $campusId || ! $user->canCoordinateGuidance()) {
++        return false;
++    }
++
++    $parts = explode('-', $threadKey);
++    if (count($parts) !== 2) {
++        return false;
++    }
++
++    return in_array((int) $user->id, [(int) $parts[0], (int) $parts[1]], true);
++});
+diff --git a/routes/console.php b/routes/console.php
+index 454ad09..84512af 100644
+--- a/routes/console.php
++++ b/routes/console.php
+@@ -76,3 +76,130 @@
+ 
+ Schedule::command('cpf:unlock-time-capsules')->daily();
+ Schedule::command('cpf:sync-campus-events')->everyMinute();
++
++Artisan::command('cpf:purge-expired-election-chat', function () {
++    $now = now();
++    $expiredIds = \App\Models\Election::query()
++        ->where(function ($q) use ($now): void {
++            $q->where('status', '!=', 'open')
++                ->orWhere(function ($sub) use ($now): void {
++                    $sub->whereNotNull('closes_at')->where('closes_at', '<=', $now);
++                });
++        })
++        ->pluck('id');
++
++    $purged = 0;
++    $cache = \App\Models\Election::liveChatCache();
++    foreach ($expiredIds as $electionId) {
++        $key = \App\Models\Election::liveChatCacheKey((int) $electionId);
++        if ($cache->has($key)) {
++            $cache->forget($key);
++            $purged++;
++        }
++    }
++
++    $this->info("Purged {$purged} expired ephemeral election live-chat cache file(s).");
++})->purpose('Remove expired ephemeral election live-chat cache entries after closes_at');
++
++Artisan::command('cpf:alert-stale-referrals', function () {
++    $cutoff = now()->subHours(24);
++    $stale = \App\Models\GuidanceReferral::query()
++        ->where('feedback_status', 'pending')
++        ->whereIn('priority', ['tier_1_emergency', 'tier_2_urgent', 'emergency', 'urgent'])
++        ->whereNull('sla_alerted_at')
++        ->where('created_at', '<=', $cutoff)
++        ->get();
++
++    $alerted = 0;
++    foreach ($stale as $referral) {
++        $counselorUserIds = \App\Models\CampusMembership::query()
++            ->where('campus_id', $referral->campus_id)
++            ->where('status', \App\Enums\MembershipStatus::Approved->value)
++            ->whereIn('role', [\App\Enums\CpfRole::Adviser->value, \App\Enums\CpfRole::GuidanceCounselor->value])
++            ->pluck('user_id');
++
++        if ($counselorUserIds->isNotEmpty()) {
++            $now = now();
++            $rows = $counselorUserIds->map(fn (int $uid) => [
++                'campus_id' => $referral->campus_id,
++                'campus_event_id' => null,
++                'user_id' => $uid,
++                'type' => 'stale_referral_sla_alert',
++                'title' => 'Urgent Referral Awaiting Counselor Review (24h+)',
++                'message' => "Confidential Referral #{$referral->id} has remained pending for over 24 hours. Please review in Campus Hub.",
++                'read_at' => null,
++                'created_at' => $now,
++                'updated_at' => $now,
++            ])->all();
++            \App\Models\CampusEventNotification::query()->insert($rows);
++        }
++
++        $referral->update(['sla_alerted_at' => now()]);
++        $alerted++;
++    }
++
++    $this->info("Sent SLA alerts for {$alerted} stale urgent referral(s).");
++})->purpose('Alert campus Guidance Counselors and Club Adviser on urgent referrals pending over 24 hours');
++
++Artisan::command('cpf:expire-stale-invites', function () {
++    $now = now();
++    $expiredInvites = \App\Models\CounselorInvitation::query()
++        ->where('status', 'pending')
++        ->where('expires_at', '<=', $now)
++        ->update(['status' => 'expired']);
++
++    $expiredHandovers = \App\Models\AdviserHandover::query()
++        ->where('status', 'pending')
++        ->where('expires_at', '<=', $now)
++        ->update(['status' => 'expired']);
++
++    $this->info("Expired {$expiredInvites} counselor invitation(s) and {$expiredHandovers} adviser handover(s).");
++})->purpose('Expire unaccepted Counselor OTP invitations and Adviser handovers past their 7-day window');
++
++Artisan::command('cpf:remind-upcoming-events', function () {
++    $now = now();
++    $windowEnd = $now->copy()->addHours(24);
++
++    $events = \App\Models\CampusEvent::query()
++        ->where('status', 'approved')
++        ->whereNull('activated_at')
++        ->whereNull('completed_at')
++        ->whereNull('reminder_sent_at')
++        ->whereDate('event_date', '>=', $now->toDateString())
++        ->whereDate('event_date', '<=', $windowEnd->toDateString())
++        ->get();
++
++    $reminded = 0;
++    foreach ($events as $event) {
++        $memberUserIds = \App\Models\CampusMembership::query()
++            ->where('campus_id', $event->campus_id)
++            ->where('status', \App\Enums\MembershipStatus::Approved->value)
++            ->where('role', '!=', \App\Enums\CpfRole::GuidanceCounselor->value)
++            ->pluck('user_id');
++
++        if ($memberUserIds->isNotEmpty()) {
++            $rows = $memberUserIds->map(fn (int $uid) => [
++                'campus_id' => $event->campus_id,
++                'campus_event_id' => $event->id,
++                'user_id' => $uid,
++                'type' => 'event_upcoming_reminder',
++                'title' => "Reminder: {$event->title}",
++                'message' => "Scheduled on {$event->event_date} ({$event->start_time}–{$event->end_time}). Have your Peer QR Pass ready.",
++                'read_at' => null,
++                'created_at' => $now,
++                'updated_at' => $now,
++            ])->all();
++            \App\Models\CampusEventNotification::query()->insert($rows);
++        }
++
++        $event->update(['reminder_sent_at' => $now]);
++        $reminded++;
++    }
++
++    $this->info("Sent 24-hour reminders for {$reminded} upcoming campus event(s).");
++})->purpose('Send 24-hour pre-event reminders to approved non-counselor campus members');
++
++Schedule::command('cpf:purge-expired-election-chat')->everyMinute();
++Schedule::command('cpf:alert-stale-referrals')->hourly();
++Schedule::command('cpf:expire-stale-invites')->daily();
++Schedule::command('cpf:remind-upcoming-events')->hourly();
+diff --git a/routes/prototype.php b/routes/prototype.php
+index 0d1b8da..6013efa 100644
+--- a/routes/prototype.php
++++ b/routes/prototype.php
+@@ -1,6 +1,7 @@
+ <?php
+ 
+ use App\Http\Controllers\Prototype\CpfPrototypeController;
++use App\Http\Controllers\Prototype\DemoBotController;
+ use App\Http\Controllers\Prototype\DevRoleSwitcherController;
+ use Illuminate\Support\Facades\Route;
+ 
+@@ -22,6 +23,14 @@
+ 
+ Route::get($prefix, [CpfPrototypeController::class, 'index'])->name('prototype.index');
+ 
++Route::middleware(['auth', 'verified'])->prefix($prefix.'/demo-bots')->name('prototype.demo-bots.')->group(function () {
++    Route::get('/', [DemoBotController::class, 'index'])->name('index');
++    Route::post('/gc', [DemoBotController::class, 'runGcBot'])->name('gc');
++    Route::post('/election', [DemoBotController::class, 'runElectionBot'])->name('election');
++    Route::post('/awarding', [DemoBotController::class, 'runAwardingBot'])->name('awarding');
++    Route::post('/reset', [DemoBotController::class, 'reset'])->name('reset');
++});
++
+ Route::middleware(['auth', 'verified'])->group(function () {
+     Route::post('dev/switch-role/{role}', [DevRoleSwitcherController::class, 'switch'])->name('dev.switch-role');
+ });
+diff --git a/routes/settings.php b/routes/settings.php
+index 655ad3c..21a7b28 100644
+--- a/routes/settings.php
++++ b/routes/settings.php
+@@ -11,6 +11,7 @@
+ 
+     Route::get('settings/profile', [ProfileController::class, 'edit'])->name('profile.edit');
+     Route::patch('settings/profile', [ProfileController::class, 'update'])->name('profile.update');
++    Route::patch('settings/campus-tour', [ProfileController::class, 'updateCampusSettings'])->name('settings.campus-tour.update');
+ });
+ 
+ Route::middleware(['auth', 'verified', EnsureTemporaryPasswordChanged::class])->group(function () {
+diff --git a/routes/web.php b/routes/web.php
+index dbdd548..c532504 100644
+--- a/routes/web.php
++++ b/routes/web.php
+@@ -119,6 +119,8 @@
+         Route::patch('membership/{membership}/approve', [CampusMembershipController::class, 'approve'])->name('membership.approve');
+         Route::patch('membership/{membership}/toggle-gc', [CampusMembershipController::class, 'toggleGc'])->name('membership.toggle-gc');
+         Route::patch('membership/{membership}/toggle-dues', [CampusMembershipController::class, 'toggleDues'])->name('membership.toggle-dues');
++        Route::patch('membership/{membership}/suspend-privileges', [CampusMembershipController::class, 'toggleOfficerSuspension'])->name('membership.suspend-privileges');
++        Route::get('membership/dues-audit-logs', [CampusMembershipController::class, 'duesAuditLogs'])->name('membership.dues-audit-logs');
+         Route::patch('membership/{membership}/role', [CampusMembershipController::class, 'updateRole'])->name('membership.update-role');
+         Route::post('membership/{membership}/transition-alumni', [CampusMembershipController::class, 'transitionToAlumni'])
+             ->name('membership.transition-alumni');
+@@ -140,10 +142,14 @@
+         Route::patch('testing-room/{roomRequest}/review', [CpfFeatureController::class, 'reviewTestingRoom'])->name('testing-room.review');
+         Route::post('referrals/submit', [CpfFeatureController::class, 'submitReferral'])->name('referrals.submit');
+         Route::patch('referrals/{referral}/confirm', [CpfFeatureController::class, 'confirmReferral'])->name('referrals.confirm');
++        Route::get('officers-gc/{channel}/messages', [CpfFeatureController::class, 'fetchOfficerGcMessages'])->name('officers-gc.fetch');
+         Route::post('officers-gc/{channel}/messages', [CpfFeatureController::class, 'sendOfficerGcMessage'])->name('officers-gc.send');
+         Route::post('officers-gc/{channel}/archive', [CpfFeatureController::class, 'archiveOfficerGc'])->name('officers-gc.archive');
++        Route::get('counselors-gc/messages', [CpfFeatureController::class, 'fetchCounselorGcMessages'])->name('counselors-gc.fetch');
+         Route::post('counselors-gc/messages', [CpfFeatureController::class, 'sendCounselorGcMessage'])->name('counselors-gc.send');
+         Route::post('counselors-gc/archive', [CpfFeatureController::class, 'archiveCounselorGc'])->name('counselors-gc.archive');
++        Route::get('counselors-dm/{peerUser}/messages', [CpfFeatureController::class, 'fetchCounselorDmMessages'])->name('counselors-dm.fetch');
++        Route::post('counselors-dm/{peerUser}/messages', [CpfFeatureController::class, 'sendCounselorDmMessage'])->name('counselors-dm.send');
+ 
+         // v4 Community, Treasurer & Governance routes
+         Route::post('achievements', [CpfV4Controller::class, 'storeAchievement'])->name('achievements.store');
+diff --git a/tests/Feature/SelfAssessmentGovernanceAndChatTest.php b/tests/Feature/SelfAssessmentGovernanceAndChatTest.php
+new file mode 100644
+index 0000000..b31795c
+--- /dev/null
++++ b/tests/Feature/SelfAssessmentGovernanceAndChatTest.php
+@@ -0,0 +1,177 @@
++<?php
++
++use App\Enums\CpfRole;
++use App\Enums\MembershipStatus;
++use App\Models\Campus;
++use App\Models\CampusMembership;
++use App\Models\DuesAuditLog;
++use App\Models\OfficerGcChannel;
++use App\Models\User;
++use App\Services\ProfanityFilterService;
++use Illuminate\Foundation\Testing\RefreshDatabase;
++
++uses(RefreshDatabase::class);
++
++function makeApprovedMember(Campus $campus, CpfRole $role, string $name, string $email): array
++{
++    $user = User::factory()->create([
++        'name' => $name,
++        'email' => $email,
++        'email_verified_at' => now(),
++        'must_change_password' => false,
++    ]);
++
++    $membership = CampusMembership::create([
++        'user_id' => $user->id,
++        'campus_id' => $campus->id,
++        'role' => $role,
++        'status' => MembershipStatus::Approved,
++        'enrollment_source' => 'manual',
++        'recorded_email' => $email,
++        'active_email' => $email,
++        'first_name' => $name,
++        'last_name' => 'CHMSU',
++        'full_name_last_first_mi' => "CHMSU, {$name}",
++        'approved_at' => now(),
++    ]);
++
++    return [$user, $membership];
++}
++
++test('multilingual profanity filter blocks EN/ES/HIL/CEB/TL including leetspeak and passes clean text', function () {
++    $filter = app(ProfanityFilterService::class);
++
++    // Restricted terms across all 5 languages + obfuscation
++    expect($filter->containsProfanity('What the f u c k is going on'))->toBeTrue();
++    expect($filter->containsProfanity('Eres un pendejo cabron'))->toBeTrue();
++    expect($filter->containsProfanity('Grabe ka g@go putangina'))->toBeTrue();
++    expect($filter->containsProfanity('Yudiputa linti ka gid'))->toBeTrue();
++    expect($filter->containsProfanity('Pisti y@wa atay ni'))->toBeTrue();
++
++    // Clean academic/campus phrases must not false-positive
++    expect($filter->containsProfanity('Good morning class! Please assist the Guidance Counselor at the Testing Room.'))->toBeFalse();
++    expect($filter->containsProfanity('Maayong aga mga peer facilitators sa CHMSU Alijis!'))->toBeFalse();
++});
++
++test('only Club Adviser can toggle campus mandatory_tour_enabled setting', function () {
++    $campus = Campus::create([
++        'code' => 'ALIJIS',
++        'name' => 'CHMSU Alijis Campus',
++        'slug' => 'alijis',
++        'current_academic_year' => '2026-2027',
++        'is_active' => true,
++        'mandatory_tour_enabled' => true,
++    ]);
++
++    [$adviser] = makeApprovedMember($campus, CpfRole::Adviser, 'Adviser', 'adviser@chmsu.edu.ph');
++    [$president] = makeApprovedMember($campus, CpfRole::President, 'President', 'pres@chmsu.edu.ph');
++
++    $this->actingAs($president)
++        ->patch('/settings/campus-tour', ['mandatory_tour_enabled' => false])
++        ->assertStatus(403);
++
++    $this->actingAs($adviser)
++        ->patch('/settings/campus-tour', ['mandatory_tour_enabled' => false])
++        ->assertRedirect();
++
++    expect($campus->fresh()->mandatory_tour_enabled)->toBeFalse();
++});
++
++test('guidance counselor is blocked from Officers GC but can use Counselors GC and 1-on-1 Counselor DM with profanity guard', function () {
++    $campus = Campus::create([
++        'code' => 'ALIJIS',
++        'name' => 'CHMSU Alijis Campus',
++        'slug' => 'alijis',
++        'current_academic_year' => '2026-2027',
++        'is_active' => true,
++    ]);
++
++    [$adviser] = makeApprovedMember($campus, CpfRole::Adviser, 'Adviser', 'adviser@chmsu.edu.ph');
++    [$rgc] = makeApprovedMember($campus, CpfRole::GuidanceCounselor, 'Counselor A', 'rgc@chmsu.edu.ph');
++
++    $channel = OfficerGcChannel::create([
++        'campus_id' => $campus->id,
++        'academic_year' => '2026-2027',
++        'channel_key' => "campus.{$campus->id}.officers-gc.2026-2027",
++        'is_active' => true,
++    ]);
++
++    // Blocked from Officers GC
++    $this->actingAs($rgc)
++        ->postJson("/officers-gc/{$channel->id}/messages", ['message_body' => 'Hello officers'])
++        ->assertStatus(403);
++
++    // Allowed in Counselors GC & 1-on-1 DM
++    $this->actingAs($rgc)
++        ->postJson('/counselors-gc/messages', ['message_body' => 'Testing Room slot confirmed for 10 AM.'])
++        ->assertStatus(201);
++
++    $this->actingAs($rgc)
++        ->postJson("/counselors-dm/{$adviser->id}/messages", ['message_body' => 'Quick check-in on Tier 2 referral.'])
++        ->assertStatus(201);
++
++    $this->actingAs($adviser)
++        ->getJson("/counselors-dm/{$rgc->id}/messages")
++        ->assertOk()
++        ->assertJsonCount(1, 'messages');
++
++    // Profanity blocked in Counselor DM
++    $this->actingAs($rgc)
++        ->postJson("/counselors-dm/{$adviser->id}/messages", ['message_body' => 'This is yawa gago'])
++        ->assertStatus(422);
++});
++
++test('dues toggle writes immutable DuesAuditLog and Adviser privilege suspension blocks rogue officer and revokes tokens', function () {
++    $campus = Campus::create([
++        'code' => 'ALIJIS',
++        'name' => 'CHMSU Alijis Campus',
++        'slug' => 'alijis',
++        'current_academic_year' => '2026-2027',
++        'is_active' => true,
++    ]);
++
++    [$adviser] = makeApprovedMember($campus, CpfRole::Adviser, 'Adviser', 'adviser@chmsu.edu.ph');
++    [$treasurer, $treasurerMembership] = makeApprovedMember($campus, CpfRole::Treasurer, 'Treasurer', 'treasurer@chmsu.edu.ph');
++    [$auditor] = makeApprovedMember($campus, CpfRole::Auditor, 'Auditor', 'auditor@chmsu.edu.ph');
++    [, $memberMembership] = makeApprovedMember($campus, CpfRole::Member, 'Student', 'student@chmsu.edu.ph');
++
++    $treasurer->createToken('mobile-test');
++    expect($treasurer->tokens()->count())->toBe(1);
++
++    // Treasurer toggles dues -> creates immutable DuesAuditLog
++    $this->actingAs($treasurer)
++        ->patch("/membership/{$memberMembership->id}/toggle-dues", ['reason' => 'Cash paid during orientation'])
++        ->assertRedirect();
++
++    expect(DuesAuditLog::count())->toBe(1);
++
++    // Auditor can inspect immutable dues audit trail
++    $this->actingAs($auditor)
++        ->getJson('/membership/dues-audit-logs')
++        ->assertOk()
++        ->assertJsonCount(1, 'logs');
++
++    // Adviser triggers Conflict Freeze (Suspend Officer Privileges)
++    $this->actingAs($adviser)
++        ->patchJson("/membership/{$treasurerMembership->id}/suspend-privileges", [
++            'suspend' => true,
++            'reason' => 'Financial audit review in progress',
++        ])
++        ->assertOk()
++        ->assertJson(['status' => 'suspended']);
++
++    expect($treasurer->fresh()->tokens()->count())->toBe(0);
++    expect($treasurer->fresh()->canValidatePayments())->toBeFalse();
++
++    // Suspended Treasurer is now blocked (403) from toggling dues
++    $this->actingAs($treasurer->fresh())
++        ->patch("/membership/{$memberMembership->id}/toggle-dues", ['reason' => 'Attempt while suspended'])
++        ->assertStatus(403);
++});
++
++test('new low-end-server scheduled automation commands execute cleanly', function () {
++    $this->artisan('cpf:purge-expired-election-chat')->assertSuccessful();
++    $this->artisan('cpf:alert-stale-referrals')->assertSuccessful();
++    $this->artisan('cpf:expire-stale-invites')->assertSuccessful();
++    $this->artisan('cpf:remind-upcoming-events')->assertSuccessful();
++});

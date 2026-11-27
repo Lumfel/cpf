@@ -6,6 +6,7 @@ use App\Enums\CpfRole;
 use App\Enums\MembershipStatus;
 use App\Models\AdviserHandover;
 use App\Models\Campus;
+use App\Models\CampusCounselor;
 use App\Models\CampusMembership;
 use App\Models\User;
 use App\Services\ClubTenureService;
@@ -14,6 +15,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class AdviserHandoverController extends Controller
 {
@@ -48,17 +50,19 @@ class AdviserHandoverController extends Controller
         if ($mode === 'existing_counselor') {
             $validated = $request->validate([
                 'current_password' => ['required', 'string'],
+                'outgoing_role' => ['nullable', Rule::in(['guidance_counselor', 'alumni'])],
                 'handover_notes' => ['nullable', 'string', 'max:1000'],
                 'target_membership_id' => ['required', 'integer', 'exists:campus_memberships,id'],
             ]);
         } else {
             $validated = $request->validate([
                 'current_password' => ['required', 'string'],
+                'outgoing_role' => ['nullable', Rule::in(['guidance_counselor', 'alumni'])],
                 'handover_notes' => ['nullable', 'string', 'max:1000'],
                 'first_name' => ['required', 'string', 'max:100'],
                 'middle_name' => ['nullable', 'string', 'max:50'],
                 'last_name' => ['required', 'string', 'max:100'],
-                'email' => ['required', 'email', 'max:255', 'unique:users,email'],
+                'email' => ['required', 'email', 'max:255'],
                 'sex' => ['required', Rule::in(['Male', 'Female'])],
                 'cellphone_number' => ['nullable', 'string', 'max:30'],
                 'initial_password' => ['required', 'string', 'min:8'],
@@ -71,9 +75,10 @@ class AdviserHandoverController extends Controller
             'Current Adviser password is incorrect.',
         );
 
+        $outgoingRole = (string) ($validated['outgoing_role'] ?? 'guidance_counselor');
         $confirmationCode = $this->generateVerificationCode();
 
-        [$handover, $targetMembership] = DB::transaction(function () use ($mode, $validated, $membership, $user, $confirmationCode): array {
+        [$handover, $targetMembership] = DB::transaction(function () use ($mode, $validated, $membership, $user, $confirmationCode, $outgoingRole): array {
             Campus::query()
                 ->whereKey($membership->campus_id)
                 ->lockForUpdate()
@@ -134,47 +139,86 @@ class AdviserHandoverController extends Controller
                 $email = strtolower(trim((string) $validated['email']));
                 $phone = trim((string) ($validated['cellphone_number'] ?? ''));
 
-                $incomingUser = new User([
-                    'name' => $fullName,
-                    'email' => $email,
-                    'password' => Hash::make((string) $validated['initial_password']),
-                    'must_change_password' => true,
-                    'temporary_password_issued_at' => now(),
-                ]);
-                $incomingUser->email_verified_at = now();
-                $incomingUser->save();
+                $existingUser = User::query()->where('email', $email)->lockForUpdate()->first();
 
-                $targetMembership = CampusMembership::create([
-                    'user_id' => $incomingUser->id,
-                    'campus_id' => $membership->campus_id,
-                    'role' => CpfRole::GuidanceCounselor,
-                    'status' => MembershipStatus::Pending,
-                    'enrollment_source' => 'officer_added',
-                    'recorded_email' => $email,
-                    'first_name' => trim((string) $validated['first_name']),
-                    'middle_name' => isset($validated['middle_name']) ? trim((string) $validated['middle_name']) : null,
-                    'last_name' => trim((string) $validated['last_name']),
-                    'full_name_last_first_mi' => $fullName,
-                    'course' => 'Guidance Services',
-                    'year_level' => 'Faculty',
-                    'section' => 'Incoming Adviser',
-                    'course_year_section' => 'Guidance Services / Incoming Adviser',
-                    'sex' => $validated['sex'],
-                    'gender_identity' => $validated['sex'] === 'Male' ? 'Man' : 'Woman',
-                    'birthdate' => '1985-01-01',
-                    'active_email' => $email,
-                    'facebook_profile_url' => 'https://www.facebook.com/chmsu.cpf.adviser',
-                    'active_fb_account' => $fullName,
-                    'cellphone_number' => $phone !== '' ? $phone : '0917-000-0000',
-                    'added_or_approved_by' => $user->id,
-                    'approved_at' => null,
-                    'is_in_messenger_gc' => false,
-                    'gc_confirmed_by' => null,
-                    'gc_confirmed_at' => null,
-                    'has_paid_dues' => false,
-                    'dues_confirmed_by' => null,
-                    'dues_confirmed_at' => null,
-                ])->load('user:id,name,email');
+                if ($existingUser !== null) {
+                    if ($existingUser->id === $user->id) {
+                        throw ValidationException::withMessages([
+                            'email' => ['You cannot initiate an Adviser handover to your own account.'],
+                        ]);
+                    }
+
+                    $hasProtectedMembership = CampusMembership::query()
+                        ->where('user_id', $existingUser->id)
+                        ->whereIn('status', [
+                            MembershipStatus::Approved->value,
+                            MembershipStatus::Alumni->value,
+                        ])
+                        ->lockForUpdate()
+                        ->exists();
+
+                    if ($hasProtectedMembership) {
+                        throw ValidationException::withMessages([
+                            'email' => ['An account with this email already holds an approved or alumni CPF membership.'],
+                        ]);
+                    }
+
+                    $existingUser->forceFill([
+                        'name' => $fullName,
+                        'password' => Hash::make((string) $validated['initial_password']),
+                        'email_verified_at' => $existingUser->email_verified_at ?? now(),
+                        'must_change_password' => true,
+                        'temporary_password_issued_at' => now(),
+                    ])->save();
+
+                    $incomingUser = $existingUser;
+                } else {
+                    $incomingUser = new User([
+                        'name' => $fullName,
+                        'email' => $email,
+                        'password' => Hash::make((string) $validated['initial_password']),
+                        'must_change_password' => true,
+                        'temporary_password_issued_at' => now(),
+                    ]);
+                    $incomingUser->email_verified_at = now();
+                    $incomingUser->save();
+                }
+
+                $targetMembership = CampusMembership::updateOrCreate(
+                    [
+                        'user_id' => $incomingUser->id,
+                        'campus_id' => $membership->campus_id,
+                    ],
+                    [
+                        'role' => CpfRole::GuidanceCounselor,
+                        'status' => MembershipStatus::Pending,
+                        'enrollment_source' => 'officer_added',
+                        'recorded_email' => $email,
+                        'first_name' => trim((string) $validated['first_name']),
+                        'middle_name' => isset($validated['middle_name']) ? trim((string) $validated['middle_name']) : null,
+                        'last_name' => trim((string) $validated['last_name']),
+                        'full_name_last_first_mi' => $fullName,
+                        'course' => 'Guidance Services',
+                        'year_level' => 'Faculty',
+                        'section' => 'Incoming Adviser',
+                        'course_year_section' => 'Guidance Services / Incoming Adviser',
+                        'sex' => $validated['sex'],
+                        'gender_identity' => $validated['sex'] === 'Male' ? 'Man' : 'Woman',
+                        'birthdate' => '1985-01-01',
+                        'active_email' => $email,
+                        'facebook_profile_url' => 'https://www.facebook.com/chmsu.cpf.adviser',
+                        'active_fb_account' => $fullName,
+                        'cellphone_number' => $phone !== '' ? $phone : '0917-000-0000',
+                        'added_or_approved_by' => $user->id,
+                        'approved_at' => null,
+                        'is_in_messenger_gc' => false,
+                        'gc_confirmed_by' => null,
+                        'gc_confirmed_at' => null,
+                        'has_paid_dues' => false,
+                        'dues_confirmed_by' => null,
+                        'dues_confirmed_at' => null,
+                    ],
+                )->load('user:id,name,email');
             }
 
             $handover = AdviserHandover::create([
@@ -183,8 +227,9 @@ class AdviserHandoverController extends Controller
                 'to_user_id' => $targetMembership->user_id,
                 'to_membership_id' => $targetMembership->id,
                 'status' => 'pending',
-                'outgoing_role' => 'alumni',
+                'outgoing_role' => $outgoingRole,
                 'confirmation_code' => $confirmationCode,
+                'failed_attempts' => 0,
                 'handover_notes' => isset($validated['handover_notes']) && filled($validated['handover_notes'])
                     ? trim((string) $validated['handover_notes'])
                     : null,
@@ -200,6 +245,7 @@ class AdviserHandoverController extends Controller
             'handover' => [
                 'id' => $handover->id,
                 'confirmation_code' => $handover->confirmation_code,
+                'outgoing_role' => $handover->outgoing_role,
                 'to_name' => $targetMembership->full_name_last_first_mi,
                 'to_email' => $targetMembership->user?->email ?? $targetMembership->active_email,
                 'expires_at' => $handover->expires_at->toDayDateTimeString(),
@@ -220,6 +266,7 @@ class AdviserHandoverController extends Controller
         $validated = $request->validate([
             'decision' => ['required', Rule::in(['accepted', 'declined'])],
             'confirmation_code' => ['required_if:decision,accepted', 'nullable', 'string'],
+            'outgoing_role' => ['nullable', Rule::in(['guidance_counselor', 'alumni'])],
         ]);
 
         $enteredCode = strtoupper(trim((string) ($validated['confirmation_code'] ?? '')));
@@ -245,11 +292,9 @@ class AdviserHandoverController extends Controller
                 return 'expired';
             }
 
-            abort_unless(
-                $lockedHandover->isPendingAndActive(),
-                422,
-                'This Adviser handover is no longer active or has expired.',
-            );
+            if (! $lockedHandover->isPendingAndActive()) {
+                return 'inactive';
+            }
 
             if ($validated['decision'] === 'declined') {
                 $lockedHandover->update([
@@ -262,11 +307,26 @@ class AdviserHandoverController extends Controller
                 return 'declined';
             }
 
-            abort_unless(
-                hash_equals(strtoupper($lockedHandover->confirmation_code), $enteredCode),
-                422,
-                'Invalid 6-character handover verification code.',
-            );
+            if (! hash_equals(strtoupper($lockedHandover->confirmation_code), $enteredCode)) {
+                $attempts = (int) $lockedHandover->failed_attempts + 1;
+                $updates = ['failed_attempts' => $attempts];
+
+                if ($attempts >= 5) {
+                    $updates['status'] = 'locked';
+                    $updates['responded_at'] = now();
+                    $updates['expires_at'] = now()->subSecond();
+                }
+
+                $lockedHandover->update($updates);
+
+                if ($attempts >= 5) {
+                    $this->revokePendingIncomingAdviserMembership($lockedHandover);
+
+                    return 'locked_out';
+                }
+
+                return 'invalid_code';
+            }
 
             $incomingMembership = $lockedHandover->toMembership()->lockForUpdate()->first();
 
@@ -303,23 +363,63 @@ class AdviserHandoverController extends Controller
             ]);
             $this->tenureService->openTenure($incomingMembership->fresh(), $user);
 
-            $this->tenureService->transitionToAlumni($outgoingMembership, $user, 'adviser_handover');
+            $outgoingRole = in_array($lockedHandover->outgoing_role, ['guidance_counselor', 'alumni'], true)
+                ? $lockedHandover->outgoing_role
+                : ($validated['outgoing_role'] ?? 'guidance_counselor');
+
+            if ($outgoingRole === 'alumni') {
+                $this->tenureService->transitionToAlumni($outgoingMembership, $user, 'adviser_handover');
+            } else {
+                $this->tenureService->recordRoleTransition(
+                    $outgoingMembership,
+                    CpfRole::GuidanceCounselor,
+                    $user,
+                    'adviser_handover',
+                );
+
+                $outgoingMembership->update([
+                    'role' => CpfRole::GuidanceCounselor,
+                    'status' => MembershipStatus::Approved,
+                    'section' => 'Guidance Counselor',
+                    'course_year_section' => 'Guidance Services / Guidance Counselor',
+                ]);
+
+                CampusCounselor::query()->firstOrCreate(
+                    [
+                        'campus_id' => $lockedHandover->campus_id,
+                        'name' => $outgoingMembership->full_name_last_first_mi,
+                    ],
+                    [
+                        'title' => 'Registered Guidance Counselor',
+                        'specialty' => 'Student Wellness & Peer Referral Triage',
+                        'weekly_vacant_slots' => [
+                            ['day' => 'Monday', 'start' => '09:00', 'end' => '11:30'],
+                            ['day' => 'Wednesday', 'start' => '13:30', 'end' => '16:00'],
+                            ['day' => 'Friday', 'start' => '09:00', 'end' => '11:30'],
+                        ],
+                        'is_active' => true,
+                    ],
+                );
+            }
 
             $lockedCampus->update(['adviser_name' => $incomingMembership->full_name_last_first_mi]);
 
             $lockedHandover->update([
                 'status' => 'accepted',
+                'outgoing_role' => $outgoingRole,
                 'responded_at' => now(),
             ]);
 
             return 'accepted';
         });
 
-        if ($resultStatus === 'expired') {
-            abort(422, 'This Adviser handover has expired and its pending invitation has been revoked.');
-        }
-
-        return response()->json(['status' => $resultStatus]);
+        return match ($resultStatus) {
+            'expired' => abort(422, 'This Adviser handover has expired and its pending invitation has been revoked.'),
+            'inactive' => abort(422, 'This Adviser handover is no longer active or has expired.'),
+            'invalid_code' => abort(422, 'Invalid 6-character handover verification code.'),
+            'locked_out' => abort(422, 'Too many failed verification attempts. This Adviser handover has been locked and invalidated.'),
+            default => response()->json(['status' => $resultStatus]),
+        };
     }
 
     public function cancel(Request $request, AdviserHandover $handover): JsonResponse

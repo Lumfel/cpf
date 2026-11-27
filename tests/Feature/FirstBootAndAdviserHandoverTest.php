@@ -204,6 +204,7 @@ class FirstBootAndAdviserHandoverTest extends TestCase
         $initRes = $this->actingAs($adviser)
             ->postJson('/adviser-handover', [
                 'current_password' => 'password',
+                'outgoing_role' => 'alumni',
                 'first_name' => 'Elena',
                 'middle_name' => 'R',
                 'last_name' => 'Navarro',

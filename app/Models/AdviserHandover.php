@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'status',
     'outgoing_role',
     'confirmation_code',
+    'failed_attempts',
     'handover_notes',
     'initiated_at',
     'expires_at',
@@ -24,6 +25,7 @@ class AdviserHandover extends Model
     protected function casts(): array
     {
         return [
+            'failed_attempts' => 'integer',
             'initiated_at' => 'datetime',
             'expires_at' => 'datetime',
             'responded_at' => 'datetime',
@@ -52,6 +54,8 @@ class AdviserHandover extends Model
 
     public function isPendingAndActive(): bool
     {
-        return $this->status === 'pending' && $this->expires_at->isFuture();
+        return $this->status === 'pending'
+            && (int) $this->failed_attempts < 5
+            && $this->expires_at->isFuture();
     }
 }

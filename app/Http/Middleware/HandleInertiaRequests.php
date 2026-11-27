@@ -7,6 +7,7 @@ use App\Enums\MembershipStatus;
 use App\Http\Controllers\FirstBootSetupController;
 use App\Models\AdviserHandover;
 use App\Models\Campus;
+use App\Models\CampusEventNotification;
 use App\Models\CampusMembership;
 use Illuminate\Database\QueryException;
 use Illuminate\Http\Request;
@@ -58,10 +59,24 @@ class HandleInertiaRequests extends Middleware
         }
         $needsAdviserSetup = FirstBootSetupController::needsAdviserSetup();
 
+        $mandatoryTourEnabled = true;
+        try {
+            $campusForTour = $membership?->campus
+                ?? Campus::query()->where('is_active', true)->first(['id', 'mandatory_tour_enabled']);
+            if ($campusForTour !== null && $campusForTour->mandatory_tour_enabled !== null) {
+                $mandatoryTourEnabled = (bool) $campusForTour->mandatory_tour_enabled;
+            }
+        } catch (\Throwable) {
+            $mandatoryTourEnabled = true;
+        }
+
         $systemBootstrap = [
             'needsAdviserSetup' => $needsAdviserSetup,
             'activeCampus' => null,
             'campuses' => [],
+            'mandatoryTourEnabled' => $mandatoryTourEnabled,
+            'exemptFromMandatoryTour' => $user?->verifiedRole() === CpfRole::GuidanceCounselor,
+            'officersGcPaused' => (bool) config('cpf.features.officers_gc_paused', false),
         ];
 
         if ($needsAdviserSetup) {
@@ -154,15 +169,63 @@ class HandleInertiaRequests extends Middleware
             }
         }
 
+        $notificationsData = [
+            'items' => [],
+            'unread_count' => 0,
+        ];
+
+        if ($user) {
+            try {
+                $notificationsQuery = CampusEventNotification::query()
+                    ->where('user_id', $user->id);
+
+                if ($membership) {
+                    $notificationsQuery->where('campus_id', $membership->campus_id);
+                }
+
+                $unreadCount = (clone $notificationsQuery)
+                    ->whereNull('read_at')
+                    ->count();
+
+                $recentNotifications = (clone $notificationsQuery)
+                    ->orderByRaw('CASE WHEN read_at IS NULL THEN 0 ELSE 1 END')
+                    ->latest('id')
+                    ->limit(10)
+                    ->get(['id', 'campus_event_id', 'type', 'title', 'message', 'read_at', 'created_at'])
+                    ->map(fn (CampusEventNotification $notification): array => [
+                        'id' => $notification->id,
+                        'campus_event_id' => $notification->campus_event_id,
+                        'type' => $notification->type,
+                        'title' => $notification->title,
+                        'message' => $notification->message,
+                        'read_at' => $notification->read_at?->toIso8601String(),
+                        'is_read' => $notification->read_at !== null,
+                        'created_at' => $notification->created_at?->diffForHumans(),
+                        'created_at_iso' => $notification->created_at?->toIso8601String(),
+                    ])
+                    ->values()
+                    ->all();
+
+                $notificationsData = [
+                    'items' => $recentNotifications,
+                    'unread_count' => $unreadCount,
+                ];
+            } catch (\Throwable) {
+                // Ignore if campus_event_notifications migration has not run yet
+            }
+        }
+
         return [
             ...parent::share($request),
             'name' => config('app.name'),
             'systemBootstrap' => $systemBootstrap,
             'pendingAdviserHandover' => $pendingAdviserHandover,
+            'notifications' => $notificationsData,
             'auth' => [
                 'user' => $user,
                 'membership' => $membership,
                 'role' => $user?->verifiedRole()?->value,
+                'privilegesSuspended' => $user?->hasSuspendedOfficerPrivileges() ?? false,
                 'formerRole' => $user?->formerRole()?->value,
                 'isAlumni' => (bool) ($user?->isAlumni() ?? false),
                 'roleLabel' => $user?->verifiedRole()?->label() ?? $user?->formerRoleLabel() ?? 'Ordinary Account',

@@ -25,10 +25,6 @@ class FirstBootSetupController extends Controller
     public static function needsAdviserSetup(): bool
     {
         try {
-            if (User::query()->exists()) {
-                return false;
-            }
-
             return CampusMembership::query()
                 ->where('role', CpfRole::Adviser->value)
                 ->where('status', MembershipStatus::Approved->value)
@@ -75,115 +71,115 @@ class FirstBootSetupController extends Controller
                     'First-boot setup is permanently locked because the portal has already been initialized.',
                 );
 
-            $customCampusName = trim((string) ($validated['campus_name'] ?? ''));
+                $customCampusName = trim((string) ($validated['campus_name'] ?? ''));
 
-            if (! $campus) {
-                $campus = Campus::create([
-                    'code' => 'ALIJIS',
-                    'name' => $customCampusName !== '' ? $customCampusName : 'CHMSU Alijis Campus',
-                    'slug' => 'alijis',
-                    'current_academic_year' => trim((string) $validated['academic_year']),
-                    'gc_group_name' => 'CPF Official Peer GC (AY '.trim((string) $validated['academic_year']).')',
+                if (! $campus) {
+                    $campus = Campus::create([
+                        'code' => 'ALIJIS',
+                        'name' => $customCampusName !== '' ? $customCampusName : 'CHMSU Alijis Campus',
+                        'slug' => 'alijis',
+                        'current_academic_year' => trim((string) $validated['academic_year']),
+                        'gc_group_name' => 'CPF Official Peer GC (AY '.trim((string) $validated['academic_year']).')',
+                        'is_active' => true,
+                    ]);
+                }
+
+                $firstName = trim((string) $validated['first_name']);
+                $middleName = isset($validated['middle_name']) ? trim((string) $validated['middle_name']) : null;
+                $lastName = trim((string) $validated['last_name']);
+                $fullName = CampusMembership::formatLastFirstMi($firstName, $middleName !== '' ? $middleName : null, $lastName);
+                $academicYear = trim((string) $validated['academic_year']);
+                $email = strtolower(trim((string) $validated['email']));
+                $phone = trim((string) ($validated['cellphone_number'] ?? ''));
+
+                $campus->update([
+                    'name' => $customCampusName !== '' ? $customCampusName : $campus->name,
+                    'adviser_name' => $fullName,
+                    'current_academic_year' => $academicYear,
+                    'gc_group_name' => $campus->gc_group_name ?: "CPF {$campus->code} Official Peer GC (AY {$academicYear})",
                     'is_active' => true,
                 ]);
-            }
 
-            $firstName = trim((string) $validated['first_name']);
-            $middleName = isset($validated['middle_name']) ? trim((string) $validated['middle_name']) : null;
-            $lastName = trim((string) $validated['last_name']);
-            $fullName = CampusMembership::formatLastFirstMi($firstName, $middleName !== '' ? $middleName : null, $lastName);
-            $academicYear = trim((string) $validated['academic_year']);
-            $email = strtolower(trim((string) $validated['email']));
-            $phone = trim((string) ($validated['cellphone_number'] ?? ''));
+                CampusRoom::updateOrCreate(
+                    [
+                        'campus_id' => $campus->id,
+                        'is_single_allowed_room' => true,
+                    ],
+                    [
+                        'room_code' => 'TESTING_ROOM',
+                        'room_name' => 'Testing Room',
+                        'capacity' => 6,
+                    ],
+                );
 
-            $campus->update([
-                'name' => $customCampusName !== '' ? $customCampusName : $campus->name,
-                'adviser_name' => $fullName,
-                'current_academic_year' => $academicYear,
-                'gc_group_name' => $campus->gc_group_name ?: "CPF {$campus->code} Official Peer GC (AY {$academicYear})",
-                'is_active' => true,
-            ]);
+                CampusCounselor::ensureDefaultCounselorsForCampus($campus->id);
 
-            CampusRoom::updateOrCreate(
-                [
-                    'campus_id' => $campus->id,
-                    'is_single_allowed_room' => true,
-                ],
-                [
-                    'room_code' => 'TESTING_ROOM',
-                    'room_name' => 'Testing Room',
-                    'capacity' => 6,
-                ],
-            );
+                OfficerGcChannel::updateOrCreate(
+                    [
+                        'campus_id' => $campus->id,
+                        'academic_year' => $academicYear,
+                    ],
+                    [
+                        'channel_key' => sprintf('campus.%s.officers-gc.%s', strtolower($campus->code), $academicYear),
+                        'is_active' => true,
+                    ],
+                );
 
-            CampusCounselor::ensureDefaultCounselorsForCampus($campus->id);
-
-            OfficerGcChannel::updateOrCreate(
-                [
-                    'campus_id' => $campus->id,
-                    'academic_year' => $academicYear,
-                ],
-                [
-                    'channel_key' => sprintf('campus.%s.officers-gc.%s', strtolower($campus->code), $academicYear),
-                    'is_active' => true,
-                ],
-            );
-
-            $adviser = new User([
-                'name' => $fullName,
-                'email' => $email,
-                'password' => Hash::make((string) $validated['password']),
-                'must_change_password' => false,
-            ]);
-            $adviser->email_verified_at = now();
-            $adviser->save();
-
-            $adviserMembership = CampusMembership::create([
-                'user_id' => $adviser->id,
-                'campus_id' => $campus->id,
-                'role' => CpfRole::Adviser,
-                'status' => MembershipStatus::Approved,
-                'enrollment_source' => 'officer_added',
-                'recorded_email' => $email,
-                'first_name' => $firstName,
-                'middle_name' => $middleName !== '' ? $middleName : null,
-                'last_name' => $lastName,
-                'full_name_last_first_mi' => $fullName,
-                'course' => 'Guidance Services',
-                'year_level' => 'Faculty',
-                'section' => 'Adviser',
-                'course_year_section' => 'Guidance Services / Adviser',
-                'sex' => $validated['sex'],
-                'gender_identity' => $validated['sex'] === 'Male' ? 'Man' : 'Woman',
-                'birthdate' => '1985-01-01',
-                'active_email' => $email,
-                'facebook_profile_url' => 'https://www.facebook.com/chmsu.cpf.adviser',
-                'active_fb_account' => $fullName,
-                'cellphone_number' => $phone !== '' ? $phone : '0917-000-0000',
-                'added_or_approved_by' => $adviser->id,
-                'approved_at' => now(),
-                'is_in_messenger_gc' => true,
-                'gc_confirmed_by' => $adviser->id,
-                'gc_confirmed_at' => now(),
-                'has_paid_dues' => true,
-                'dues_confirmed_by' => $adviser->id,
-                'dues_confirmed_at' => now(),
-            ]);
-
-            app(ClubTenureService::class)->openTenure($adviserMembership, $adviser, $adviserMembership->approved_at);
-
-            if (PeerQuote::query()->where('is_approved', true)->doesntExist()) {
-                PeerQuote::create([
-                    'campus_id' => $campus->id,
-                    'submitted_by_user_id' => $adviser->id,
-                    'quote_text' => 'Take a breath. Your presence in this community matters more than perfection.',
-                    'author_name' => 'Circle of Peer Facilitators',
-                    'mood_tag' => 'Calm',
-                    'is_approved' => true,
+                $adviser = new User([
+                    'name' => $fullName,
+                    'email' => $email,
+                    'password' => Hash::make((string) $validated['password']),
+                    'must_change_password' => false,
                 ]);
-            }
+                $adviser->email_verified_at = now();
+                $adviser->save();
 
-            return [$adviser, $campus, $fullName];
+                $adviserMembership = CampusMembership::create([
+                    'user_id' => $adviser->id,
+                    'campus_id' => $campus->id,
+                    'role' => CpfRole::Adviser,
+                    'status' => MembershipStatus::Approved,
+                    'enrollment_source' => 'officer_added',
+                    'recorded_email' => $email,
+                    'first_name' => $firstName,
+                    'middle_name' => $middleName !== '' ? $middleName : null,
+                    'last_name' => $lastName,
+                    'full_name_last_first_mi' => $fullName,
+                    'course' => 'Guidance Services',
+                    'year_level' => 'Faculty',
+                    'section' => 'Adviser',
+                    'course_year_section' => 'Guidance Services / Adviser',
+                    'sex' => $validated['sex'],
+                    'gender_identity' => $validated['sex'] === 'Male' ? 'Man' : 'Woman',
+                    'birthdate' => '1985-01-01',
+                    'active_email' => $email,
+                    'facebook_profile_url' => 'https://www.facebook.com/chmsu.cpf.adviser',
+                    'active_fb_account' => $fullName,
+                    'cellphone_number' => $phone !== '' ? $phone : '0917-000-0000',
+                    'added_or_approved_by' => $adviser->id,
+                    'approved_at' => now(),
+                    'is_in_messenger_gc' => true,
+                    'gc_confirmed_by' => $adviser->id,
+                    'gc_confirmed_at' => now(),
+                    'has_paid_dues' => true,
+                    'dues_confirmed_by' => $adviser->id,
+                    'dues_confirmed_at' => now(),
+                ]);
+
+                app(ClubTenureService::class)->openTenure($adviserMembership, $adviser, $adviserMembership->approved_at);
+
+                if (PeerQuote::query()->where('is_approved', true)->doesntExist()) {
+                    PeerQuote::create([
+                        'campus_id' => $campus->id,
+                        'submitted_by_user_id' => $adviser->id,
+                        'quote_text' => 'Take a breath. Your presence in this community matters more than perfection.',
+                        'author_name' => 'Circle of Peer Facilitators',
+                        'mood_tag' => 'Calm',
+                        'is_approved' => true,
+                    ]);
+                }
+
+                return [$adviser, $campus, $fullName];
             });
         });
 

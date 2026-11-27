@@ -82,7 +82,28 @@ class OfficersChatController extends Controller
             ->orderByDesc('archived_at')
             ->get();
 
+        $counselorPeers = collect();
+        if ($isClubAdviser) {
+            $counselorPeers = \App\Models\CampusMembership::query()
+                ->with('user:id,name')
+                ->where('campus_id', $campusId)
+                ->where('status', \App\Enums\MembershipStatus::Approved->value)
+                ->whereIn('role', [\App\Enums\CpfRole::Adviser->value, \App\Enums\CpfRole::GuidanceCounselor->value])
+                ->where('user_id', '!=', $user->id)
+                ->alphabetical()
+                ->get()
+                ->map(fn ($cm) => [
+                    'user_id' => $cm->user_id,
+                    'name' => $cm->user?->name ?? $cm->full_name_last_first_mi,
+                    'role' => $cm->role->value,
+                    'role_label' => $cm->role->label(),
+                ])
+                ->values();
+        }
+
         return Inertia::render('officers-chat/Index', [
+            'counselorPeers' => $counselorPeers,
+            'officersGcPaused' => (bool) config('cpf.features.officers_gc_paused', false),
             'campusName' => $membership->campus?->name ?? 'CHMSU Alijis Campus',
             'isClubAdviser' => $isClubAdviser,
             'officerChannel' => $officerChannel,

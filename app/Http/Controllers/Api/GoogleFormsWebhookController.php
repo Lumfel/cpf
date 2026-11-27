@@ -3,14 +3,17 @@
 namespace App\Http\Controllers\Api;
 
 use App\Actions\Membership\SubmitOnlineMembershipApplication;
+use App\Enums\CpfRole;
 use App\Enums\MembershipStatus;
 use App\Http\Controllers\Controller;
+use App\Http\Controllers\FirstBootSetupController;
 use App\Models\Campus;
 use App\Models\CampusMembership;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Str;
@@ -43,6 +46,12 @@ class GoogleFormsWebhookController extends Controller
 
     public function store(Request $request, SubmitOnlineMembershipApplication $action): JsonResponse
     {
+        abort_if(
+            FirstBootSetupController::needsAdviserSetup(),
+            503,
+            'Campus portal is awaiting Club Adviser initialization.',
+        );
+
         if (! $this->isAuthorized($request)) {
             return response()->json([
                 'message' => 'Unauthorized Google Forms integration request.',
@@ -122,32 +131,48 @@ class GoogleFormsWebhookController extends Controller
 
         $validated = $validator->validated();
         $email = strtolower(trim((string) $validated['active_email']));
-        $existingUser = User::query()->where('email', $email)->first();
 
-        if ($existingUser && $existingUser->primaryMembership?->status === MembershipStatus::Approved) {
+        $membership = DB::transaction(function () use ($email, $validated, $action): ?CampusMembership {
+            $existingUser = User::query()->where('email', $email)->lockForUpdate()->first();
+
+            if ($existingUser) {
+                $existingMemberships = CampusMembership::query()
+                    ->where('user_id', $existingUser->id)
+                    ->lockForUpdate()
+                    ->get();
+
+                $hasProtected = $existingMemberships->contains(
+                    fn (CampusMembership $m): bool => in_array($m->status, [MembershipStatus::Approved, MembershipStatus::Alumni], true)
+                        || in_array($m->role, [CpfRole::Adviser, CpfRole::GuidanceCounselor], true),
+                );
+
+                if ($hasProtected) {
+                    return null;
+                }
+
+                $targetUser = $existingUser;
+            } else {
+                $targetUser = new User([
+                    'name' => CampusMembership::formatLastFirstMi(
+                        (string) $validated['first_name'],
+                        $validated['middle_name'] ?? null,
+                        (string) $validated['last_name'],
+                    ),
+                    'email' => $email,
+                    'password' => Hash::make(Str::password(16)),
+                    'must_change_password' => true,
+                ]);
+                $targetUser->save();
+            }
+
+            return $action->handle($targetUser, $validated, 'google_forms_api');
+        });
+
+        if ($membership === null) {
             return response()->json([
-                'message' => 'This email already belongs to an approved CPF member.',
+                'message' => 'This email already belongs to an approved, alumni, counselor, or adviser CPF account.',
             ], 422);
         }
-
-        if ($existingUser) {
-            $targetUser = $existingUser;
-        } else {
-            $targetUser = new User([
-                'name' => CampusMembership::formatLastFirstMi(
-                    (string) $validated['first_name'],
-                    $validated['middle_name'] ?? null,
-                    (string) $validated['last_name'],
-                ),
-                'email' => $email,
-                'password' => Hash::make(Str::password(16)),
-                'must_change_password' => false,
-            ]);
-            $targetUser->email_verified_at = now();
-            $targetUser->save();
-        }
-
-        $membership = $action->handle($targetUser, $validated, 'google_forms_api');
 
         return response()->json([
             'message' => 'Google Form application recorded for Club Adviser review and confirmation.',

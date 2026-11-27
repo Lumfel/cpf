@@ -14,12 +14,21 @@ return Application::configure(basePath: dirname(__DIR__))
         web: __DIR__.'/../routes/web.php',
         api: __DIR__.'/../routes/api.php',
         commands: __DIR__.'/../routes/console.php',
+        channels: __DIR__.'/../routes/channels.php',
         health: '/up',
     )
-    
+
     ->withMiddleware(function (Middleware $middleware): void {
-        $middleware->trustProxies(at: '*');
-        
+        $rawProxies = $_ENV['TRUSTED_PROXIES'] ?? $_SERVER['TRUSTED_PROXIES'] ?? getenv('TRUSTED_PROXIES');
+        $trustedProxies = is_string($rawProxies) && trim($rawProxies) !== ''
+            ? array_values(array_filter(
+                array_map('trim', explode(',', $rawProxies)),
+                static fn (string $ip): bool => $ip !== '' && $ip !== '*' && $ip !== '**',
+            ))
+            : ['127.0.0.1', '::1'];
+
+        $middleware->trustProxies(at: $trustedProxies !== [] ? $trustedProxies : ['127.0.0.1', '::1']);
+
         $middleware->encryptCookies(except: ['appearance', 'sidebar_state']);
 
         $middleware->web(append: [

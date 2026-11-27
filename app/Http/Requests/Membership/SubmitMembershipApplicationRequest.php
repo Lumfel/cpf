@@ -2,12 +2,25 @@
 
 namespace App\Http\Requests\Membership;
 
+use App\Http\Controllers\FirstBootSetupController;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Validation\Rule;
 
 class SubmitMembershipApplicationRequest extends FormRequest
 {
-    public function authorize(): bool { return true; }
+    public function authorize(): bool
+    {
+        return true;
+    }
+
+    protected function prepareForValidation(): void
+    {
+        abort_if(
+            FirstBootSetupController::needsAdviserSetup(),
+            503,
+            'Campus portal is awaiting Club Adviser initialization.',
+        );
+    }
 
     public function rules(): array
     {

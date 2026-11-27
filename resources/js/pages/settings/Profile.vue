@@ -1,7 +1,6 @@
 <script setup lang="ts">
-import { Form, Head, usePage } from '@inertiajs/vue3';
-import { Link } from '@inertiajs/vue3';
-import { computed } from 'vue';
+import { Form, Head, Link, router, usePage } from '@inertiajs/vue3';
+import { computed, ref } from 'vue';
 import ProfileController from '@/actions/App/Http/Controllers/Settings/ProfileController';
 import Heading from '@/components/Heading.vue';
 import InputError from '@/components/InputError.vue';
@@ -25,6 +24,28 @@ defineOptions({
 
 const page = usePage();
 const user = computed(() => page.props.auth.user);
+const isClubAdviser = computed(() => (page.props.auth as any)?.role === 'adviser');
+const mandatoryTourEnabled = ref<boolean>((page.props as any)?.systemBootstrap?.mandatoryTourEnabled !== false);
+const savingTourSetting = ref(false);
+
+function toggleMandatoryTour() {
+    if (!isClubAdviser.value || savingTourSetting.value) return;
+    savingTourSetting.value = true;
+    const nextValue = !mandatoryTourEnabled.value;
+    router.patch(
+        '/settings/campus-tour',
+        { mandatory_tour_enabled: nextValue },
+        {
+            preserveScroll: true,
+            onSuccess: () => {
+                mandatoryTourEnabled.value = nextValue;
+            },
+            onFinish: () => {
+                savingTourSetting.value = false;
+            },
+        },
+    );
+}
 </script>
 
 <template>
@@ -101,6 +122,35 @@ const user = computed(() => page.props.auth.user);
                 >
             </div>
         </Form>
+    </div>
+
+    <div
+        v-if="isClubAdviser"
+        class="mt-6 rounded-xl border border-border bg-card p-4 text-sm text-foreground"
+    >
+        <div class="flex flex-wrap items-center justify-between gap-3">
+            <div>
+                <div class="font-semibold text-foreground">
+                    Mandatory System Tour (Club Adviser Only)
+                </div>
+                <p class="mt-1 text-xs text-muted-foreground">
+                    Control whether new visitors must watch the intro tour on first visit. Guidance Counselors are automatically exempt.
+                </p>
+            </div>
+            <button
+                type="button"
+                :disabled="savingTourSetting"
+                @click="toggleMandatoryTour"
+                class="rounded-xl border px-3.5 py-2 text-xs font-bold transition disabled:opacity-50"
+                :class="
+                    mandatoryTourEnabled
+                        ? 'border-[#1A8F26]/40 bg-[#1A8F26]/15 text-[#1A8F26]'
+                        : 'border-border bg-muted text-muted-foreground'
+                "
+            >
+                {{ mandatoryTourEnabled ? 'Mandatory Tour: ON' : 'Mandatory Tour: OFF' }}
+            </button>
+        </div>
     </div>
 
     <div

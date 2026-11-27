@@ -99,6 +99,8 @@ const props = withDefaults(
         myReferrals: SafePeerReferralItem[];
         counselorInbox: CounselorInboxItem[];
         counselorGcMessages: MessengerOfficerMessage[];
+    counselorPeers?: Array<{ user_id: number; name: string; role: string; role_label: string }>;
+    officersGcPaused?: boolean;
         priorityTiers: Array<{ value: string; label: string; responseTarget: string }>;
         officerChannel: {
             id: number;
@@ -825,7 +827,10 @@ async function archiveAndResetGc() {
                 :channel="officerChannel"
                 :initial-messages="officerMessages"
                 :counselor-messages="counselorGcMessages"
+                :counselor-peers="counselorPeers ?? []"
                 :can-access-counselor-gc="canCoordinateGuidance"
+                :hide-officers-gc="!isOfficerOrAdviser"
+                :officers-gc-paused="officersGcPaused ?? false"
                 default-thread="counselors"
                 :current-user-id="currentUserId"
                 :campus-name="campusName"

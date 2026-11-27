@@ -288,6 +288,7 @@ class ElectionApiController extends Controller
 
         $body = trim((string) $validated['message_body']);
         abort_if($body === '', 422, 'Message body cannot be empty.');
+        app(\App\Services\ProfanityFilterService::class)->assertClean($body, 'message_body');
 
         $cache = Election::liveChatCache();
         $cacheKey = Election::liveChatCacheKey((int) $election->id);

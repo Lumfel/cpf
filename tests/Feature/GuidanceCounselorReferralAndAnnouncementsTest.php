@@ -15,7 +15,6 @@ use App\Models\CampusRoom;
 use App\Models\CounselorInvitation;
 use App\Models\Election;
 use App\Models\ElectionCandidate;
-use App\Models\GuidanceReferral;
 use App\Models\OfficerGcChannel;
 use App\Models\PaymentDestination;
 use App\Models\RoomRequest;
@@ -388,13 +387,13 @@ class GuidanceCounselorReferralAndAnnouncementsTest extends TestCase
 
     public function test_adviser_handover_supports_selecting_existing_guidance_counselor_without_breaking_first_boot(): void
     {
-        // Verify First-Boot setup is active on blank system and permanently latches once any user exists
+        // Verify First-Boot setup remains active until an approved Club Adviser membership exists (C-03)
         $this->seed(BlankSystemSeeder::class);
         $this->assertTrue(FirstBootSetupController::needsAdviserSetup());
 
         $alijis = Campus::where('code', 'ALIJIS')->firstOrFail();
         $existingCounselor = $this->createCampusUser(CpfRole::GuidanceCounselor, 'Delos Santos, Clarissa R.', MembershipStatus::Approved, $alijis);
-        $this->assertFalse(FirstBootSetupController::needsAdviserSetup());
+        $this->assertTrue(FirstBootSetupController::needsAdviserSetup());
 
         // Now create Club Adviser and a student President
         $adviser = $this->createCampusUser(CpfRole::Adviser, 'Montemayor, Elena V.', MembershipStatus::Approved, $alijis);
@@ -434,10 +433,11 @@ class GuidanceCounselorReferralAndAnnouncementsTest extends TestCase
 
         $this->assertSame(CpfRole::GuidanceCounselor, $existingCounselor->fresh()->verifiedRole());
 
-        // Re-initiating and accepting promotes existing GuidanceCounselor to Club Adviser
+        // Re-initiating and accepting promotes existing GuidanceCounselor to Club Adviser (default retains outgoing as GuidanceCounselor)
         $initRes = $this->actingAs($adviser)
             ->postJson('/adviser-handover', [
                 'mode' => 'existing_counselor',
+                'outgoing_role' => 'alumni',
                 'target_membership_id' => $existingCounselor->primaryMembership->id,
                 'current_password' => 'password',
                 'handover_notes' => 'Official AY handover.',

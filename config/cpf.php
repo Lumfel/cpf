@@ -43,9 +43,13 @@ return [
     ],
 
     'google_forms' => [
-        'webhook_secret' => env('GOOGLE_FORMS_WEBHOOK_SECRET', 'cpf-local-forms-secret'),
+        'webhook_secret' => env('GOOGLE_FORMS_WEBHOOK_SECRET', ''),
     ],
 
     'archive_path' => env('CPF_ARCHIVE_HDD_PATH', storage_path('app/archives')),
+
+    'features' => [
+        'officers_gc_paused' => (bool) env('CPF_OFFICERS_GC_PAUSED', false),
+    ],
 
 ];

@@ -36,7 +36,6 @@ import {
     approve,
     index as membershipIndex,
     toggleGc,
-    updateRole,
 } from '@/routes/membership';
 import type {
     Auth,
@@ -320,15 +319,6 @@ function toggleDuesChecklist(member: CampusMembershipRecord) {
     router.patch(
         `/membership/${member.id}/toggle-dues`,
         {},
-        { preserveScroll: true },
-    );
-}
-
-function changeMemberRole(member: CampusMembershipRecord, newRole: string) {
-    if (!props.permissions.isClubAdviser) return;
-    router.patch(
-        updateRole.url(member.id),
-        { role: newRole },
         { preserveScroll: true },
     );
 }
@@ -909,15 +899,15 @@ function formatFieldLabel(key: string): string {
                                 type="button"
                                 @click="openMemberQr(member)"
                                 :title="`View ${member.full_name_last_first_mi} Attendance QR Code`"
-                                class="flex min-h-[72px] w-12 shrink-0 cursor-pointer flex-col items-center justify-center self-stretch rounded-xl font-bold transition hover:scale-[1.03] hover:ring-2 hover:ring-[#0384C5]/45 focus:ring-2 focus:ring-[#0384C5] focus:outline-none"
+                                class="flex w-16 shrink-0 cursor-pointer flex-col items-center justify-center self-stretch rounded-xl font-bold shadow-2xs transition hover:scale-[1.02] hover:ring-2 hover:ring-[#0384C5]/45 focus:ring-2 focus:ring-[#0384C5] focus:outline-none sm:w-20"
                                 :class="
                                     member.is_in_messenger_gc
                                         ? 'bg-[#1A8F26] text-white'
                                         : 'bg-[#F3EBDD] text-slate-800'
                                 "
                             >
-                                <span class="text-sm leading-none">{{ member.full_name_last_first_mi.charAt(0).toUpperCase() }}</span>
-                                <span class="mt-1 text-[10px] opacity-80">#{{ idx + 1 }}</span>
+                                <span class="text-lg font-extrabold leading-none">{{ member.full_name_last_first_mi.charAt(0).toUpperCase() }}</span>
+                                <span class="mt-1.5 text-[11px] leading-none opacity-85">#{{ idx + 1 }}</span>
                             </button>
 
                             <div class="min-w-0 flex-1">
@@ -941,9 +931,9 @@ function formatFieldLabel(key: string): string {
                                     </span>
                                 </div>
 
-                                <div class="mt-1.5 grid gap-x-6 gap-y-1 text-xs text-slate-600 sm:grid-cols-2">
-                                    <div>
-                                        <strong>Facebook Link:</strong>
+                                <div class="mt-2 grid grid-cols-1 gap-x-8 gap-y-1 text-xs text-slate-600 md:grid-cols-2">
+                                    <div class="min-w-0 truncate">
+                                        <strong class="text-slate-700">Facebook Link:</strong>
                                         <a
                                             v-if="member.facebook_profile_url"
                                             :href="member.facebook_profile_url"
@@ -954,47 +944,51 @@ function formatFieldLabel(key: string): string {
                                             View Facebook Profile
                                             <ExternalLink class="size-3" />
                                         </a>
-                                        <span v-else>{{ member.active_fb_account }}</span>
+                                        <span v-else class="ml-1">{{ member.active_fb_account }}</span>
                                     </div>
-                                    <div v-if="member.active_fb_account && member.active_fb_account !== member.facebook_profile_url">
-                                        <strong>FB Profile Note:</strong> {{ member.active_fb_account }}
+                                    <div
+                                        v-if="member.active_fb_account && member.active_fb_account !== member.facebook_profile_url"
+                                        class="min-w-0 truncate"
+                                    >
+                                        <strong class="text-slate-700">FB Profile Note:</strong> {{ member.active_fb_account }}
                                     </div>
-                                    <div>
-                                        <strong>Email / Mobile:</strong> {{ member.active_email }} • {{ member.cellphone_number }}
+                                    <div class="min-w-0 truncate">
+                                        <strong class="text-slate-700">Email / Mobile:</strong> {{ member.active_email }} • {{ member.cellphone_number }}
                                     </div>
-                                    <div>
-                                        <strong>Sex / Identity:</strong> {{ member.sex }}
+                                    <div class="min-w-0 truncate">
+                                        <strong class="text-slate-700">Sex / Identity:</strong> {{ member.sex }}
                                         <span v-if="member.gender_identity">({{ member.gender_identity }})</span>
-                                        • <strong>DOB:</strong> {{ member.birthdate }}
+                                        • <strong class="text-slate-700">DOB:</strong> {{ member.birthdate }}
                                     </div>
-                                    <div v-if="member.approver">
-                                        <strong>Verified by:</strong> {{ member.approver.name }}
+                                    <div v-if="member.approver" class="min-w-0 truncate">
+                                        <strong class="text-slate-700">Verified by:</strong> {{ member.approver.name }}
                                     </div>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Static Bottom Action Toolbar: Adviser Role Selector + GC Confirmation + Dues + Passkey + Former Transition -->
+                        <!-- Static Bottom Action Toolbar: Governance Status Pill + GC Confirmation + Dues + Passkey + Former Transition -->
                         <div class="flex flex-wrap items-center gap-2.5 border-t border-black/10 pt-3">
-                            <!-- Only Club Adviser (In Charge) can promote/change roles -->
-                            <div v-if="permissions.isClubAdviser" class="flex items-center gap-1.5">
-                                <template v-if="member.role === 'adviser'">
-                                    <span class="rounded-xl border border-[#0384C5]/30 bg-[#0384C5]/10 px-2.5 py-1.5 text-[11px] font-semibold text-[#0384C5]">
-                                        Club Adviser • Use Handover Tab
-                                    </span>
-                                </template>
-                                <template v-else>
-                                    <label class="text-[11px] font-semibold text-slate-500">Role:</label>
-                                    <select
-                                        :value="member.role"
-                                        @change="changeMemberRole(member, ($event.target as HTMLSelectElement).value)"
-                                        class="rounded-xl border border-black/15 bg-[#FBF6EE] px-2.5 py-1.5 text-xs font-semibold text-slate-800 focus:border-[#0384C5] focus:outline-none"
-                                    >
-                                        <option v-for="r in availableRoles" :key="r.value" :value="r.value">
-                                            {{ r.label }}
-                                        </option>
-                                    </select>
-                                </template>
+                            <!-- Read-only governance provenance pill (manual role overrides disabled) -->
+                            <div v-if="permissions.isClubAdviser && member.role !== 'member'" class="flex items-center">
+                                <span
+                                    v-if="member.role === 'adviser'"
+                                    class="rounded-xl border border-[#0384C5]/30 bg-[#0384C5]/10 px-2.5 py-1.5 text-[11px] font-semibold text-[#0384C5]"
+                                >
+                                    Club Adviser • Use Handover Tab
+                                </span>
+                                <span
+                                    v-else-if="member.role === 'guidance_counselor'"
+                                    class="rounded-xl border border-[#0384C5]/30 bg-[#0384C5]/10 px-2.5 py-1.5 text-[11px] font-semibold text-[#0384C5]"
+                                >
+                                    Assigned via Counselor Invite
+                                </span>
+                                <span
+                                    v-else
+                                    class="rounded-xl border border-[#0384C5]/30 bg-[#0384C5]/10 px-2.5 py-1.5 text-[11px] font-semibold text-[#0384C5]"
+                                >
+                                    Elected via Assembly
+                                </span>
                             </div>
 
                             <!-- Messenger GC Confirmation Button (Adviser, President, VP, or Secretary) -->

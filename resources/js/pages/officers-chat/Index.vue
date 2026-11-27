@@ -18,6 +18,8 @@ const props = defineProps<{
     } | null;
     officerMessages: MessengerOfficerMessage[];
     counselorGcMessages: MessengerOfficerMessage[];
+    counselorPeers?: Array<{ user_id: number; name: string; role: string; role_label: string }>;
+    officersGcPaused?: boolean;
     gcArchives: Array<{
         id: number;
         academic_year: string;
@@ -105,7 +107,9 @@ function handleCounselorArchived() {
             :channel="officerChannel"
             :initial-messages="officerMessages"
             :counselor-messages="counselorGcMessages"
+            :counselor-peers="counselorPeers ?? []"
             :can-access-counselor-gc="isClubAdviser"
+            :officers-gc-paused="officersGcPaused ?? false"
             :current-user-id="currentUserId"
             :campus-name="campusName"
             :can-archive="isClubAdviser"

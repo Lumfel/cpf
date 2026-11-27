@@ -4,14 +4,18 @@ namespace App\Providers;
 
 use App\Actions\Fortify\CreateNewUser;
 use App\Actions\Fortify\ResetUserPassword;
+use App\Http\Controllers\Auth\PasskeyCodeLoginController;
+use App\Models\User;
 use Illuminate\Cache\RateLimiting\Limit;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\RateLimiter;
 use Illuminate\Support\ServiceProvider;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rules\Password;
 use Inertia\Inertia;
+use Laravel\Fortify\Events\ValidTwoFactorAuthenticationCodeProvided;
 use Laravel\Fortify\Features;
 use Laravel\Fortify\Fortify;
 
@@ -38,6 +42,13 @@ class FortifyServiceProvider extends ServiceProvider
         $this->configureActions();
         $this->configureViews();
         $this->configureRateLimiting();
+
+        Event::listen(ValidTwoFactorAuthenticationCodeProvided::class, function (ValidTwoFactorAuthenticationCodeProvided $event): void {
+            $issuanceId = session()->pull('login.passkey_issuance_id');
+            if ($issuanceId !== null && $event->user instanceof User) {
+                PasskeyCodeLoginController::finalizeDeferredPasskeyClaim($event->user, (int) $issuanceId);
+            }
+        });
     }
 
     /**
@@ -95,6 +106,18 @@ class FortifyServiceProvider extends ServiceProvider
             $throttleKey = Str::transliterate(Str::lower($request->input(Fortify::username())).'|'.$request->ip());
 
             return Limit::perMinute(5)->by($throttleKey);
+        });
+
+        RateLimiter::for('api-login', function (Request $request) {
+            $email = strtolower(trim((string) $request->input('email', '')));
+
+            return Limit::perMinute(5)->by($email.'|'.$request->ip());
+        });
+
+        RateLimiter::for('api-passkey-code', function (Request $request) {
+            $email = strtolower(trim((string) $request->input('email', '')));
+
+            return Limit::perMinute(5)->by($email.'|'.$request->ip());
         });
 
         RateLimiter::for('passkeys', function (Request $request) {

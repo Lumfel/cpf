@@ -41,6 +41,9 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'has_paid_dues',
     'dues_confirmed_by',
     'dues_confirmed_at',
+    'privileges_suspended_at',
+    'suspension_reason',
+    'suspended_by',
     'alumni_since',
     'alumni_reason',
     'alumni_transitioned_by',
@@ -59,6 +62,7 @@ class CampusMembership extends Model
             'gc_confirmed_at' => 'datetime',
             'has_paid_dues' => 'boolean',
             'dues_confirmed_at' => 'datetime',
+            'privileges_suspended_at' => 'datetime',
             'alumni_since' => 'datetime',
         ];
     }
@@ -88,6 +92,11 @@ class CampusMembership extends Model
         }
 
         return implode(' ', $parts);
+    }
+
+    public function isPrivilegesSuspended(): bool
+    {
+        return $this->privileges_suspended_at !== null;
     }
 
     public function user(): BelongsTo

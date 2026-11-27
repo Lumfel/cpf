@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Api\V1;
 
 use App\Actions\Support\SubmitGuidanceReferral;
+use App\Enums\MembershipStatus;
 use App\Enums\ReferralPriority;
 use App\Http\Controllers\Controller;
 use App\Models\CampusCounselor;
@@ -96,7 +97,7 @@ class ReferralApiController extends Controller
         $counselors = collect();
         $bookedSlots = collect();
 
-        if ($campusId !== null) {
+        if ($campusId !== null && $membership?->status === MembershipStatus::Approved) {
             $counselors = CampusCounselor::ensureDefaultCounselorsForCampus($campusId)
                 ->map(fn (CampusCounselor $c): array => [
                     'id' => $c->id,
@@ -153,7 +154,16 @@ class ReferralApiController extends Controller
 
         $membership = $user->primaryMembership;
 
-        if (! $request->filled('campus_id') && $membership !== null) {
+        abort_unless(
+            $user->verifiedRole() !== null
+            && $membership !== null
+            && $membership->status === MembershipStatus::Approved
+            && $membership->campus_id !== null,
+            403,
+            'An approved campus membership is required to submit a guidance referral.',
+        );
+
+        if (! $request->filled('campus_id')) {
             $request->merge(['campus_id' => $membership->campus_id]);
         }
 
@@ -176,13 +186,11 @@ class ReferralApiController extends Controller
 
         $campusId = (int) $validated['campus_id'];
 
-        if ($membership !== null) {
-            abort_unless(
-                $campusId === $membership->campus_id,
-                403,
-                'Referrals must be submitted to your assigned campus chapter.',
-            );
-        }
+        abort_unless(
+            $campusId === $membership->campus_id,
+            403,
+            'Referrals must be submitted to your assigned campus chapter.',
+        );
 
         $counselor = null;
         if (! empty($validated['counselor_id'])) {
